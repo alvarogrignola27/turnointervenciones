@@ -39,6 +39,12 @@
       <button id="today-btn" class="today-btn">Hoy</button>
     </div>
 
+    <div id="filters" class="filters">
+      <select id="filter-person" aria-label="Filtrar por persona"></select>
+      <select id="filter-team" aria-label="Filtrar por equipo"></select>
+      <button id="clear-filters" class="clear-filters hidden" aria-label="Limpiar filtros">✕</button>
+    </div>
+
     <div class="main-area">
       <div class="primary">
         <div id="view-month" class="view-pane">
@@ -71,6 +77,7 @@
       <button data-action="clear">Borrar mes actual</button>
       <button data-action="install" id="install-btn" class="hidden">Instalar app</button>
       <button data-action="close">Cerrar</button>
+      <div class="menu-version">Versión <span id="app-version">3</span></div>
       <input type="file" id="import-file" accept="application/json" class="hidden">
     </div>
   </div>

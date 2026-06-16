@@ -5,8 +5,10 @@ PWA (Progressive Web App) para gestionar y consultar los turnos de intervencione
 ## ✨ Funcionalidades
 
 - 📅 **Tres vistas** estilo Google Calendar: Mes, Semana y Día
-- 🧑‍🤝‍🧑 En vista **Día**: ves el "Equipo a cargo" + "Equipo de apoyo" (calculado automáticamente, anclado al equipo del día siguiente — si se repite, salta al próximo día con un equipo distinto)
-- 🖥️ **Responsive**: en celular es compacta; en compu se expande tipo Google Calendar
+- 🧑‍🤝‍🧑 **Equipo a cargo + Equipo de apoyo**: al tocar cualquier día (en cualquier vista) ves quién está a cargo y quién es el apoyo (calculado automáticamente — el del día siguiente; si se repite, salta al próximo día con un equipo distinto)
+- 🔍 **Filtros**: arriba del calendario hay 2 desplegables — una para filtrar por persona (ves sólo sus días) y otra para filtrar por equipo (los equipos detectados en el mes en curso). Se combinan.
+- ↶ **Deshacer**: cada día guarda hasta los últimos 10 cambios, con botón "Deshacer último cambio" en el panel de edición
+- 🖥️ **Responsive**: en celular es compacta; en compu se expande tipo Google Calendar (1400px)
 - 🎨 Equipos coloreados según el código histórico del Excel
 - ✏️ Edición por día: tap en una fecha → desplegables para cambiar los nombres
 - 📱 Instalable como app en Android e iOS (PWA)
@@ -15,6 +17,7 @@ PWA (Progressive Web App) para gestionar y consultar los turnos de intervencione
 - 📶 Funciona sin internet una vez instalada
 - 🗂️ Trae cargados ~35 meses históricos del Excel original
 - 👆 Navegación rápida: flechas, swipe horizontal, o tap en el título para elegir mes/año
+- 🔢 Número de versión visible en el menú
 
 ## 📦 Estructura del proyecto
 
@@ -146,3 +149,22 @@ Para repos privados, GitHub Pages cuesta plata. Alternativa gratis: Cloudflare P
 ## 📄 Licencia
 
 Uso personal. Modificar a gusto.
+
+## 📜 Changelog
+
+### v3
+- Tres vistas (Mes / Semana / Día) estilo Google Calendar
+- "Equipo a cargo + Equipo de apoyo" en panel de edición (no solo en vista Día)
+- Filtros: por persona y por equipo del mes (se combinan)
+- Deshacer cambios por día (hasta 10 niveles de undo)
+- Roster reorganizado: "Abogados" se mueve a "Otros" (gente que no hace turnos regulares)
+- Número de versión visible en el menú
+- Desktop responsive estilo Google Calendar
+
+### v2
+- Vistas Semana y Día
+- Lógica de Equipo de Apoyo (anclado al día siguiente)
+- Layout desktop ampliado
+
+### v1
+- Versión inicial PWA con vista mensual, dropdowns y persistencia local

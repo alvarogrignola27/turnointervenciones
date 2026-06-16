@@ -2,6 +2,8 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
+const APP_VERSION = '3';
+
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
@@ -11,16 +13,20 @@ const DAY_NAMES_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 const STORAGE_PREFIX = 'turnos:';
 const STORAGE_VERSION_KEY = 'turnos:_seed_version';
+const HISTORY_PREFIX = 'turnos:hist:';
+const MAX_HISTORY_PER_DAY = 10;
 
 // ---------- Estado ----------
 const today = new Date();
 const state = {
-  view: 'month',                  // 'month' | 'week' | 'day'
+  view: 'month',
   year: today.getFullYear(),
-  month: today.getMonth() + 1,    // 1-12
-  day: today.getDate(),           // 1-31, used in week/day views
-  selectedDay: null,              // day selected in month view (for edit panel)
-  data: {},                       // { dayStr: [[a,b], ...] }  -- current month
+  month: today.getMonth() + 1,
+  day: today.getDate(),
+  selectedDay: null,
+  data: {},
+  filterPerson: null,     // nombre o null
+  filterTeam: null,       // {a, b} o null
 };
 
 let deferredInstallPrompt = null;
@@ -52,6 +58,51 @@ function saveMonthData(y, m, data) {
 }
 
 function deepCopy(obj) { return JSON.parse(JSON.stringify(obj)); }
+
+// ---------- Historial (deshacer) ----------
+function historyKey(y, m, d) {
+  return `${HISTORY_PREFIX}${y}-${String(m).padStart(2,'0')}-${d}`;
+}
+function pushHistory(y, m, d, prevState) {
+  const key = historyKey(y, m, d);
+  let stack = [];
+  try { stack = JSON.parse(localStorage.getItem(key) || '[]'); } catch {}
+  stack.push(deepCopy(prevState || []));
+  while (stack.length > MAX_HISTORY_PER_DAY) stack.shift();
+  try { localStorage.setItem(key, JSON.stringify(stack)); }
+  catch (e) { console.warn('History save error', e); }
+}
+function popHistory(y, m, d) {
+  const key = historyKey(y, m, d);
+  try {
+    const stack = JSON.parse(localStorage.getItem(key) || '[]');
+    if (stack.length === 0) return null;
+    const prev = stack.pop();
+    if (stack.length === 0) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(stack));
+    return prev;
+  } catch { return null; }
+}
+function hasHistory(y, m, d) {
+  const key = historyKey(y, m, d);
+  try {
+    const stack = JSON.parse(localStorage.getItem(key) || '[]');
+    return stack.length > 0;
+  } catch { return false; }
+}
+function clearAllHistory() {
+  const keysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(HISTORY_PREFIX)) keysToRemove.push(k);
+  }
+  keysToRemove.forEach(k => localStorage.removeItem(k));
+}
+
+// Saves a snapshot before edits
+function snapshotDayBeforeEdit(day) {
+  pushHistory(state.year, state.month, day, state.data[String(day)] || []);
+}
 
 // Read any day's data (from current state or storage / seed)
 function getDayDataAny(y, m, d) {
@@ -146,6 +197,47 @@ function findApoyo(y, m, d, currentTeam, maxDays = 14) {
   return null;
 }
 
+// ---------- Filtros ----------
+// Lista de equipos únicos en el mes en curso
+function getMonthTeams() {
+  const seen = new Map();  // key "A|B" sorted -> {a, b}
+  for (const day in state.data) {
+    const slots = state.data[day] || [];
+    for (const slot of slots) {
+      const a = slot[0], b = slot[1];
+      if (a && b && ROSTER.indexOf(a) >= 0 && ROSTER.indexOf(b) >= 0) {
+        const pair = [a, b].sort();
+        const key = pair.join('|');
+        if (!seen.has(key)) seen.set(key, { a: pair[0], b: pair[1] });
+      }
+    }
+  }
+  return Array.from(seen.values()).sort((x, y) => x.a.localeCompare(y.a));
+}
+
+function dayMatchesFilters(day) {
+  const slots = state.data[String(day)] || [];
+  if (!state.filterPerson && !state.filterTeam) return true;
+  if (slots.length === 0) return false;
+
+  if (state.filterPerson) {
+    const has = slots.some(s => s[0] === state.filterPerson || s[1] === state.filterPerson);
+    if (!has) return false;
+  }
+  if (state.filterTeam) {
+    const t = state.filterTeam;
+    const has = slots.some(s =>
+      (s[0] === t.a && s[1] === t.b) || (s[0] === t.b && s[1] === t.a)
+    );
+    if (!has) return false;
+  }
+  return true;
+}
+
+function filtersActive() {
+  return !!(state.filterPerson || state.filterTeam);
+}
+
 // ---------- Render: VIEW MONTH ----------
 function renderMonthView() {
   document.getElementById('title').textContent = `${MES_NAMES[state.month - 1]} ${state.year}`;
@@ -169,6 +261,10 @@ function renderMonthView() {
     if (isWeekend(state.year, state.month, day)) el.classList.add('weekend');
     if (isToday(state.year, state.month, day)) el.classList.add('today');
     if (state.selectedDay === day) el.classList.add('selected');
+    if (filtersActive()) {
+      if (dayMatchesFilters(day)) el.classList.add('filter-match');
+      else el.classList.add('filtered-out');
+    }
 
     const numEl = document.createElement('div');
     numEl.className = 'day-num';
@@ -251,6 +347,10 @@ function renderWeekView() {
     if (dow === 0 || dow === 6) card.classList.add('weekend');
     if (isToday(y, m, d)) card.classList.add('today');
     if (state.day === d && state.month === m && state.year === y) card.classList.add('selected');
+    // Aplicar filtros (solo en el mes actual)
+    if (filtersActive() && y === state.year && m === state.month) {
+      if (!dayMatchesFilters(d)) card.classList.add('filtered-out');
+    }
 
     const head = document.createElement('div');
     head.className = 'wk-day-head';
@@ -317,7 +417,6 @@ function renderDayView() {
   root.innerHTML = '';
 
   const slots = getDayDataAny(y, m, d);
-  const teamSlot = findTeamSlot(slots);
 
   // Main day card
   const card = document.createElement('div');
@@ -337,82 +436,11 @@ function renderDayView() {
   }
   card.appendChild(header);
 
-  // Equipo a cargo
-  const cargoSec = document.createElement('div');
-  cargoSec.className = 'dv-section';
-  const cargoLbl = document.createElement('div');
-  cargoLbl.className = 'dv-section-label';
-  cargoLbl.textContent = 'Equipo a cargo';
-  cargoSec.appendChild(cargoLbl);
-  const cargoTeam = document.createElement('div');
-  cargoTeam.className = 'dv-team';
-  if (teamSlot) {
-    [teamSlot[0], teamSlot[1]].forEach(n => {
-      const pill = document.createElement('div');
-      pill.className = 'dv-team-pill';
-      if (n) {
-        pill.textContent = n;
-        pill.style.background = colorFor(n);
-        pill.style.color = textColorFor(n);
-      } else {
-        pill.classList.add('empty');
-        pill.textContent = '—';
-      }
-      cargoTeam.appendChild(pill);
-    });
-  } else {
-    const ph = document.createElement('div');
-    ph.className = 'dv-team-pill empty';
-    ph.style.flex = '1';
-    ph.textContent = 'Sin equipo asignado';
-    cargoTeam.appendChild(ph);
-  }
-  cargoSec.appendChild(cargoTeam);
-  card.appendChild(cargoSec);
-
-  // Equipo de apoyo (próximo día con equipo distinto)
-  const apoyoSec = document.createElement('div');
-  apoyoSec.className = 'dv-section';
-  const apoyoLbl = document.createElement('div');
-  apoyoLbl.className = 'dv-section-label';
-  apoyoLbl.textContent = 'Equipo de apoyo';
-  apoyoSec.appendChild(apoyoLbl);
-
-  const apoyo = findApoyo(y, m, d, teamSlot);
-  const apoyoTeam = document.createElement('div');
-  apoyoTeam.className = 'dv-team';
-  if (apoyo) {
-    [apoyo.team[0], apoyo.team[1]].forEach(n => {
-      const pill = document.createElement('div');
-      pill.className = 'dv-team-pill';
-      if (n) {
-        pill.textContent = n;
-        pill.style.background = colorFor(n);
-        pill.style.color = textColorFor(n);
-      } else {
-        pill.classList.add('empty');
-        pill.textContent = '—';
-      }
-      apoyoTeam.appendChild(pill);
-    });
-    apoyoSec.appendChild(apoyoTeam);
-    const note = document.createElement('div');
-    note.className = 'dv-apoyo-note';
-    const ap = apoyo.date;
-    const apDayName = DAY_NAMES[ap.getDay()];
-    note.textContent = `Entra el ${apDayName} ${ap.getDate()} de ${MES_NAMES[ap.getMonth()].toLowerCase()}`;
-    apoyoSec.appendChild(note);
-  } else {
-    const ph = document.createElement('div');
-    ph.className = 'dv-team-pill empty';
-    ph.style.flex = '1';
-    ph.textContent = 'No definido aún';
-    apoyoTeam.appendChild(ph);
-    apoyoSec.appendChild(apoyoTeam);
-  }
-  card.appendChild(apoyoSec);
+  // Bloque "Equipo a cargo + Apoyo" (mismo helper que en panel de edición)
+  card.appendChild(buildDayInfoBlock(y, m, d));
 
   // Otras filas (oficios, abogados, etc.)
+  const teamSlot = findTeamSlot(slots);
   if (slots && slots.length > 0) {
     const otherSlots = slots.filter(s => !teamSlot || !teamsEqual(s, teamSlot));
     if (otherSlots.length > 0) {
@@ -449,13 +477,13 @@ function renderDayView() {
   editBtn.className = 'dv-edit-btn';
   editBtn.textContent = '✎ Editar este día';
   editBtn.addEventListener('click', () => {
-    // Ensure we're on the right month in state
     if (state.year !== y || state.month !== m) {
       state.year = y; state.month = m;
       state.data = loadMonthData(y, m);
     }
     state.selectedDay = d;
-    renderDetail();
+    state.view = 'month';
+    switchView('month');
     setTimeout(() => {
       document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 50);
@@ -464,7 +492,95 @@ function renderDayView() {
   root.appendChild(card);
 }
 
-// ---------- Render: detalle edición (modal-ish below) ----------
+// ---------- Helper: bloque "Equipo a cargo + Apoyo" ----------
+function buildDayInfoBlock(y, m, d, opts = {}) {
+  const slots = opts.useStateData
+    ? (state.data[String(d)] || null)
+    : getDayDataAny(y, m, d);
+  const teamSlot = findTeamSlot(slots);
+
+  const block = document.createElement('div');
+  block.className = 'di-block';
+
+  // EQUIPO A CARGO
+  const sec1 = document.createElement('div');
+  sec1.className = 'di-section';
+  const lbl1 = document.createElement('div');
+  lbl1.className = 'di-label';
+  lbl1.textContent = 'Equipo a cargo';
+  sec1.appendChild(lbl1);
+  const team1 = document.createElement('div');
+  team1.className = 'di-team';
+  if (teamSlot) {
+    [teamSlot[0], teamSlot[1]].forEach(n => {
+      const pill = document.createElement('div');
+      pill.className = 'di-team-pill';
+      if (n) {
+        pill.textContent = n;
+        pill.style.background = colorFor(n);
+        pill.style.color = textColorFor(n);
+      } else {
+        pill.classList.add('empty');
+        pill.textContent = '—';
+      }
+      team1.appendChild(pill);
+    });
+  } else {
+    const ph = document.createElement('div');
+    ph.className = 'di-team-pill empty';
+    ph.style.flex = '1';
+    ph.textContent = 'Sin equipo asignado';
+    team1.appendChild(ph);
+  }
+  sec1.appendChild(team1);
+  block.appendChild(sec1);
+
+  // EQUIPO DE APOYO
+  const sec2 = document.createElement('div');
+  sec2.className = 'di-section';
+  const lbl2 = document.createElement('div');
+  lbl2.className = 'di-label';
+  lbl2.textContent = 'Equipo de apoyo';
+  sec2.appendChild(lbl2);
+
+  const apoyo = findApoyo(y, m, d, teamSlot);
+  const team2 = document.createElement('div');
+  team2.className = 'di-team';
+  if (apoyo) {
+    [apoyo.team[0], apoyo.team[1]].forEach(n => {
+      const pill = document.createElement('div');
+      pill.className = 'di-team-pill';
+      if (n) {
+        pill.textContent = n;
+        pill.style.background = colorFor(n);
+        pill.style.color = textColorFor(n);
+      } else {
+        pill.classList.add('empty');
+        pill.textContent = '—';
+      }
+      team2.appendChild(pill);
+    });
+    sec2.appendChild(team2);
+    const note = document.createElement('div');
+    note.className = 'di-note';
+    const ap = apoyo.date;
+    const apDayName = DAY_NAMES[ap.getDay()];
+    note.textContent = `Entra el ${apDayName} ${ap.getDate()} de ${MES_NAMES[ap.getMonth()].toLowerCase()}`;
+    sec2.appendChild(note);
+  } else {
+    const ph = document.createElement('div');
+    ph.className = 'di-team-pill empty';
+    ph.style.flex = '1';
+    ph.textContent = 'No definido aún';
+    team2.appendChild(ph);
+    sec2.appendChild(team2);
+  }
+  block.appendChild(sec2);
+
+  return block;
+}
+
+// ---------- Render: detalle edición (con cargo+apoyo + filas editables) ----------
 function renderDetail() {
   const det = document.getElementById('detail');
   const mainArea = document.querySelector('.main-area');
@@ -491,6 +607,9 @@ function renderDetail() {
   sub.textContent = `${MES_NAMES[state.month - 1]} ${state.year}`;
   card.appendChild(sub);
 
+  // Bloque "Equipo a cargo + Apoyo" (sólo lectura)
+  card.appendChild(buildDayInfoBlock(state.year, state.month, day, { useStateData: true }));
+
   const section = document.createElement('div');
   section.className = 'detail-section';
   const label = document.createElement('div');
@@ -503,6 +622,7 @@ function renderDetail() {
     row.className = 'slot-row';
 
     const selA = createNameSelect(slot[0], (val) => {
+      snapshotDayBeforeEdit(day);
       state.data[String(day)][idx][0] = val || null;
       cleanupDay(day);
       saveMonthData(state.year, state.month, state.data);
@@ -515,6 +635,7 @@ function renderDetail() {
     }
 
     const selB = createNameSelect(slot[1], (val) => {
+      snapshotDayBeforeEdit(day);
       state.data[String(day)][idx][1] = val || null;
       cleanupDay(day);
       saveMonthData(state.year, state.month, state.data);
@@ -531,6 +652,7 @@ function renderDetail() {
     del.innerHTML = '×';
     del.setAttribute('aria-label', 'Eliminar fila');
     del.addEventListener('click', () => {
+      snapshotDayBeforeEdit(day);
       state.data[String(day)].splice(idx, 1);
       cleanupDay(day);
       saveMonthData(state.year, state.month, state.data);
@@ -549,6 +671,7 @@ function renderDetail() {
   addBtn.className = 'add-btn primary';
   addBtn.textContent = '+ Agregar fila';
   addBtn.addEventListener('click', () => {
+    snapshotDayBeforeEdit(day);
     if (!state.data[String(day)]) state.data[String(day)] = [];
     state.data[String(day)].push([null, null]);
     saveMonthData(state.year, state.month, state.data);
@@ -557,9 +680,36 @@ function renderDetail() {
   addRow.appendChild(addBtn);
   section.appendChild(addRow);
 
+  // Botón Deshacer
+  if (hasHistory(state.year, state.month, day)) {
+    const undoBtn = document.createElement('button');
+    undoBtn.className = 'undo-btn';
+    undoBtn.innerHTML = '↶ Deshacer último cambio';
+    undoBtn.addEventListener('click', () => undoDay(day));
+    section.appendChild(undoBtn);
+  }
+
   card.appendChild(section);
   det.innerHTML = '';
   det.appendChild(card);
+}
+
+// ---------- Deshacer ----------
+function undoDay(day) {
+  const prev = popHistory(state.year, state.month, day);
+  if (prev === null) {
+    showToast('No hay cambios para deshacer');
+    return;
+  }
+  if (!prev || prev.length === 0) {
+    delete state.data[String(day)];
+  } else {
+    state.data[String(day)] = prev;
+  }
+  saveMonthData(state.year, state.month, state.data);
+  rerenderActiveView();
+  if (state.selectedDay !== null) renderDetail();
+  showToast('Cambio deshecho');
 }
 
 function createNameSelect(currentValue, onChange) {
@@ -570,9 +720,7 @@ function createNameSelect(currentValue, onChange) {
 
   const groups = [
     { label: 'Equipo', items: ROSTER },
-    { label: 'Abogados', items: ABOGADOS },
-    { label: 'Oficios', items: OFICIOS },
-    { label: 'Otros', items: SPECIAL },
+    { label: 'Otros', items: OTROS },
   ];
   groups.forEach(g => {
     const og = document.createElement('optgroup');
@@ -626,19 +774,19 @@ function navPrev() {
     if (state.month < 1) { state.month = 12; state.year--; }
     state.selectedDay = null;
     state.data = loadMonthData(state.year, state.month);
-    renderMonthView(); renderDetail();
+    renderMonthView(); renderDetail(); renderFilters();
   } else if (state.view === 'week') {
     const dt = new Date(state.year, state.month - 1, state.day);
     dt.setDate(dt.getDate() - 7);
     state.year = dt.getFullYear(); state.month = dt.getMonth() + 1; state.day = dt.getDate();
     state.data = loadMonthData(state.year, state.month);
-    renderWeekView();
+    renderWeekView(); renderFilters();
   } else {
     const dt = new Date(state.year, state.month - 1, state.day);
     dt.setDate(dt.getDate() - 1);
     state.year = dt.getFullYear(); state.month = dt.getMonth() + 1; state.day = dt.getDate();
     state.data = loadMonthData(state.year, state.month);
-    renderDayView();
+    renderDayView(); renderFilters();
   }
 }
 function navNext() {
@@ -647,19 +795,19 @@ function navNext() {
     if (state.month > 12) { state.month = 1; state.year++; }
     state.selectedDay = null;
     state.data = loadMonthData(state.year, state.month);
-    renderMonthView(); renderDetail();
+    renderMonthView(); renderDetail(); renderFilters();
   } else if (state.view === 'week') {
     const dt = new Date(state.year, state.month - 1, state.day);
     dt.setDate(dt.getDate() + 7);
     state.year = dt.getFullYear(); state.month = dt.getMonth() + 1; state.day = dt.getDate();
     state.data = loadMonthData(state.year, state.month);
-    renderWeekView();
+    renderWeekView(); renderFilters();
   } else {
     const dt = new Date(state.year, state.month - 1, state.day);
     dt.setDate(dt.getDate() + 1);
     state.year = dt.getFullYear(); state.month = dt.getMonth() + 1; state.day = dt.getDate();
     state.data = loadMonthData(state.year, state.month);
-    renderDayView();
+    renderDayView(); renderFilters();
   }
 }
 function goToday() {
@@ -670,6 +818,7 @@ function goToday() {
   state.data = loadMonthData(state.year, state.month);
   rerenderActiveView();
   if (state.view === 'month') renderDetail();
+  renderFilters();
   document.getElementById('picker').classList.add('hidden');
 }
 function jumpTo(y, m) {
@@ -679,6 +828,7 @@ function jumpTo(y, m) {
   state.data = loadMonthData(state.year, state.month);
   rerenderActiveView();
   if (state.view === 'month') renderDetail();
+  renderFilters();
 }
 
 // ---------- Picker ----------
@@ -703,6 +853,84 @@ function renderPicker() {
     yearSel.appendChild(o);
   }
   yearSel.onchange = (e) => jumpTo(parseInt(e.target.value), state.month);
+}
+
+// ---------- Filtros (UI) ----------
+function renderFilters() {
+  const pSel = document.getElementById('filter-person');
+  const tSel = document.getElementById('filter-team');
+  const clearBtn = document.getElementById('clear-filters');
+
+  // Persona
+  pSel.innerHTML = '';
+  const optAllP = document.createElement('option');
+  optAllP.value = ''; optAllP.textContent = 'Todas las personas';
+  pSel.appendChild(optAllP);
+
+  const ogE = document.createElement('optgroup'); ogE.label = 'Equipo';
+  ROSTER.forEach(n => {
+    const o = document.createElement('option');
+    o.value = n; o.textContent = n;
+    if (n === state.filterPerson) o.selected = true;
+    ogE.appendChild(o);
+  });
+  pSel.appendChild(ogE);
+
+  const ogO = document.createElement('optgroup'); ogO.label = 'Otros';
+  OTROS.forEach(n => {
+    const o = document.createElement('option');
+    o.value = n; o.textContent = n;
+    if (n === state.filterPerson) o.selected = true;
+    ogO.appendChild(o);
+  });
+  pSel.appendChild(ogO);
+
+  pSel.classList.toggle('active', !!state.filterPerson);
+
+  // Equipo (basado en el mes en curso)
+  tSel.innerHTML = '';
+  const optAllT = document.createElement('option');
+  optAllT.value = ''; optAllT.textContent = 'Todos los equipos del mes';
+  tSel.appendChild(optAllT);
+
+  const teams = getMonthTeams();
+  teams.forEach(t => {
+    const o = document.createElement('option');
+    o.value = `${t.a}|${t.b}`;
+    o.textContent = `${t.a} + ${t.b}`;
+    if (state.filterTeam && state.filterTeam.a === t.a && state.filterTeam.b === t.b) {
+      o.selected = true;
+    }
+    tSel.appendChild(o);
+  });
+
+  tSel.classList.toggle('active', !!state.filterTeam);
+  clearBtn.classList.toggle('hidden', !filtersActive());
+}
+
+function applyPersonFilter(name) {
+  state.filterPerson = name || null;
+  renderFilters();
+  rerenderActiveView();
+  if (state.view === 'month') renderDetail();
+}
+function applyTeamFilter(key) {
+  if (!key) {
+    state.filterTeam = null;
+  } else {
+    const [a, b] = key.split('|');
+    state.filterTeam = { a, b };
+  }
+  renderFilters();
+  rerenderActiveView();
+  if (state.view === 'month') renderDetail();
+}
+function clearAllFilters() {
+  state.filterPerson = null;
+  state.filterTeam = null;
+  renderFilters();
+  rerenderActiveView();
+  if (state.view === 'month') renderDetail();
 }
 
 // ---------- Menú & toast ----------
@@ -802,6 +1030,19 @@ function wireUp() {
     b.addEventListener('click', () => switchView(b.dataset.view));
   });
 
+  // Filtros
+  document.getElementById('filter-person').addEventListener('change', (e) => {
+    applyPersonFilter(e.target.value);
+  });
+  document.getElementById('filter-team').addEventListener('change', (e) => {
+    applyTeamFilter(e.target.value);
+  });
+  document.getElementById('clear-filters').addEventListener('click', clearAllFilters);
+
+  // Versión
+  const v = document.getElementById('app-version');
+  if (v) v.textContent = APP_VERSION;
+
   const menuBtn = document.getElementById('menu-btn');
   const menu = document.getElementById('menu');
   menuBtn.addEventListener('click', () => menu.classList.toggle('hidden'));
@@ -850,6 +1091,7 @@ function boot() {
   initSeed();
   state.data = loadMonthData(state.year, state.month);
   rerenderActiveView();
+  renderFilters();
   wireUp();
 }
 boot();

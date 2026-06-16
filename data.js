@@ -8,18 +8,20 @@ const ROSTER = [
   'Milisenda', 'Montilla', 'Sallas'
 ];
 
-const ABOGADOS = [
-  'JUAN DIAZ LOZA',
-  'JUAN PABLO GODOY',
-  'MARTIN VILLANUEVA',
-  'ALVARO GRIGNOLA'
+// "Otros": gente que NO hace turnos regulares, solo aparece en días específicos
+// (abogados, gente de oficios, marcadores especiales)
+const OTROS = [
+  'MARTIN', 'ALVARO',
+  'JUAN DIAZ LOZA', 'JUAN PABLO GODOY', 'MARTIN VILLANUEVA', 'ALVARO GRIGNOLA',
+  'FERIADO'
 ];
 
+// Alias mantenidos por compatibilidad con código que aún los referencia
+const ABOGADOS = ['JUAN DIAZ LOZA', 'JUAN PABLO GODOY', 'MARTIN VILLANUEVA', 'ALVARO GRIGNOLA'];
 const OFICIOS = ['MARTIN', 'ALVARO'];
-
 const SPECIAL = ['FERIADO'];
 
-const ALL_OPTIONS = [...ROSTER, ...ABOGADOS, ...OFICIOS, ...SPECIAL];
+const ALL_OPTIONS = [...ROSTER, ...OTROS];
 
 // Color de equipo asignado a cada persona (idéntico al Excel)
 const COLORS = {
