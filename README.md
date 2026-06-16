@@ -4,14 +4,17 @@ PWA (Progressive Web App) para gestionar y consultar los turnos de intervencione
 
 ## ✨ Funcionalidades
 
-- 📅 Calendario mensual con navegación rápida (flechas o swipe)
+- 📅 **Tres vistas** estilo Google Calendar: Mes, Semana y Día
+- 🧑‍🤝‍🧑 En vista **Día**: ves el "Equipo a cargo" + "Equipo de apoyo" (calculado automáticamente, anclado al equipo del día siguiente — si se repite, salta al próximo día con un equipo distinto)
+- 🖥️ **Responsive**: en celular es compacta; en compu se expande tipo Google Calendar
 - 🎨 Equipos coloreados según el código histórico del Excel
 - ✏️ Edición por día: tap en una fecha → desplegables para cambiar los nombres
 - 📱 Instalable como app en Android e iOS (PWA)
 - 💾 Todos los datos quedan guardados en el teléfono (localStorage)
 - 🔄 Exportar/importar backups en JSON
 - 📶 Funciona sin internet una vez instalada
-- 🗂️ Trae cargados ~9 meses históricos del Excel original
+- 🗂️ Trae cargados ~35 meses históricos del Excel original
+- 👆 Navegación rápida: flechas, swipe horizontal, o tap en el título para elegir mes/año
 
 ## 📦 Estructura del proyecto
 

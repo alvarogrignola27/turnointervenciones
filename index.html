@@ -16,12 +16,19 @@
 <body>
   <div id="app">
     <header class="hdr">
-      <button id="prev" class="nav-btn" aria-label="Mes anterior">‹</button>
-      <button id="title-btn" class="title-btn">
-        <span id="title">Cargando…</span>
-        <span class="caret">▾</span>
-      </button>
-      <button id="next" class="nav-btn" aria-label="Mes siguiente">›</button>
+      <div class="hdr-left">
+        <button id="prev" class="nav-btn" aria-label="Anterior">‹</button>
+        <button id="title-btn" class="title-btn">
+          <span id="title">Cargando…</span>
+          <span class="caret">▾</span>
+        </button>
+        <button id="next" class="nav-btn" aria-label="Siguiente">›</button>
+      </div>
+      <div class="view-toggle" role="tablist" aria-label="Vista">
+        <button data-view="month" class="vt active" role="tab">Mes</button>
+        <button data-view="week" class="vt" role="tab">Semana</button>
+        <button data-view="day" class="vt" role="tab">Día</button>
+      </div>
     </header>
 
     <div id="picker" class="picker hidden">
@@ -32,14 +39,27 @@
       <button id="today-btn" class="today-btn">Hoy</button>
     </div>
 
-    <div class="weekhdr">
-      <div>L</div><div>M</div><div>X</div><div>J</div><div>V</div>
-      <div class="we">S</div><div class="we">D</div>
+    <div class="main-area">
+      <div class="primary">
+        <div id="view-month" class="view-pane">
+          <div class="weekhdr">
+            <div>Lun</div><div>Mar</div><div>Mié</div><div>Jue</div><div>Vie</div>
+            <div class="we">Sáb</div><div class="we">Dom</div>
+          </div>
+          <div id="cal" class="cal"></div>
+        </div>
+
+        <div id="view-week" class="view-pane hidden">
+          <div id="week-grid" class="week-grid"></div>
+        </div>
+
+        <div id="view-day" class="view-pane hidden">
+          <div id="day-view" class="day-view"></div>
+        </div>
+      </div>
+
+      <div id="detail" class="detail"></div>
     </div>
-
-    <div id="cal" class="cal"></div>
-
-    <div id="detail" class="detail"></div>
 
     <div class="footer-actions">
       <button id="menu-btn" class="menu-btn" aria-label="Menú">⋯ Más</button>

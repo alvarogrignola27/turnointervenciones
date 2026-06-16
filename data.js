@@ -10214,4 +10214,4 @@ const SEED_DATA = {
 };
 
 // Versión del seed para invalidar caché de localStorage si actualizás
-const SEED_VERSION = '1';
+const SEED_VERSION = '2';
