@@ -26,41 +26,43 @@ const SPECIAL = ['FERIADO'];
 const ALL_OPTIONS = [...ROSTER, ...OTROS];
 
 // Equipos por defecto que va a usar el generador automático.
-// Cada equipo es una pareja de personas con un tope máximo de días por mes.
+// Soporte para hasta 3 personas por equipo (a + b + opcional c).
 // El usuario puede editar este listado desde la pantalla "Generar mes".
 const DEFAULT_TEAMS = [
-  { a: 'Hidalgo',   b: 'Ibañez',    maxDays: 9 },
-  { a: 'Cabeza',    b: 'Martinez',  maxDays: 9 },
-  { a: 'Frias',     b: 'Diaz',      maxDays: 9 },
-  { a: 'Capdevila', b: 'Gomez',     maxDays: 9 },
-  { a: 'Campi',     b: 'Montilla',  maxDays: 9 },
-  { a: 'Sallas',    b: 'Milisenda', maxDays: 9 },
-  { a: 'Celina',    b: 'Laporta',   maxDays: 9 }
+  { a: 'Frias',     b: 'Echague',                  maxDays: 9 },
+  { a: 'Hidalgo',   b: 'Laporta',                  maxDays: 9 },
+  { a: 'Capdevila', b: 'Gomez',                    maxDays: 9 },
+  { a: 'Campi',     b: 'Montilla',                 maxDays: 9 },
+  { a: 'Sallas',    b: 'Ibañez',   c: 'Martinez',  maxDays: 9 },
+  { a: 'Cabeza',    b: 'Celina',                   maxDays: 9 },
+  { a: 'Milisenda', b: 'Diaz',                     maxDays: 9 }
 ];
 
-// Color de equipo asignado a cada persona (idéntico al Excel)
+// Color de equipo asignado a cada persona (configurable desde el menú)
+// Defaults coinciden con la distribución actual de equipos
 const COLORS = {
-  // Equipo durazno
+  // Equipo durazno (Sallas + Ibañez + Martinez)
   'Sallas':    '#F4B083',
-  'Milisenda': '#F4B083',
-  // Equipo amarillo
-  'Hidalgo':  '#FFC000',
-  'Ibañez':   '#FFC000',
-  'Laporta':  '#FFC000',
-  // Equipo verde
-  'Cabeza':   '#C5E0B3',
-  'Martinez': '#C5E0B3',
-  'Celina':   '#C5E0B3',
-  // Equipo azul
-  'Frias':    '#8EAADB',
-  'Diaz':     '#8EAADB',
-  'Echague':  '#8EAADB',
-  // Equipo violeta
-  'Capdevila':'#7030A0',
-  'Gomez':    '#7030A0',
-  // Equipo gris
-  'Campi':    '#BFBFBF',
-  'Montilla': '#BFBFBF',
+  'Ibañez':    '#F4B083',
+  'Martinez':  '#F4B083',
+  // Equipo amarillo (Hidalgo + Laporta)
+  'Hidalgo':   '#FFC000',
+  'Laporta':   '#FFC000',
+  // Equipo verde (Cabeza + Celina)
+  'Cabeza':    '#C5E0B3',
+  'Celina':    '#C5E0B3',
+  // Equipo azul (Frias + Echague)
+  'Frias':     '#8EAADB',
+  'Echague':   '#8EAADB',
+  // Equipo violeta (Capdevila + Gomez)
+  'Capdevila': '#7030A0',
+  'Gomez':     '#7030A0',
+  // Equipo gris (Campi + Montilla)
+  'Campi':     '#BFBFBF',
+  'Montilla':  '#BFBFBF',
+  // Equipo naranja oscuro (Milisenda + Diaz)
+  'Milisenda': '#C65911',
+  'Diaz':      '#C65911',
   // Abogados y oficios (gris claro)
   'JUAN DIAZ LOZA':    '#D8D8D8',
   'JUAN PABLO GODOY':  '#D8D8D8',
@@ -72,8 +74,9 @@ const COLORS = {
   'FERIADO':           '#FFE680'
 };
 
-// Nombres con texto blanco (fondo oscuro)
-const WHITE_TEXT = new Set(['Capdevila', 'Gomez']);
+// Nombres con texto blanco (fondo oscuro). Se actualiza dinámicamente
+// si el usuario elige un color oscuro custom.
+const WHITE_TEXT = new Set(['Capdevila', 'Gomez', 'Milisenda', 'Diaz']);
 
 // ============================================================
 // Datos iniciales — extraídos del Excel histórico

@@ -158,6 +158,19 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v7
+- **Colores configurables por persona** (menú "🎨 Colores de personas"): tocás el cuadradito de color y elegís el que quieras. Útil cuando alguien cambia de equipo de intervención.
+- **Equipos de 3 personas** soportados en el generador (ej. Sallas + Ibañez + Martinez). Botón "+" en la config para agregar 3ra persona a cualquier equipo.
+- **Colores default actualizados** a la distribución real de equipos:
+  - Equipo durazno: Sallas + Ibañez + Martinez
+  - Equipo amarillo: Hidalgo + Laporta
+  - Equipo verde: Cabeza + Celina
+  - Equipo azul: Frias + Echague
+  - Equipo violeta: Capdevila + Gomez
+  - Equipo gris: Campi + Montilla
+  - Equipo naranja oscuro: Milisenda + Diaz
+- **Fix del "—" sobrante**: cuando una fila tiene un solo nombre, el select vacío del costado ya no aparece. El nombre ocupa todo el ancho y aparece un "+" para agregar compañero si querés.
+
 ### v6
 - **Generador con cap ESTRICTO**: si ponés "máx/mes: 4", se respeta a rajatabla. Los días que sobran quedan vacíos y aparece un toast indicando cuántos no se asignaron (para que subas el cupo)
 - **TODOS los tiles editables**: en cualquier vista (mes / semana / día) tocás un pill y se abre el dropdown con los 15 del roster + "Otros". Reemplazos rápidos sin abrir el panel.

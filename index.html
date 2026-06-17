@@ -74,12 +74,13 @@
     <div id="menu" class="menu hidden">
       <button data-action="generate">🎲 Generar mes</button>
       <button data-action="gen-settings">⚙️ Configurar equipos del generador</button>
+      <button data-action="colors-settings">🎨 Colores de personas</button>
       <button data-action="export">Exportar datos (JSON)</button>
       <button data-action="import">Importar datos (JSON)</button>
       <button data-action="clear">Borrar mes actual</button>
       <button data-action="install" id="install-btn" class="hidden">Instalar app</button>
       <button data-action="close">Cerrar</button>
-      <div class="menu-version">Versión <span id="app-version">6</span></div>
+      <div class="menu-version">Versión <span id="app-version">7</span></div>
       <input type="file" id="import-file" accept="application/json" class="hidden">
     </div>
 
@@ -90,12 +91,28 @@
           <h2 id="gen-modal-title">Equipos del generador</h2>
           <button class="modal-close" id="gen-modal-close" aria-label="Cerrar">×</button>
         </div>
-        <p class="modal-sub">Definí las parejas de equipos y el máximo de días por mes que va a hacer cada uno. El generador balancea automáticamente y rota los fines de semana.</p>
+        <p class="modal-sub">Definí las parejas (o tríos) de equipos y el máximo de días por mes que va a hacer cada uno. El generador balancea automáticamente y rota los fines de semana.</p>
         <div id="gen-teams-list" class="gen-teams-list"></div>
         <button id="gen-add-team" class="gen-add-team">+ Agregar equipo</button>
         <div class="modal-footer">
           <button id="gen-reset" class="modal-btn secondary">Restaurar default</button>
           <button id="gen-save" class="modal-btn primary">Guardar y generar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="colors-modal" class="modal hidden" role="dialog" aria-labelledby="colors-modal-title">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2 id="colors-modal-title">Colores de personas</h2>
+          <button class="modal-close" id="colors-modal-close" aria-label="Cerrar">×</button>
+        </div>
+        <p class="modal-sub">Tocá el círculo de color de cada persona para cambiarlo. El cambio se aplica en todas las vistas. Útil cuando alguien cambia de equipo.</p>
+        <div id="colors-list" class="colors-list"></div>
+        <div class="modal-footer">
+          <button id="colors-reset" class="modal-btn secondary">Restaurar default</button>
+          <button id="colors-close-btn" class="modal-btn primary">Listo</button>
         </div>
       </div>
     </div>

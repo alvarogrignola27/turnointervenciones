@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '6';
+const APP_VERSION = '7';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -17,6 +17,7 @@ const HISTORY_PREFIX = 'turnos:hist:';
 const FERIADO_PREFIX = 'turnos:feriado:';
 const GEN_CONFIG_KEY = 'turnos:gen_config';
 const WEEKEND_ROT_KEY = 'turnos:gen_weekend_idx';
+const PERSON_COLORS_KEY = 'turnos:person_colors';
 const MAX_HISTORY_PER_DAY = 10;
 
 // ---------- Estado ----------
@@ -218,7 +219,11 @@ function abbrev(name) {
   }
   return name.slice(0, 4);
 }
-function colorFor(name) { return COLORS[name] || '#E5E5EA'; }
+function colorFor(name) {
+  if (!name) return '#E5E5EA';
+  const custom = loadPersonColors();
+  return custom[name] || COLORS[name] || '#E5E5EA';
+}
 function textColorFor(name) {
   if (WHITE_TEXT.has(name)) return '#FFFFFF';
   const c = colorFor(name);
@@ -230,6 +235,25 @@ function textColorFor(name) {
     return lum < 130 ? '#FFFFFF' : '#1c1c1e';
   }
   return '#1c1c1e';
+}
+
+// ---------- Colores custom por persona ----------
+let _personColorsCache = null;
+function loadPersonColors() {
+  if (_personColorsCache !== null) return _personColorsCache;
+  try {
+    _personColorsCache = JSON.parse(localStorage.getItem(PERSON_COLORS_KEY) || '{}');
+  } catch { _personColorsCache = {}; }
+  return _personColorsCache;
+}
+function savePersonColors(colors) {
+  _personColorsCache = colors;
+  try { localStorage.setItem(PERSON_COLORS_KEY, JSON.stringify(colors)); }
+  catch (e) { console.warn('Save colors error', e); }
+}
+function resetPersonColors() {
+  _personColorsCache = {};
+  localStorage.removeItem(PERSON_COLORS_KEY);
 }
 function isToday(y, m, d) {
   return y === today.getFullYear() && m === today.getMonth() + 1 && d === today.getDate();
@@ -299,17 +323,16 @@ function makePill(name, opts = {}) {
   return pill;
 }
 
-// Renderiza los pills de un slot. Si el slot es "Otros" con un solo nombre,
+// Renderiza los pills de un slot. Si el slot tiene UN solo nombre (otro lado null),
 // devuelve UN pill ancho. Si no, devuelve 2 pills side-by-side.
 // opts: { editable, day, slotIdx, className, abbrev }
 function renderSlotPills(slot, opts = {}) {
   const [a, b] = slot;
-  const teamLike = isRosterTeam(slot);
   const hasA = !!a, hasB = !!b;
   const oneOnly = (hasA && !hasB) || (!hasA && hasB);
 
-  // "Otros" full-width: cuando NO es un team del roster Y solo hay un nombre
-  if (!teamLike && oneOnly) {
+  // Full-width: cuando solo hay 1 nombre, sin importar si es team o otros
+  if (oneOnly) {
     const n = hasA ? a : b;
     const sideIdx = hasA ? 0 : 1;
     const pill = makePill(n, {
@@ -896,30 +919,69 @@ function renderDetail() {
       const row = document.createElement('div');
       row.className = 'slot-row';
 
-      const selA = createNameSelect(slot[0], (val) => {
-        snapshotDayBeforeEdit(day);
-        state.data[String(day)][idx][0] = val || null;
-        cleanupDay(day);
-        saveMonthData(state.year, state.month, state.data);
-        rerenderActiveView(); renderDetail();
-      });
-      if (slot[0]) {
-        selA.style.background = colorFor(slot[0]);
-        selA.style.color = textColorFor(slot[0]);
-        selA.style.fontWeight = '600';
-      }
+      const hasA = !!slot[0], hasB = !!slot[1];
+      const onlyOne = (hasA && !hasB) || (!hasA && hasB);
 
-      const selB = createNameSelect(slot[1], (val) => {
-        snapshotDayBeforeEdit(day);
-        state.data[String(day)][idx][1] = val || null;
-        cleanupDay(day);
-        saveMonthData(state.year, state.month, state.data);
-        rerenderActiveView(); renderDetail();
-      });
-      if (slot[1]) {
-        selB.style.background = colorFor(slot[1]);
-        selB.style.color = textColorFor(slot[1]);
-        selB.style.fontWeight = '600';
+      if (onlyOne) {
+        // Pill ancho completo con el único nombre, + botón "+" para agregar compañero
+        const name = hasA ? slot[0] : slot[1];
+        const sideIdx = hasA ? 0 : 1;
+        const sel = createNameSelect(name, (val) => {
+          snapshotDayBeforeEdit(day);
+          state.data[String(day)][idx][sideIdx] = val || null;
+          cleanupDay(day);
+          saveMonthData(state.year, state.month, state.data);
+          rerenderActiveView(); renderDetail();
+        });
+        sel.style.background = colorFor(name);
+        sel.style.color = textColorFor(name);
+        sel.style.fontWeight = '600';
+        sel.classList.add('slot-row-wide');
+        row.appendChild(sel);
+
+        // Botón "+ compañero"
+        const addPartner = document.createElement('button');
+        addPartner.className = 'slot-add-partner';
+        addPartner.innerHTML = '+';
+        addPartner.title = 'Agregar compañero';
+        addPartner.addEventListener('click', () => {
+          snapshotDayBeforeEdit(day);
+          // Setear el otro lado al primer nombre del roster (que sea distinto)
+          const other = ROSTER.find(n => n !== name) || ROSTER[0];
+          state.data[String(day)][idx][1 - sideIdx] = other;
+          saveMonthData(state.year, state.month, state.data);
+          rerenderActiveView(); renderDetail();
+        });
+        row.appendChild(addPartner);
+      } else {
+        // Modo estándar: 2 selects lado a lado
+        const selA = createNameSelect(slot[0], (val) => {
+          snapshotDayBeforeEdit(day);
+          state.data[String(day)][idx][0] = val || null;
+          cleanupDay(day);
+          saveMonthData(state.year, state.month, state.data);
+          rerenderActiveView(); renderDetail();
+        });
+        if (slot[0]) {
+          selA.style.background = colorFor(slot[0]);
+          selA.style.color = textColorFor(slot[0]);
+          selA.style.fontWeight = '600';
+        }
+
+        const selB = createNameSelect(slot[1], (val) => {
+          snapshotDayBeforeEdit(day);
+          state.data[String(day)][idx][1] = val || null;
+          cleanupDay(day);
+          saveMonthData(state.year, state.month, state.data);
+          rerenderActiveView(); renderDetail();
+        });
+        if (slot[1]) {
+          selB.style.background = colorFor(slot[1]);
+          selB.style.color = textColorFor(slot[1]);
+          selB.style.fontWeight = '600';
+        }
+        row.appendChild(selA);
+        row.appendChild(selB);
       }
 
       const del = document.createElement('button');
@@ -934,8 +996,6 @@ function renderDetail() {
         rerenderActiveView(); renderDetail();
       });
 
-      row.appendChild(selA);
-      row.appendChild(selB);
       row.appendChild(del);
       section.appendChild(row);
     });
@@ -1293,11 +1353,17 @@ function renderGenSettings() {
     const row = document.createElement('div');
     row.className = 'gen-team-row';
 
-    const makeSelect = (val, onChange) => {
+    const makeSelect = (val, onChange, allowEmpty = false) => {
       const sel = document.createElement('select');
-      const empty = document.createElement('option');
-      empty.value = ''; empty.textContent = '—';
-      sel.appendChild(empty);
+      if (allowEmpty) {
+        const empty = document.createElement('option');
+        empty.value = ''; empty.textContent = '—';
+        sel.appendChild(empty);
+      } else {
+        const empty = document.createElement('option');
+        empty.value = ''; empty.textContent = '—';
+        sel.appendChild(empty);
+      }
       ROSTER.forEach(n => {
         const o = document.createElement('option');
         o.value = n; o.textContent = n;
@@ -1322,6 +1388,42 @@ function renderGenSettings() {
       saveGenConfig(cfg);
       renderGenSettings();
     });
+
+    // Tercera persona opcional
+    let thirdEl;
+    if (team.c) {
+      const wrap = document.createElement('div');
+      wrap.className = 'gen-third-wrap';
+      const selC = makeSelect(team.c, (v) => {
+        cfg.teams[idx].c = v || null;
+        if (!v) delete cfg.teams[idx].c;
+        saveGenConfig(cfg);
+        renderGenSettings();
+      });
+      const remC = document.createElement('button');
+      remC.className = 'gen-third-rem';
+      remC.textContent = '×';
+      remC.title = 'Sacar 3ra persona';
+      remC.addEventListener('click', () => {
+        delete cfg.teams[idx].c;
+        saveGenConfig(cfg);
+        renderGenSettings();
+      });
+      wrap.appendChild(selC);
+      wrap.appendChild(remC);
+      thirdEl = wrap;
+    } else {
+      const addBtn = document.createElement('button');
+      addBtn.className = 'gen-third-add';
+      addBtn.textContent = '+';
+      addBtn.title = 'Agregar 3ra persona';
+      addBtn.addEventListener('click', () => {
+        cfg.teams[idx].c = ROSTER[0];
+        saveGenConfig(cfg);
+        renderGenSettings();
+      });
+      thirdEl = addBtn;
+    }
 
     const maxWrap = document.createElement('div');
     maxWrap.style.display = 'flex';
@@ -1355,9 +1457,85 @@ function renderGenSettings() {
 
     row.appendChild(selA);
     row.appendChild(selB);
+    row.appendChild(thirdEl);
     row.appendChild(maxWrap);
     row.appendChild(delBtn);
     list.appendChild(row);
+  });
+}
+
+// ---------- Modal: Colores de personas ----------
+function openColorsSettings() {
+  document.getElementById('colors-modal').classList.remove('hidden');
+  renderColorsSettings();
+}
+function closeColorsSettings() {
+  document.getElementById('colors-modal').classList.add('hidden');
+}
+function renderColorsSettings() {
+  const list = document.getElementById('colors-list');
+  list.innerHTML = '';
+  const colors = loadPersonColors();
+
+  // Agrupar por categoría
+  const groups = [
+    { label: 'Equipo (15 personas)', items: ROSTER },
+    { label: 'Otros', items: OTROS }
+  ];
+
+  groups.forEach(g => {
+    const groupLbl = document.createElement('div');
+    groupLbl.className = 'colors-group-label';
+    groupLbl.textContent = g.label;
+    list.appendChild(groupLbl);
+
+    g.items.forEach(name => {
+      const row = document.createElement('div');
+      row.className = 'colors-row';
+
+      // Pill preview con el color actual
+      const preview = document.createElement('div');
+      preview.className = 'colors-preview';
+      const currentColor = colors[name] || COLORS[name] || '#E5E5EA';
+      preview.style.background = currentColor;
+      preview.style.color = textColorFor(name);
+      preview.textContent = name;
+
+      // Input de color nativo (label para que el preview lo dispare)
+      const input = document.createElement('input');
+      input.type = 'color';
+      input.value = currentColor;
+      input.className = 'colors-input';
+      input.addEventListener('change', (e) => {
+        const c = loadPersonColors();
+        c[name] = e.target.value;
+        savePersonColors(c);
+        rerenderActiveView();
+        renderColorsSettings();
+      });
+
+      // Reset individual
+      const resetBtn = document.createElement('button');
+      resetBtn.className = 'colors-reset-one';
+      resetBtn.textContent = '↺';
+      resetBtn.title = 'Volver al color default';
+      resetBtn.addEventListener('click', () => {
+        const c = loadPersonColors();
+        delete c[name];
+        savePersonColors(c);
+        rerenderActiveView();
+        renderColorsSettings();
+      });
+
+      const label = document.createElement('label');
+      label.className = 'colors-label-wrap';
+      label.appendChild(input);
+
+      row.appendChild(preview);
+      row.appendChild(label);
+      row.appendChild(resetBtn);
+      list.appendChild(row);
+    });
   });
 }
 
@@ -1438,7 +1616,10 @@ function generateMonth() {
     days.forEach(d => {
       if (d === null) return;
       if (isFeriado(y, m, d)) return;
-      newData[String(d)] = [[t.a, t.b]];
+      const slots = [[t.a, t.b]];
+      // Si el equipo tiene un 3er miembro, va como slot adicional
+      if (t.c) slots.push([t.c, null]);
+      newData[String(d)] = slots;
       usage[teamIdx]++;
     });
     return true;
@@ -1584,6 +1765,7 @@ function wireUp() {
       else if (a === 'clear') clearCurrentMonth();
       else if (a === 'generate') generateMonth();
       else if (a === 'gen-settings') openGenSettings();
+      else if (a === 'colors-settings') openColorsSettings();
       else if (a === 'install') triggerInstall();
     });
   });
@@ -1606,6 +1788,18 @@ function wireUp() {
   document.getElementById('gen-save').addEventListener('click', () => {
     closeGenSettings();
     setTimeout(() => generateMonth(), 200);
+  });
+
+  // Modal de colores
+  document.getElementById('colors-modal-close').addEventListener('click', closeColorsSettings);
+  document.getElementById('colors-close-btn').addEventListener('click', closeColorsSettings);
+  document.querySelector('#colors-modal .modal-backdrop').addEventListener('click', closeColorsSettings);
+  document.getElementById('colors-reset').addEventListener('click', () => {
+    if (!confirm('¿Restaurar todos los colores a los defaults?')) return;
+    resetPersonColors();
+    renderColorsSettings();
+    rerenderActiveView();
+    showToast('Colores restaurados');
   });
   document.getElementById('import-file').addEventListener('change', (e) => {
     if (e.target.files[0]) importData(e.target.files[0]);
