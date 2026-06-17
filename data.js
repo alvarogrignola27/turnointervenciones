@@ -25,21 +25,17 @@ const SPECIAL = ['FERIADO'];
 
 const ALL_OPTIONS = [...ROSTER, ...OTROS];
 
-// Equipos típicos del roster (los que va a usar el generador automático)
-// Cada equipo es una pareja de personas que suelen ir juntas
+// Equipos por defecto que va a usar el generador automático.
+// Cada equipo es una pareja de personas con un tope máximo de días por mes.
+// El usuario puede editar este listado desde la pantalla "Generar mes".
 const DEFAULT_TEAMS = [
-  ['Hidalgo', 'Ibañez'],     // amarillo
-  ['Hidalgo', 'Laporta'],    // amarillo (variante)
-  ['Cabeza', 'Martinez'],    // verde
-  ['Cabeza', 'Celina'],      // verde (variante)
-  ['Frias', 'Diaz'],         // azul
-  ['Frias', 'Echague'],      // azul (variante)
-  ['Capdevila', 'Gomez'],    // violeta
-  ['Campi', 'Montilla'],     // gris
-  ['Campi', 'Echague'],      // gris (variante)
-  ['Sallas', 'Milisenda'],   // durazno
-  ['Sallas', 'Ibañez'],      // durazno (variante)
-  ['Milisenda', 'Diaz']      // mixto
+  { a: 'Hidalgo',   b: 'Ibañez',    maxDays: 9 },
+  { a: 'Cabeza',    b: 'Martinez',  maxDays: 9 },
+  { a: 'Frias',     b: 'Diaz',      maxDays: 9 },
+  { a: 'Capdevila', b: 'Gomez',     maxDays: 9 },
+  { a: 'Campi',     b: 'Montilla',  maxDays: 9 },
+  { a: 'Sallas',    b: 'Milisenda', maxDays: 9 },
+  { a: 'Celina',    b: 'Laporta',   maxDays: 9 }
 ];
 
 // Color de equipo asignado a cada persona (idéntico al Excel)

@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '4';
+const APP_VERSION = '5';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -15,6 +15,8 @@ const STORAGE_PREFIX = 'turnos:';
 const STORAGE_VERSION_KEY = 'turnos:_seed_version';
 const HISTORY_PREFIX = 'turnos:hist:';
 const FERIADO_PREFIX = 'turnos:feriado:';
+const GEN_CONFIG_KEY = 'turnos:gen_config';
+const WEEKEND_ROT_KEY = 'turnos:gen_weekend_idx';
 const MAX_HISTORY_PER_DAY = 10;
 
 // ---------- Estado ----------
@@ -237,7 +239,7 @@ function isWeekend(y, m, d) {
   return dow === 0 || dow === 6;
 }
 
-// ---------- Lógica de Equipo a cargo / Equipo de apoyo ----------
+// ---------- Lógica de Equipo de intervención / Equipo de apoyo ----------
 function teamsEqual(t1, t2) {
   if (!t1 || !t2) return false;
   const a1 = t1[0] || '', b1 = t1[1] || '';
@@ -253,11 +255,12 @@ function isRosterTeam(pair) {
   return isRoster(a) || isRoster(b);
 }
 
-// Encuentra el primer slot que sea un equipo del roster
+// Encuentra el primer slot que sea un equipo del roster.
+// Devuelve {slot, idx} o null
 function findTeamSlot(slots) {
   if (!slots) return null;
-  for (const s of slots) {
-    if (isRosterTeam(s)) return s;
+  for (let i = 0; i < slots.length; i++) {
+    if (isRosterTeam(slots[i])) return { slot: slots[i], idx: i };
   }
   return null;
 }
@@ -269,9 +272,9 @@ function findApoyo(y, m, d, currentTeam, maxDays = 14) {
     dt.setDate(dt.getDate() + 1);
     const yy = dt.getFullYear(), mm = dt.getMonth() + 1, dd = dt.getDate();
     const slots = getDayDataAny(yy, mm, dd);
-    const team = findTeamSlot(slots);
-    if (team && !teamsEqual(team, currentTeam)) {
-      return { team, date: new Date(yy, mm - 1, dd) };
+    const tRes = findTeamSlot(slots);
+    if (tRes && !teamsEqual(tRes.slot, currentTeam)) {
+      return { team: tRes.slot, date: new Date(yy, mm - 1, dd) };
     }
   }
   return null;
@@ -539,11 +542,12 @@ function renderDayView() {
   }
   card.appendChild(header);
 
-  // Bloque "Equipo a cargo + Apoyo" (mismo helper que en panel de edición)
+  // Bloque "Equipo de intervención + Apoyo" (mismo helper que en panel de edición)
   card.appendChild(buildDayInfoBlock(y, m, d));
 
   // Otras filas (oficios, abogados, etc.)
-  const teamSlot = findTeamSlot(slots);
+  const teamRes = findTeamSlot(slots);
+  const teamSlot = teamRes ? teamRes.slot : null;
   if (slots && slots.length > 0) {
     const otherSlots = slots.filter(s => !teamSlot || !teamsEqual(s, teamSlot));
     if (otherSlots.length > 0) {
@@ -595,38 +599,78 @@ function renderDayView() {
   root.appendChild(card);
 }
 
-// ---------- Helper: bloque "Equipo a cargo + Apoyo" ----------
+// ---------- Helper: bloque "Equipo de intervención + Apoyo" ----------
 function buildDayInfoBlock(y, m, d, opts = {}) {
   const slots = opts.useStateData
     ? (state.data[String(d)] || null)
     : getDayDataAny(y, m, d);
-  const teamSlot = findTeamSlot(slots);
+  const teamRes = findTeamSlot(slots);
+  const teamSlot = teamRes ? teamRes.slot : null;
+  // Editable solo si los datos son del mes en curso
+  const editable = !!opts.useStateData;
 
   const block = document.createElement('div');
   block.className = 'di-block';
 
-  // EQUIPO A CARGO
+  // EQUIPO DE INTERVENCIÓN
   const sec1 = document.createElement('div');
   sec1.className = 'di-section';
   const lbl1 = document.createElement('div');
   lbl1.className = 'di-label';
-  lbl1.textContent = 'Equipo a cargo';
+  lbl1.textContent = 'Equipo de intervención';
   sec1.appendChild(lbl1);
   const team1 = document.createElement('div');
   team1.className = 'di-team';
+
   if (teamSlot) {
-    [teamSlot[0], teamSlot[1]].forEach(n => {
-      const pill = document.createElement('div');
-      pill.className = 'di-team-pill';
-      if (n) {
-        pill.textContent = n;
-        pill.style.background = colorFor(n);
-        pill.style.color = textColorFor(n);
+    [0, 1].forEach(sideIdx => {
+      const n = teamSlot[sideIdx];
+
+      if (editable) {
+        // Pill editable = un <select> estilizado
+        const sel = document.createElement('select');
+        sel.className = 'di-team-pill di-team-pill-select';
+        if (n) {
+          sel.style.background = colorFor(n);
+          sel.style.color = textColorFor(n);
+        } else {
+          sel.classList.add('empty');
+        }
+        const empty = document.createElement('option');
+        empty.value = ''; empty.textContent = '—';
+        sel.appendChild(empty);
+        ROSTER.forEach(name => {
+          const o = document.createElement('option');
+          o.value = name; o.textContent = name;
+          if (name === n) o.selected = true;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change', (e) => {
+          const newName = e.target.value || null;
+          snapshotDayBeforeEdit(d);
+          if (!state.data[String(d)]) state.data[String(d)] = [[null, null]];
+          const slotIdxLocal = teamRes ? teamRes.idx : 0;
+          if (!state.data[String(d)][slotIdxLocal]) state.data[String(d)][slotIdxLocal] = [null, null];
+          state.data[String(d)][slotIdxLocal][sideIdx] = newName;
+          cleanupDay(d);
+          saveMonthData(state.year, state.month, state.data);
+          rerenderActiveView();
+          if (state.view === 'month' && state.selectedDay !== null) renderDetail();
+        });
+        team1.appendChild(sel);
       } else {
-        pill.classList.add('empty');
-        pill.textContent = '—';
+        const pill = document.createElement('div');
+        pill.className = 'di-team-pill';
+        if (n) {
+          pill.textContent = n;
+          pill.style.background = colorFor(n);
+          pill.style.color = textColorFor(n);
+        } else {
+          pill.classList.add('empty');
+          pill.textContent = '—';
+        }
+        team1.appendChild(pill);
       }
-      team1.appendChild(pill);
     });
   } else {
     const ph = document.createElement('div');
@@ -638,7 +682,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   sec1.appendChild(team1);
   block.appendChild(sec1);
 
-  // EQUIPO DE APOYO
+  // EQUIPO DE APOYO (read-only)
   const sec2 = document.createElement('div');
   sec2.className = 'di-section';
   const lbl2 = document.createElement('div');
@@ -683,6 +727,8 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   return block;
 }
 
+// Estilo del select-pill: hereda el estilo de .di-team-pill pero como <select>
+
 // ---------- Render: detalle (info + edición opcional) ----------
 function renderDetail() {
   const det = document.getElementById('detail');
@@ -711,7 +757,7 @@ function renderDetail() {
   sub.textContent = `${MES_NAMES[state.month - 1]} ${state.year}`;
   card.appendChild(sub);
 
-  // Bloque "Equipo a cargo + Apoyo" (sólo lectura)
+  // Bloque "Equipo de intervención + Apoyo" (sólo lectura)
   card.appendChild(buildDayInfoBlock(state.year, state.month, day, { useStateData: true }));
 
   // Botón Marcar/Quitar feriado
@@ -1125,17 +1171,132 @@ function clearCurrentMonth() {
   showToast('Mes borrado');
 }
 
+// ---------- Modal: Configuración del generador ----------
+function openGenSettings() {
+  const modal = document.getElementById('gen-modal');
+  modal.classList.remove('hidden');
+  renderGenSettings();
+}
+
+function closeGenSettings() {
+  document.getElementById('gen-modal').classList.add('hidden');
+}
+
+function renderGenSettings() {
+  const cfg = loadGenConfig();
+  const list = document.getElementById('gen-teams-list');
+  list.innerHTML = '';
+
+  cfg.teams.forEach((team, idx) => {
+    const row = document.createElement('div');
+    row.className = 'gen-team-row';
+
+    const makeSelect = (val, onChange) => {
+      const sel = document.createElement('select');
+      const empty = document.createElement('option');
+      empty.value = ''; empty.textContent = '—';
+      sel.appendChild(empty);
+      ROSTER.forEach(n => {
+        const o = document.createElement('option');
+        o.value = n; o.textContent = n;
+        if (n === val) o.selected = true;
+        sel.appendChild(o);
+      });
+      if (val) {
+        sel.style.background = colorFor(val);
+        sel.style.color = textColorFor(val);
+      }
+      sel.addEventListener('change', (e) => onChange(e.target.value));
+      return sel;
+    };
+
+    const selA = makeSelect(team.a, (v) => {
+      cfg.teams[idx].a = v || null;
+      saveGenConfig(cfg);
+      renderGenSettings();
+    });
+    const selB = makeSelect(team.b, (v) => {
+      cfg.teams[idx].b = v || null;
+      saveGenConfig(cfg);
+      renderGenSettings();
+    });
+
+    const maxWrap = document.createElement('div');
+    maxWrap.style.display = 'flex';
+    maxWrap.style.flexDirection = 'column';
+    maxWrap.style.alignItems = 'center';
+    const maxInp = document.createElement('input');
+    maxInp.type = 'number';
+    maxInp.className = 'max-days';
+    maxInp.min = '1'; maxInp.max = '31';
+    maxInp.value = team.maxDays || 9;
+    maxInp.addEventListener('change', (e) => {
+      cfg.teams[idx].maxDays = parseInt(e.target.value) || 9;
+      saveGenConfig(cfg);
+    });
+    const lbl = document.createElement('span');
+    lbl.className = 'max-days-label';
+    lbl.textContent = 'máx/mes';
+    maxWrap.appendChild(maxInp);
+    maxWrap.appendChild(lbl);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'gen-del';
+    delBtn.textContent = '×';
+    delBtn.title = 'Eliminar equipo';
+    delBtn.addEventListener('click', () => {
+      if (cfg.teams.length <= 1) { showToast('Tiene que haber al menos 1 equipo'); return; }
+      cfg.teams.splice(idx, 1);
+      saveGenConfig(cfg);
+      renderGenSettings();
+    });
+
+    row.appendChild(selA);
+    row.appendChild(selB);
+    row.appendChild(maxWrap);
+    row.appendChild(delBtn);
+    list.appendChild(row);
+  });
+}
+
+// ---------- Configuración del generador (storage) ----------
+function loadGenConfig() {
+  try {
+    const raw = localStorage.getItem(GEN_CONFIG_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  // Default desde data.js
+  return { teams: deepCopy(DEFAULT_TEAMS) };
+}
+function saveGenConfig(cfg) {
+  try { localStorage.setItem(GEN_CONFIG_KEY, JSON.stringify(cfg)); }
+  catch (e) { console.warn('Save gen config error', e); }
+}
+function loadWeekendRotation() {
+  return parseInt(localStorage.getItem(WEEKEND_ROT_KEY) || '0', 10);
+}
+function saveWeekendRotation(idx) {
+  localStorage.setItem(WEEKEND_ROT_KEY, String(idx));
+}
+
 // ---------- Generador de mes ----------
 // Lógica:
-// - Lunes + Martes: mismo equipo (turno de 2 días)
-// - Miércoles + Jueves: otro equipo (turno de 2 días)
-// - Viernes: 1 equipo (turno de 1 día)
-// - Sábado + Domingo: otro equipo (turno de 2 días)
-// Por semana se eligen 4 equipos distintos de DEFAULT_TEAMS al azar.
+// - Por semana hay 4 "slots" de turnos:
+//   · Lunes + Martes (2 días, 1 equipo)
+//   · Miércoles + Jueves (2 días, 1 equipo)
+//   · Viernes (1 día, 1 equipo)
+//   · Sábado + Domingo (2 días, 1 equipo)  ← rotación global
+// - El slot de FIN DE SEMANA rota globalmente: cada nuevo fin de semana
+//   le toca al siguiente equipo en la lista, ciclando todos los equipos.
+// - Los slots de SEMANA se asignan al equipo menos usado del mes (balanceado)
+//   sin repetir un equipo dentro de la misma semana.
+// - Se respetan los topes (maxDays por equipo) y los feriados ya marcados.
 function generateMonth() {
-  const teams = (typeof DEFAULT_TEAMS !== 'undefined') ? DEFAULT_TEAMS : [];
+  const cfg = loadGenConfig();
+  const teams = cfg.teams || [];
   if (teams.length < 4) {
-    showToast('No hay suficientes equipos definidos');
+    showToast('Definí al menos 4 equipos en la configuración');
+    openGenSettings();
     return;
   }
   const msg = `Esto va a reemplazar TODOS los turnos de ${MES_NAMES[state.month - 1]} ${state.year} con una asignación generada. ¿Continuar?`;
@@ -1144,32 +1305,124 @@ function generateMonth() {
   const y = state.year, m = state.month;
   const daysInMonth = new Date(y, m, 0).getDate();
   const newData = {};
-  let weekTeams = null;
+  const usage = teams.map(() => 0);
+  let weekendIdx = loadWeekendRotation();
 
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dt = new Date(y, m - 1, d);
-    const dow = dt.getDay(); // 0=Dom, 1=Lun, ..., 6=Sáb
-
-    // Resetear equipos de la semana al cruzar Lunes (o al primer día)
-    if (dow === 1 || weekTeams === null) {
-      const shuffled = teams.slice().sort(() => Math.random() - 0.5);
-      weekTeams = shuffled.slice(0, 4);
+  // Helper: ¿se puede usar este equipo?
+  function canUse(idx, addDays) {
+    const max = teams[idx].maxDays || Infinity;
+    return (usage[idx] + addDays) <= max;
+  }
+  // Helper: índice del equipo menos usado, excluyendo los ya usados esta semana
+  function pickLeastUsed(excludeIdxs, addDays) {
+    let bestIdx = -1, bestUsage = Infinity;
+    for (let i = 0; i < teams.length; i++) {
+      if (excludeIdxs.has(i)) continue;
+      if (!canUse(i, addDays)) continue;
+      if (usage[i] < bestUsage) { bestIdx = i; bestUsage = usage[i]; }
     }
-
-    let team;
-    if (dow === 1 || dow === 2) team = weekTeams[0];      // Lun-Mar
-    else if (dow === 3 || dow === 4) team = weekTeams[1]; // Mié-Jue
-    else if (dow === 5) team = weekTeams[2];              // Vie
-    else team = weekTeams[3];                              // Sáb-Dom
-
-    if (team && !isFeriado(y, m, d)) {
-      newData[String(d)] = [[team[0], team[1]]];
+    if (bestIdx >= 0) return bestIdx;
+    // Si todos llenos por maxDays, ignorar el cap (último recurso)
+    for (let i = 0; i < teams.length; i++) {
+      if (excludeIdxs.has(i)) continue;
+      if (usage[i] < bestUsage) { bestIdx = i; bestUsage = usage[i]; }
     }
+    return bestIdx;
   }
 
-  // Guardar y refrescar
+  // Agrupar días por semana (Mon=arranque)
+  const weeks = []; // cada week = { mon, tue, wed, thu, fri, sat, sun } con día o null
+  let current = null;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dt = new Date(y, m - 1, d);
+    let dow = dt.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    dow = dow === 0 ? 6 : dow - 1; // 0=Mon ... 6=Sun
+    if (current === null || dow === 0) {
+      current = { 0: null, 1: null, 2: null, 3: null, 4: null, 5: null, 6: null };
+      weeks.push(current);
+    }
+    current[dow] = d;
+  }
+
+  // Asignar equipos a cada semana
+  weeks.forEach((wk) => {
+    const used = new Set();
+
+    // Slot 1: Sat-Sun (rotación global)
+    const hasSat = wk[5] !== null;
+    const hasSun = wk[6] !== null;
+    if (hasSat || hasSun) {
+      // Encontrar el siguiente equipo en rotación que pueda asignarse
+      const addDays = (hasSat ? 1 : 0) + (hasSun ? 1 : 0);
+      let attempts = 0, weekendTeam = -1;
+      while (attempts < teams.length) {
+        const candidate = weekendIdx % teams.length;
+        if (canUse(candidate, addDays) && !used.has(candidate)) {
+          weekendTeam = candidate;
+          break;
+        }
+        weekendIdx++;
+        attempts++;
+      }
+      if (weekendTeam < 0) {
+        // No queda nadie con cupo - usar el menos usado igual
+        weekendTeam = pickLeastUsed(used, addDays);
+      }
+      if (weekendTeam >= 0) {
+        const t = teams[weekendTeam];
+        if (hasSat && !isFeriado(y, m, wk[5])) {
+          newData[String(wk[5])] = [[t.a, t.b]]; usage[weekendTeam]++;
+        }
+        if (hasSun && !isFeriado(y, m, wk[6])) {
+          newData[String(wk[6])] = [[t.a, t.b]]; usage[weekendTeam]++;
+        }
+        used.add(weekendTeam);
+        weekendIdx++;
+      }
+    }
+
+    // Slot 2: Mon-Tue
+    const hasMon = wk[0] !== null, hasTue = wk[1] !== null;
+    if (hasMon || hasTue) {
+      const addDays = (hasMon ? 1 : 0) + (hasTue ? 1 : 0);
+      const idx = pickLeastUsed(used, addDays);
+      if (idx >= 0) {
+        const t = teams[idx];
+        if (hasMon && !isFeriado(y, m, wk[0])) { newData[String(wk[0])] = [[t.a, t.b]]; usage[idx]++; }
+        if (hasTue && !isFeriado(y, m, wk[1])) { newData[String(wk[1])] = [[t.a, t.b]]; usage[idx]++; }
+        used.add(idx);
+      }
+    }
+
+    // Slot 3: Wed-Thu
+    const hasWed = wk[2] !== null, hasThu = wk[3] !== null;
+    if (hasWed || hasThu) {
+      const addDays = (hasWed ? 1 : 0) + (hasThu ? 1 : 0);
+      const idx = pickLeastUsed(used, addDays);
+      if (idx >= 0) {
+        const t = teams[idx];
+        if (hasWed && !isFeriado(y, m, wk[2])) { newData[String(wk[2])] = [[t.a, t.b]]; usage[idx]++; }
+        if (hasThu && !isFeriado(y, m, wk[3])) { newData[String(wk[3])] = [[t.a, t.b]]; usage[idx]++; }
+        used.add(idx);
+      }
+    }
+
+    // Slot 4: Fri
+    const hasFri = wk[4] !== null;
+    if (hasFri) {
+      const idx = pickLeastUsed(used, 1);
+      if (idx >= 0) {
+        const t = teams[idx];
+        if (!isFeriado(y, m, wk[4])) { newData[String(wk[4])] = [[t.a, t.b]]; usage[idx]++; }
+        used.add(idx);
+      }
+    }
+  });
+
+  // Guardar
   state.data = newData;
   saveMonthData(y, m, newData);
+  saveWeekendRotation(weekendIdx);
   state.selectedDay = null;
   rerenderActiveView(); renderDetail();
   showToast('Turnos generados');
@@ -1235,8 +1488,29 @@ function wireUp() {
       else if (a === 'import') document.getElementById('import-file').click();
       else if (a === 'clear') clearCurrentMonth();
       else if (a === 'generate') generateMonth();
+      else if (a === 'gen-settings') openGenSettings();
       else if (a === 'install') triggerInstall();
     });
+  });
+
+  // Modal del generador
+  document.getElementById('gen-modal-close').addEventListener('click', closeGenSettings);
+  document.querySelector('#gen-modal .modal-backdrop').addEventListener('click', closeGenSettings);
+  document.getElementById('gen-add-team').addEventListener('click', () => {
+    const cfg = loadGenConfig();
+    cfg.teams.push({ a: null, b: null, maxDays: 9 });
+    saveGenConfig(cfg);
+    renderGenSettings();
+  });
+  document.getElementById('gen-reset').addEventListener('click', () => {
+    if (!confirm('¿Restaurar los equipos por defecto?')) return;
+    saveGenConfig({ teams: deepCopy(DEFAULT_TEAMS) });
+    renderGenSettings();
+    showToast('Equipos restaurados');
+  });
+  document.getElementById('gen-save').addEventListener('click', () => {
+    closeGenSettings();
+    setTimeout(() => generateMonth(), 200);
   });
   document.getElementById('import-file').addEventListener('change', (e) => {
     if (e.target.files[0]) importData(e.target.files[0]);

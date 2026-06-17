@@ -5,12 +5,16 @@ PWA (Progressive Web App) para gestionar y consultar los turnos de intervencione
 ## ✨ Funcionalidades
 
 - 📅 **Tres vistas** estilo Google Calendar: Mes, Semana y Día
-- 🧑‍🤝‍🧑 **Equipo a cargo + Equipo de apoyo**: al tocar cualquier día (en cualquier vista) ves quién está a cargo y quién es el apoyo (calculado automáticamente — el del día siguiente; si se repite, salta al próximo día con un equipo distinto)
-- 🎲 **Generador de mes**: botón en el menú que arma turnos siguiendo la lógica L+Ma, Mi+J, V, S+D con equipos aleatorios sin repetir dentro de la misma semana
-- 🟡 **Feriados**: botón "Marcar como feriado" en el panel del día. El día se pinta de amarillo y aparece una "F". El generador respeta los feriados existentes y no los sobreescribe.
-- 🔍 **Filtros**: arriba del calendario hay 2 desplegables — una para filtrar por persona (ves sólo sus días) y otra para filtrar por equipo (los equipos detectados en el mes en curso). Se combinan.
-- ↶ **Deshacer**: cada día guarda hasta los últimos 10 cambios, con botón "Deshacer último cambio" cuando expandís el editor
-- ✎ **Editor colapsable**: por defecto el panel solo muestra info (cargo+apoyo). Botón "Editar filas del día" para abrir el editor avanzado cuando hace falta corregir manualmente.
+- 🧑‍🤝‍🧑 **Equipo de intervención + Equipo de apoyo**: al tocar cualquier día (en cualquier vista) ves quién está a cargo y quién es el apoyo (calculado automáticamente — el del día siguiente; si se repite, salta al próximo día con un equipo distinto)
+- 🔄 **Reemplazos rápidos**: las píldoras del equipo de intervención son tap-able. Tocás un nombre y elegís el reemplazo de los 15 del roster — para cuando alguien no puede ese día.
+- 🎲 **Generador de mes inteligente**:
+  - Pantalla previa para definir los **equipos** (parejas) y el **máximo de días por mes** de cada uno
+  - Lógica: L+Ma, Mi+J, V, S+D. El fin de semana **rota globalmente** entre los equipos (cada finde le toca a un equipo distinto en secuencia)
+  - Los días de semana se balancean automáticamente al equipo menos usado del mes
+  - Respeta los topes (máx/mes) y los feriados ya marcados
+- 🟡 **Feriados**: botón "Marcar como feriado" en el panel del día. El día se pinta de amarillo con marca "F"
+- 🔍 **Filtros**: por persona y por equipo del mes (combinables)
+- ↶ **Deshacer**: hasta los últimos 10 cambios por día
 - 🖥️ **Responsive**: en celular es compacta; en compu se expande tipo Google Calendar (1400px)
 - 🎨 Equipos coloreados según el código histórico del Excel
 - 📱 Instalable como app en Android e iOS (PWA)
@@ -153,6 +157,16 @@ Para repos privados, GitHub Pages cuesta plata. Alternativa gratis: Cloudflare P
 Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
+
+### v5
+- "Equipo a cargo" → renombrado a "Equipo de intervención" en todas las vistas
+- **Tiles editables**: las píldoras del equipo de intervención son tap-ables → dropdown con los 15 del roster para hacer reemplazos rápidos sin abrir el editor
+- **Generador mejorado**:
+  - Pantalla previa para definir parejas de equipos + máximo de días por mes de cada uno
+  - Lógica de rotación de fin de semana (cada finde le toca a un equipo distinto en secuencia, ciclando todos)
+  - Días de semana balanceados al equipo menos usado
+  - Respeta tope máximo por equipo y feriados
+- Equipos por defecto reducidos a 7 (lo típico) y configurables desde la app
 
 ### v4
 - **Generador automático de mes**: respeta la lógica L+Ma / Mi+J / V / S+D con equipos al azar sin repetir dentro de la misma semana
