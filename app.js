@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '7';
+const APP_VERSION = '8';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -17,6 +17,7 @@ const HISTORY_PREFIX = 'turnos:hist:';
 const FERIADO_PREFIX = 'turnos:feriado:';
 const GEN_CONFIG_KEY = 'turnos:gen_config';
 const WEEKEND_ROT_KEY = 'turnos:gen_weekend_idx';
+const TEAM_HISTORY_KEY = 'turnos:gen_team_history';
 const PERSON_COLORS_KEY = 'turnos:person_colors';
 const MAX_HISTORY_PER_DAY = 10;
 
@@ -501,12 +502,14 @@ function renderMonthView() {
     visibleSlots.forEach((slot, slotIdx) => {
       const row = document.createElement('div');
       row.className = 'slot';
+      // Tiles del mes NO son editables: en mobile son muy chicos y
+      // se termina seleccionando un agente sin querer al elegir el día.
+      // Editar el día se hace tocando el tile → panel desplegable.
       const pills = renderSlotPills(slot, {
-        editable: true,
+        editable: false,
         slotIdx,
         className: 'pill',
         abbrev: true,
-        onChange: (sIdx, sideIdx, newName) => updateSlotName(day, sIdx, sideIdx, newName),
       });
       pills.forEach(p => row.appendChild(p));
       el.appendChild(row);
@@ -1559,6 +1562,111 @@ function saveWeekendRotation(idx) {
   localStorage.setItem(WEEKEND_ROT_KEY, String(idx));
 }
 
+// ---------- Historial cross-month de equipos (para balanceo) ----------
+// Cada equipo identificado por su "key" (nombres ordenados alfabéticamente).
+// Si la composición del equipo cambia, queda como una entrada nueva.
+function teamKey(team) {
+  const parts = [team.a, team.b];
+  if (team.c) parts.push(team.c);
+  return parts.filter(Boolean).sort().join('|');
+}
+function loadTeamHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(TEAM_HISTORY_KEY) || '{}');
+  } catch { return {}; }
+}
+function saveTeamHistory(h) {
+  try { localStorage.setItem(TEAM_HISTORY_KEY, JSON.stringify(h)); }
+  catch (e) { console.warn('Save team history error', e); }
+}
+function resetTeamHistory() {
+  localStorage.removeItem(TEAM_HISTORY_KEY);
+}
+
+// ---------- Feriados nacionales de Argentina ----------
+// Algoritmo de Pascua (Gregoriano anónimo)
+function easterDate(year) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const mm = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * mm + 114) / 31);
+  const day = ((h + l - 7 * mm + 114) % 31) + 1;
+  return new Date(year, month - 1, day);
+}
+
+function getArgentinaHolidays(year) {
+  const easter = easterDate(year);
+  const goodFri = new Date(easter); goodFri.setDate(easter.getDate() - 2);
+  const carnLun = new Date(easter); carnLun.setDate(easter.getDate() - 48);
+  const carnMar = new Date(easter); carnMar.setDate(easter.getDate() - 47);
+
+  return [
+    { month: 1,  day: 1,  name: 'Año Nuevo' },
+    { month: carnLun.getMonth() + 1, day: carnLun.getDate(), name: 'Carnaval' },
+    { month: carnMar.getMonth() + 1, day: carnMar.getDate(), name: 'Carnaval' },
+    { month: 3,  day: 24, name: 'Día de la Memoria' },
+    { month: 4,  day: 2,  name: 'Veteranos de Malvinas' },
+    { month: goodFri.getMonth() + 1, day: goodFri.getDate(), name: 'Viernes Santo' },
+    { month: 5,  day: 1,  name: 'Día del Trabajador' },
+    { month: 5,  day: 25, name: 'Revolución de Mayo' },
+    { month: 6,  day: 17, name: 'Güemes' },
+    { month: 6,  day: 20, name: 'Belgrano' },
+    { month: 7,  day: 9,  name: 'Día de la Independencia' },
+    { month: 8,  day: 17, name: 'San Martín' },
+    { month: 10, day: 12, name: 'Diversidad Cultural' },
+    { month: 11, day: 20, name: 'Soberanía Nacional' },
+    { month: 12, day: 8,  name: 'Inmaculada Concepción' },
+    { month: 12, day: 25, name: 'Navidad' }
+  ];
+}
+
+// Precarga los feriados nacionales para el año actual (todos los meses).
+// Solo agrega los que no estuvieran marcados ya, no pisa los manuales.
+function preloadArgentinaHolidays() {
+  const y = state.year;
+  if (!confirm(`Precargar todos los feriados nacionales de Argentina para ${y}?`)) return;
+  const holidays = getArgentinaHolidays(y);
+  let totalAdded = 0;
+  const byMonth = {};
+  holidays.forEach(h => {
+    if (!byMonth[h.month]) byMonth[h.month] = [];
+    byMonth[h.month].push(h.day);
+  });
+  for (const mStr in byMonth) {
+    const m = parseInt(mStr);
+    const existing = loadFeriados(y, m);
+    let added = 0;
+    byMonth[mStr].forEach(d => {
+      if (!existing[String(d)]) {
+        existing[String(d)] = true;
+        added++;
+      }
+    });
+    if (added > 0) {
+      saveFeriados(y, m, existing);
+      totalAdded += added;
+    }
+  }
+  // Recargar el mes actual
+  state._feriados = loadFeriados(state.year, state.month);
+  rerenderActiveView();
+  if (state.selectedDay !== null) renderDetail();
+  if (totalAdded === 0) {
+    showToast('Los feriados ya estaban marcados');
+  } else {
+    showToast(`${totalAdded} feriado(s) cargado(s) para ${y}`);
+  }
+}
+
 // ---------- Generador de mes ----------
 // Lógica:
 // - Por semana hay 4 "slots" de turnos:
@@ -1589,19 +1697,44 @@ function generateMonth() {
   let weekendIdx = loadWeekendRotation();
   const unassignedDays = [];
 
-  // Helper: ¿se puede usar este equipo? (respeta cap estricto)
+  // Cargar historial cross-month (balance entre meses)
+  const teamHistory = loadTeamHistory();
+  const teamKeys = teams.map(t => teamKey(t));
+  const histDays = teams.map((_, i) => (teamHistory[teamKeys[i]]?.totalDays || 0));
+
+  // ¿Se puede usar este equipo? (respeta cap estricto)
   function canUse(idx, addDays) {
     const max = teams[idx].maxDays || Infinity;
     return (usage[idx] + addDays) <= max;
   }
-  // Helper: índice del equipo menos usado, excluyendo los ya usados esta semana
-  // Devuelve -1 si NO HAY ninguno disponible (respetando cap)
-  function pickLeastUsed(excludeIdxs, addDays) {
-    let bestIdx = -1, bestUsage = Infinity;
+
+  // "Score" del equipo: equipos con menos días este mes Y menos días históricos
+  // tienen menor score → son preferidos.
+  // Peso fuerte al mes actual, peso suave al historial.
+  function effectiveScore(idx) {
+    return usage[idx] * 10 + histDays[idx];
+  }
+
+  // Elige el mejor equipo disponible. `excludeHard` = no se pueden usar;
+  // `preferAvoid` = preferir no usar (soft constraint).
+  // Devuelve -1 si no hay opción disponible respetando el cap.
+  function pickBest(excludeHard, addDays, preferAvoid) {
+    let bestIdx = -1, bestScore = Infinity;
+    // Primer pasada: respetando preferAvoid
     for (let i = 0; i < teams.length; i++) {
-      if (excludeIdxs.has(i)) continue;
+      if (excludeHard.has(i)) continue;
+      if (preferAvoid && preferAvoid.has(i)) continue;
       if (!canUse(i, addDays)) continue;
-      if (usage[i] < bestUsage) { bestIdx = i; bestUsage = usage[i]; }
+      const s = effectiveScore(i);
+      if (s < bestScore) { bestIdx = i; bestScore = s; }
+    }
+    if (bestIdx >= 0) return bestIdx;
+    // Segunda pasada: ignorando preferAvoid (fallback)
+    for (let i = 0; i < teams.length; i++) {
+      if (excludeHard.has(i)) continue;
+      if (!canUse(i, addDays)) continue;
+      const s = effectiveScore(i);
+      if (s < bestScore) { bestIdx = i; bestScore = s; }
     }
     return bestIdx;
   }
@@ -1617,7 +1750,6 @@ function generateMonth() {
       if (d === null) return;
       if (isFeriado(y, m, d)) return;
       const slots = [[t.a, t.b]];
-      // Si el equipo tiene un 3er miembro, va como slot adicional
       if (t.c) slots.push([t.c, null]);
       newData[String(d)] = slots;
       usage[teamIdx]++;
@@ -1639,29 +1771,51 @@ function generateMonth() {
     current[dow] = d;
   }
 
+  // Track del equipo asignado en cada slot la semana anterior, para evitar
+  // que el mismo equipo haga el mismo slot 2+ semanas seguidas.
+  const lastSlotTeam = { weekend: -1, monTue: -1, wedThu: -1, fri: -1 };
+
   // Asignar equipos a cada semana
   weeks.forEach((wk) => {
     const used = new Set();
 
-    // Slot Sat-Sun: rotación global
+    // Slot Sat-Sun: rotación global + evitar mismo equipo que la semana pasada
     const hasSat = wk[5] !== null;
     const hasSun = wk[6] !== null;
     if (hasSat || hasSun) {
       const addDays = (hasSat ? 1 : 0) + (hasSun ? 1 : 0);
+      const avoid = new Set();
+      if (lastSlotTeam.weekend >= 0) avoid.add(lastSlotTeam.weekend);
+
       let weekendTeam = -1, attempts = 0;
       while (attempts < teams.length) {
         const candidate = weekendIdx % teams.length;
-        if (canUse(candidate, addDays) && !used.has(candidate)) {
+        if (canUse(candidate, addDays) && !used.has(candidate) && !avoid.has(candidate)) {
           weekendTeam = candidate;
           break;
         }
         weekendIdx++;
         attempts++;
       }
-      // Si no se pudo (todos pasaron su cap), buscar el menos usado (respetando cap)
-      if (weekendTeam < 0) weekendTeam = pickLeastUsed(used, addDays);
+      // Fallback sin la restricción de "evitar" (puede pasar si solo queda 1 equipo)
+      if (weekendTeam < 0) {
+        attempts = 0;
+        while (attempts < teams.length) {
+          const candidate = weekendIdx % teams.length;
+          if (canUse(candidate, addDays) && !used.has(candidate)) {
+            weekendTeam = candidate;
+            break;
+          }
+          weekendIdx++;
+          attempts++;
+        }
+      }
+      // Último recurso: el menos usado
+      if (weekendTeam < 0) weekendTeam = pickBest(used, addDays, null);
+
       if (assignSlot(weekendTeam, [wk[5], wk[6]])) {
         used.add(weekendTeam);
+        lastSlotTeam.weekend = weekendTeam;
         weekendIdx++;
       }
     }
@@ -1670,30 +1824,54 @@ function generateMonth() {
     const hasMon = wk[0] !== null, hasTue = wk[1] !== null;
     if (hasMon || hasTue) {
       const addDays = (hasMon ? 1 : 0) + (hasTue ? 1 : 0);
-      const idx = pickLeastUsed(used, addDays);
-      if (assignSlot(idx, [wk[0], wk[1]])) used.add(idx);
+      const avoid = new Set();
+      if (lastSlotTeam.monTue >= 0) avoid.add(lastSlotTeam.monTue);
+      const idx = pickBest(used, addDays, avoid);
+      if (assignSlot(idx, [wk[0], wk[1]])) {
+        used.add(idx);
+        lastSlotTeam.monTue = idx;
+      }
     }
 
     // Slot Wed-Thu
     const hasWed = wk[2] !== null, hasThu = wk[3] !== null;
     if (hasWed || hasThu) {
       const addDays = (hasWed ? 1 : 0) + (hasThu ? 1 : 0);
-      const idx = pickLeastUsed(used, addDays);
-      if (assignSlot(idx, [wk[2], wk[3]])) used.add(idx);
+      const avoid = new Set();
+      if (lastSlotTeam.wedThu >= 0) avoid.add(lastSlotTeam.wedThu);
+      const idx = pickBest(used, addDays, avoid);
+      if (assignSlot(idx, [wk[2], wk[3]])) {
+        used.add(idx);
+        lastSlotTeam.wedThu = idx;
+      }
     }
 
     // Slot Fri
     const hasFri = wk[4] !== null;
     if (hasFri) {
-      const idx = pickLeastUsed(used, 1);
-      if (assignSlot(idx, [wk[4]])) used.add(idx);
+      const avoid = new Set();
+      if (lastSlotTeam.fri >= 0) avoid.add(lastSlotTeam.fri);
+      const idx = pickBest(used, 1, avoid);
+      if (assignSlot(idx, [wk[4]])) {
+        used.add(idx);
+        lastSlotTeam.fri = idx;
+      }
     }
   });
 
-  // Guardar
+  // Guardar mes
   state.data = newData;
   saveMonthData(y, m, newData);
   saveWeekendRotation(weekendIdx);
+
+  // Actualizar historial cross-month
+  teams.forEach((t, idx) => {
+    const k = teamKeys[idx];
+    if (!teamHistory[k]) teamHistory[k] = { totalDays: 0 };
+    teamHistory[k].totalDays += usage[idx];
+  });
+  saveTeamHistory(teamHistory);
+
   state.selectedDay = null;
   rerenderActiveView(); renderDetail();
 
@@ -1766,6 +1944,7 @@ function wireUp() {
       else if (a === 'generate') generateMonth();
       else if (a === 'gen-settings') openGenSettings();
       else if (a === 'colors-settings') openColorsSettings();
+      else if (a === 'load-holidays') preloadArgentinaHolidays();
       else if (a === 'install') triggerInstall();
     });
   });

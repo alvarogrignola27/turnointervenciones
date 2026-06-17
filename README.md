@@ -158,6 +158,14 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v8
+- **Generador mucho más equitativo**:
+  - Ya no repite el mismo equipo en el mismo slot 2 semanas seguidas (fin de bug de "3 viernes seguidos con Campi+Montilla")
+  - Balance **cross-month**: los equipos que hicieron más días el mes pasado tienen menos prioridad este mes. Se va auto-balanceando con el tiempo.
+  - Los feriados nacionales se respetan automáticamente
+- **🇦🇷 Precarga de feriados nacionales de Argentina**: nuevo botón en el menú. Carga TODOS los feriados del año actual (Año Nuevo, Carnaval, Memoria, Malvinas, Viernes Santo, Trabajador, Revolución de Mayo, Güemes, Belgrano, Independencia, San Martín, Diversidad, Soberanía, Inmaculada, Navidad). El cálculo de Pascua/Carnaval/Viernes Santo es dinámico por año.
+- **Tiles del mes NO editables**: en mobile eran muy chicos y se cambiaba alguien sin querer al elegir el día. Ahora el calendario es solo lectura; para editar se toca el día → panel desplegable → ahí sí los pills son editables (igual que en vista Semana y Día).
+
 ### v7
 - **Colores configurables por persona** (menú "🎨 Colores de personas"): tocás el cuadradito de color y elegís el que quieras. Útil cuando alguien cambia de equipo de intervención.
 - **Equipos de 3 personas** soportados en el generador (ej. Sallas + Ibañez + Martinez). Botón "+" en la config para agregar 3ra persona a cualquier equipo.
