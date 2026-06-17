@@ -6,11 +6,13 @@ PWA (Progressive Web App) para gestionar y consultar los turnos de intervencione
 
 - 📅 **Tres vistas** estilo Google Calendar: Mes, Semana y Día
 - 🧑‍🤝‍🧑 **Equipo a cargo + Equipo de apoyo**: al tocar cualquier día (en cualquier vista) ves quién está a cargo y quién es el apoyo (calculado automáticamente — el del día siguiente; si se repite, salta al próximo día con un equipo distinto)
+- 🎲 **Generador de mes**: botón en el menú que arma turnos siguiendo la lógica L+Ma, Mi+J, V, S+D con equipos aleatorios sin repetir dentro de la misma semana
+- 🟡 **Feriados**: botón "Marcar como feriado" en el panel del día. El día se pinta de amarillo y aparece una "F". El generador respeta los feriados existentes y no los sobreescribe.
 - 🔍 **Filtros**: arriba del calendario hay 2 desplegables — una para filtrar por persona (ves sólo sus días) y otra para filtrar por equipo (los equipos detectados en el mes en curso). Se combinan.
-- ↶ **Deshacer**: cada día guarda hasta los últimos 10 cambios, con botón "Deshacer último cambio" en el panel de edición
+- ↶ **Deshacer**: cada día guarda hasta los últimos 10 cambios, con botón "Deshacer último cambio" cuando expandís el editor
+- ✎ **Editor colapsable**: por defecto el panel solo muestra info (cargo+apoyo). Botón "Editar filas del día" para abrir el editor avanzado cuando hace falta corregir manualmente.
 - 🖥️ **Responsive**: en celular es compacta; en compu se expande tipo Google Calendar (1400px)
 - 🎨 Equipos coloreados según el código histórico del Excel
-- ✏️ Edición por día: tap en una fecha → desplegables para cambiar los nombres
 - 📱 Instalable como app en Android e iOS (PWA)
 - 💾 Todos los datos quedan guardados en el teléfono (localStorage)
 - 🔄 Exportar/importar backups en JSON
@@ -151,6 +153,13 @@ Para repos privados, GitHub Pages cuesta plata. Alternativa gratis: Cloudflare P
 Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
+
+### v4
+- **Generador automático de mes**: respeta la lógica L+Ma / Mi+J / V / S+D con equipos al azar sin repetir dentro de la misma semana
+- **Feriados**: botón en el panel del día para marcar/quitar feriado. Día pintado de amarillo con marca "F"
+- **Panel de día limpio**: sólo muestra info (cargo + apoyo) por defecto. El editor avanzado queda colapsado tras "✎ Editar filas del día"
+- **Roster limpio**: removidos ALVARO GRIGNOLA y MARTIN VILLANUEVA (duplicados); FERIADO ya no está en el dropdown porque ahora es un flag separado
+- **Migración automática**: entradas viejas de "FERIADO" en los datos se convierten al nuevo sistema de flag
 
 ### v3
 - Tres vistas (Mes / Semana / Día) estilo Google Calendar

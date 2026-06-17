@@ -9,19 +9,38 @@ const ROSTER = [
 ];
 
 // "Otros": gente que NO hace turnos regulares, solo aparece en días específicos
-// (abogados, gente de oficios, marcadores especiales)
+// (limpiado: sin duplicados como ALVARO GRIGNOLA o MARTIN VILLANUEVA, y sin FERIADO
+// que ahora es un flag aparte que se setea con botón)
 const OTROS = [
-  'MARTIN', 'ALVARO',
-  'JUAN DIAZ LOZA', 'JUAN PABLO GODOY', 'MARTIN VILLANUEVA', 'ALVARO GRIGNOLA',
-  'FERIADO'
+  'JUAN DIAZ LOZA',
+  'JUAN PABLO GODOY',
+  'MARTIN',
+  'ALVARO'
 ];
 
-// Alias mantenidos por compatibilidad con código que aún los referencia
+// Alias mantenidos por compatibilidad con código legacy
 const ABOGADOS = ['JUAN DIAZ LOZA', 'JUAN PABLO GODOY', 'MARTIN VILLANUEVA', 'ALVARO GRIGNOLA'];
 const OFICIOS = ['MARTIN', 'ALVARO'];
 const SPECIAL = ['FERIADO'];
 
 const ALL_OPTIONS = [...ROSTER, ...OTROS];
+
+// Equipos típicos del roster (los que va a usar el generador automático)
+// Cada equipo es una pareja de personas que suelen ir juntas
+const DEFAULT_TEAMS = [
+  ['Hidalgo', 'Ibañez'],     // amarillo
+  ['Hidalgo', 'Laporta'],    // amarillo (variante)
+  ['Cabeza', 'Martinez'],    // verde
+  ['Cabeza', 'Celina'],      // verde (variante)
+  ['Frias', 'Diaz'],         // azul
+  ['Frias', 'Echague'],      // azul (variante)
+  ['Capdevila', 'Gomez'],    // violeta
+  ['Campi', 'Montilla'],     // gris
+  ['Campi', 'Echague'],      // gris (variante)
+  ['Sallas', 'Milisenda'],   // durazno
+  ['Sallas', 'Ibañez'],      // durazno (variante)
+  ['Milisenda', 'Diaz']      // mixto
+];
 
 // Color de equipo asignado a cada persona (idéntico al Excel)
 const COLORS = {
@@ -53,8 +72,8 @@ const COLORS = {
   'ALVARO GRIGNOLA':   '#D8D8D8',
   'MARTIN':            '#D8D8D8',
   'ALVARO':            '#D8D8D8',
-  // Especial
-  'FERIADO':           '#FCD9D9'
+  // Marcador de feriado (legacy, ahora se usa como flag aparte)
+  'FERIADO':           '#FFE680'
 };
 
 // Nombres con texto blanco (fondo oscuro)

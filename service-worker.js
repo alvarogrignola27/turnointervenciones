@@ -1,7 +1,7 @@
 // Service Worker para Turnos de Intervenciones
 // Estrategia: cache-first para los assets de la app
 
-const CACHE_NAME = 'turnos-v3';
+const CACHE_NAME = 'turnos-v4';
 const ASSETS = [
   './',
   './index.html',

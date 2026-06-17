@@ -162,6 +162,52 @@ input, select { font: inherit; }
 .undo-btn:active { background: #e5e5ea; }
 .undo-btn.hidden { display: none; }
 
+/* ========== Feriado button + states ========== */
+.feriado-btn {
+  width: 100%; height: 40px;
+  background: #fff8d9; border: 1.5px solid #ffd54f;
+  border-radius: 10px; color: #946800;
+  font-size: 14px; font-weight: 600;
+  margin-top: 12px;
+}
+.feriado-btn.active {
+  background: #ffd54f; color: #5a3d00;
+}
+.feriado-btn:active { transform: scale(0.98); }
+
+.edit-toggle {
+  width: 100%; height: 40px;
+  background: transparent; border: 1.5px dashed #c7c7cc;
+  border-radius: 10px; color: #1f3a68;
+  font-size: 13px; font-weight: 600;
+  margin-top: 8px;
+}
+
+/* Feriado en el calendario */
+.day.feriado {
+  background: #fff8d9;
+}
+.day.feriado.weekend { background: #fff3c4; }
+.feriado-mark {
+  position: absolute; top: 2px; right: 3px;
+  font-size: 9px; font-weight: 800;
+  background: #ffc000; color: #5a3d00;
+  padding: 1px 4px; border-radius: 3px;
+  line-height: 1.1;
+}
+.wk-day.feriado { background: #fff8d9; }
+.wk-feriado-tag {
+  margin-left: auto; font-size: 10px; font-weight: 700;
+  background: #ffc000; color: #5a3d00;
+  padding: 2px 8px; border-radius: 8px;
+}
+.dv-feriado-badge {
+  background: #ffc000; color: #5a3d00;
+  padding: 4px 10px; border-radius: 12px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+  margin-left: 8px;
+}
+
 /* ========== Layout ========== */
 .main-area { display: block; }
 .primary { width: 100%; }

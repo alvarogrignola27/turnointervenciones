@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '3';
+const APP_VERSION = '4';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -14,6 +14,7 @@ const DAY_NAMES_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const STORAGE_PREFIX = 'turnos:';
 const STORAGE_VERSION_KEY = 'turnos:_seed_version';
 const HISTORY_PREFIX = 'turnos:hist:';
+const FERIADO_PREFIX = 'turnos:feriado:';
 const MAX_HISTORY_PER_DAY = 10;
 
 // ---------- Estado ----------
@@ -25,8 +26,9 @@ const state = {
   day: today.getDate(),
   selectedDay: null,
   data: {},
-  filterPerson: null,     // nombre o null
-  filterTeam: null,       // {a, b} o null
+  filterPerson: null,
+  filterTeam: null,
+  editingDay: false,      // si el editor avanzado está expandido
 };
 
 let deferredInstallPrompt = null;
@@ -37,13 +39,19 @@ function storageKeyOf(y, m) { return STORAGE_PREFIX + monthKeyOf(y, m); }
 
 function loadMonthData(y, m) {
   const key = storageKeyOf(y, m);
+  let data;
   try {
     const stored = localStorage.getItem(key);
-    if (stored !== null) return JSON.parse(stored);
+    if (stored !== null) data = JSON.parse(stored);
   } catch (e) { console.warn('Read storage error', e); }
-  const seedKey = monthKeyOf(y, m);
-  return (typeof SEED_DATA !== 'undefined' && SEED_DATA[seedKey])
-    ? deepCopy(SEED_DATA[seedKey]) : {};
+  if (!data) {
+    const seedKey = monthKeyOf(y, m);
+    data = (typeof SEED_DATA !== 'undefined' && SEED_DATA[seedKey])
+      ? deepCopy(SEED_DATA[seedKey]) : {};
+  }
+  // Migrar entradas legacy de FERIADO al flag aparte
+  data = migrateLegacyFeriados(y, m, data);
+  return data;
 }
 
 function saveMonthData(y, m, data) {
@@ -104,12 +112,84 @@ function snapshotDayBeforeEdit(day) {
   pushHistory(state.year, state.month, day, state.data[String(day)] || []);
 }
 
+// ---------- Feriados ----------
+function feriadoKey(y, m) {
+  return `${FERIADO_PREFIX}${y}-${String(m).padStart(2,'0')}`;
+}
+function loadFeriados(y, m) {
+  try {
+    const raw = localStorage.getItem(feriadoKey(y, m));
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+function saveFeriados(y, m, feriados) {
+  const key = feriadoKey(y, m);
+  try {
+    if (Object.keys(feriados).length === 0) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(feriados));
+  } catch (e) { console.warn('Save feriado error', e); }
+}
+function isFeriado(y, m, d) {
+  if (y === state.year && m === state.month) {
+    return !!(state._feriados && state._feriados[String(d)]);
+  }
+  const f = loadFeriados(y, m);
+  return !!f[String(d)];
+}
+function toggleFeriado(day) {
+  if (!state._feriados) state._feriados = {};
+  const k = String(day);
+  if (state._feriados[k]) {
+    delete state._feriados[k];
+    showToast('Feriado quitado');
+  } else {
+    state._feriados[k] = true;
+    showToast('Marcado como feriado');
+  }
+  saveFeriados(state.year, state.month, state._feriados);
+}
+
+// Migra entradas legacy de 'FERIADO' en slots al sistema de flag aparte
+function migrateLegacyFeriados(y, m, data) {
+  let changed = false;
+  const feriados = loadFeriados(y, m);
+  const out = {};
+  for (const day in data) {
+    const slots = data[day];
+    const cleanSlots = [];
+    for (const slot of slots) {
+      if (slot[0] === 'FERIADO' || slot[1] === 'FERIADO') {
+        feriados[day] = true;
+        changed = true;
+        // Si el otro lado tiene un nombre real, conservarlo
+        const other = slot[0] === 'FERIADO' ? slot[1] : slot[0];
+        if (other) cleanSlots.push([other, null]);
+      } else {
+        cleanSlots.push(slot);
+      }
+    }
+    if (cleanSlots.length > 0) out[day] = cleanSlots;
+  }
+  if (changed) {
+    saveFeriados(y, m, feriados);
+    saveMonthData(y, m, out);
+    return out;
+  }
+  return data;
+}
+
 // Read any day's data (from current state or storage / seed)
 function getDayDataAny(y, m, d) {
   if (y === state.year && m === state.month) {
     return state.data[String(d)] || null;
   }
   return loadMonthData(y, m)[String(d)] || null;
+}
+
+// Recarga estado completo del mes (data + feriados) - llamado al cambiar de mes
+function reloadCurrentMonth() {
+  state.data = loadMonthData(state.year, state.month);
+  state._feriados = loadFeriados(state.year, state.month);
 }
 
 // ---------- Inicialización del seed ----------
@@ -261,6 +341,7 @@ function renderMonthView() {
     if (isWeekend(state.year, state.month, day)) el.classList.add('weekend');
     if (isToday(state.year, state.month, day)) el.classList.add('today');
     if (state.selectedDay === day) el.classList.add('selected');
+    if (isFeriado(state.year, state.month, day)) el.classList.add('feriado');
     if (filtersActive()) {
       if (dayMatchesFilters(day)) el.classList.add('filter-match');
       else el.classList.add('filtered-out');
@@ -270,6 +351,15 @@ function renderMonthView() {
     numEl.className = 'day-num';
     numEl.textContent = day;
     el.appendChild(numEl);
+
+    // Marca de feriado
+    if (isFeriado(state.year, state.month, day)) {
+      const fer = document.createElement('span');
+      fer.className = 'feriado-mark';
+      fer.textContent = 'F';
+      fer.title = 'Feriado';
+      el.appendChild(fer);
+    }
 
     const slots = state.data[String(day)] || [];
     const visibleSlots = slots.slice(0, 4);
@@ -347,6 +437,7 @@ function renderWeekView() {
     if (dow === 0 || dow === 6) card.classList.add('weekend');
     if (isToday(y, m, d)) card.classList.add('today');
     if (state.day === d && state.month === m && state.year === y) card.classList.add('selected');
+    if (isFeriado(y, m, d)) card.classList.add('feriado');
     // Aplicar filtros (solo en el mes actual)
     if (filtersActive() && y === state.year && m === state.month) {
       if (!dayMatchesFilters(d)) card.classList.add('filtered-out');
@@ -362,6 +453,12 @@ function renderWeekView() {
     num.textContent = d;
     head.appendChild(name);
     head.appendChild(num);
+    if (isFeriado(y, m, d)) {
+      const fer = document.createElement('span');
+      fer.className = 'wk-feriado-tag';
+      fer.textContent = 'Feriado';
+      head.appendChild(fer);
+    }
     card.appendChild(head);
 
     const slotsEl = document.createElement('div');
@@ -433,6 +530,12 @@ function renderDayView() {
     badge.className = 'dv-today-badge';
     badge.textContent = 'HOY';
     header.appendChild(badge);
+  }
+  if (isFeriado(y, m, d)) {
+    const ferBadge = document.createElement('span');
+    ferBadge.className = 'dv-feriado-badge';
+    ferBadge.textContent = 'FERIADO';
+    header.appendChild(ferBadge);
   }
   card.appendChild(header);
 
@@ -580,13 +683,14 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   return block;
 }
 
-// ---------- Render: detalle edición (con cargo+apoyo + filas editables) ----------
+// ---------- Render: detalle (info + edición opcional) ----------
 function renderDetail() {
   const det = document.getElementById('detail');
   const mainArea = document.querySelector('.main-area');
   if (state.selectedDay === null) {
     det.innerHTML = '';
     mainArea.classList.remove('has-detail');
+    state.editingDay = false;
     return;
   }
   mainArea.classList.add('has-detail');
@@ -610,86 +714,111 @@ function renderDetail() {
   // Bloque "Equipo a cargo + Apoyo" (sólo lectura)
   card.appendChild(buildDayInfoBlock(state.year, state.month, day, { useStateData: true }));
 
-  const section = document.createElement('div');
-  section.className = 'detail-section';
-  const label = document.createElement('div');
-  label.className = 'detail-section-label';
-  label.textContent = 'Filas del día';
-  section.appendChild(label);
+  // Botón Marcar/Quitar feriado
+  const feriBtn = document.createElement('button');
+  const isFer = isFeriado(state.year, state.month, day);
+  feriBtn.className = 'feriado-btn' + (isFer ? ' active' : '');
+  feriBtn.innerHTML = isFer ? '★ Quitar feriado' : '☆ Marcar como feriado';
+  feriBtn.addEventListener('click', () => {
+    toggleFeriado(day);
+    rerenderActiveView();
+    renderDetail();
+  });
+  card.appendChild(feriBtn);
 
-  slots.forEach((slot, idx) => {
-    const row = document.createElement('div');
-    row.className = 'slot-row';
+  // Toggle de edición avanzada
+  const editToggle = document.createElement('button');
+  editToggle.className = 'edit-toggle';
+  editToggle.innerHTML = state.editingDay ? '✓ Cerrar edición' : '✎ Editar filas del día';
+  editToggle.addEventListener('click', () => {
+    state.editingDay = !state.editingDay;
+    renderDetail();
+  });
+  card.appendChild(editToggle);
 
-    const selA = createNameSelect(slot[0], (val) => {
+  if (state.editingDay) {
+    const section = document.createElement('div');
+    section.className = 'detail-section';
+    const label = document.createElement('div');
+    label.className = 'detail-section-label';
+    label.textContent = 'Filas del día';
+    section.appendChild(label);
+
+    slots.forEach((slot, idx) => {
+      const row = document.createElement('div');
+      row.className = 'slot-row';
+
+      const selA = createNameSelect(slot[0], (val) => {
+        snapshotDayBeforeEdit(day);
+        state.data[String(day)][idx][0] = val || null;
+        cleanupDay(day);
+        saveMonthData(state.year, state.month, state.data);
+        rerenderActiveView(); renderDetail();
+      });
+      if (slot[0]) {
+        selA.style.background = colorFor(slot[0]);
+        selA.style.color = textColorFor(slot[0]);
+        selA.style.fontWeight = '600';
+      }
+
+      const selB = createNameSelect(slot[1], (val) => {
+        snapshotDayBeforeEdit(day);
+        state.data[String(day)][idx][1] = val || null;
+        cleanupDay(day);
+        saveMonthData(state.year, state.month, state.data);
+        rerenderActiveView(); renderDetail();
+      });
+      if (slot[1]) {
+        selB.style.background = colorFor(slot[1]);
+        selB.style.color = textColorFor(slot[1]);
+        selB.style.fontWeight = '600';
+      }
+
+      const del = document.createElement('button');
+      del.className = 'del';
+      del.innerHTML = '×';
+      del.setAttribute('aria-label', 'Eliminar fila');
+      del.addEventListener('click', () => {
+        snapshotDayBeforeEdit(day);
+        state.data[String(day)].splice(idx, 1);
+        cleanupDay(day);
+        saveMonthData(state.year, state.month, state.data);
+        rerenderActiveView(); renderDetail();
+      });
+
+      row.appendChild(selA);
+      row.appendChild(selB);
+      row.appendChild(del);
+      section.appendChild(row);
+    });
+
+    const addRow = document.createElement('div');
+    addRow.className = 'add-row';
+    const addBtn = document.createElement('button');
+    addBtn.className = 'add-btn primary';
+    addBtn.textContent = '+ Agregar fila';
+    addBtn.addEventListener('click', () => {
       snapshotDayBeforeEdit(day);
-      state.data[String(day)][idx][0] = val || null;
-      cleanupDay(day);
+      if (!state.data[String(day)]) state.data[String(day)] = [];
+      state.data[String(day)].push([null, null]);
       saveMonthData(state.year, state.month, state.data);
       rerenderActiveView(); renderDetail();
     });
-    if (slot[0]) {
-      selA.style.background = colorFor(slot[0]);
-      selA.style.color = textColorFor(slot[0]);
-      selA.style.fontWeight = '600';
+    addRow.appendChild(addBtn);
+    section.appendChild(addRow);
+
+    // Botón Deshacer
+    if (hasHistory(state.year, state.month, day)) {
+      const undoBtn = document.createElement('button');
+      undoBtn.className = 'undo-btn';
+      undoBtn.innerHTML = '↶ Deshacer último cambio';
+      undoBtn.addEventListener('click', () => undoDay(day));
+      section.appendChild(undoBtn);
     }
 
-    const selB = createNameSelect(slot[1], (val) => {
-      snapshotDayBeforeEdit(day);
-      state.data[String(day)][idx][1] = val || null;
-      cleanupDay(day);
-      saveMonthData(state.year, state.month, state.data);
-      rerenderActiveView(); renderDetail();
-    });
-    if (slot[1]) {
-      selB.style.background = colorFor(slot[1]);
-      selB.style.color = textColorFor(slot[1]);
-      selB.style.fontWeight = '600';
-    }
-
-    const del = document.createElement('button');
-    del.className = 'del';
-    del.innerHTML = '×';
-    del.setAttribute('aria-label', 'Eliminar fila');
-    del.addEventListener('click', () => {
-      snapshotDayBeforeEdit(day);
-      state.data[String(day)].splice(idx, 1);
-      cleanupDay(day);
-      saveMonthData(state.year, state.month, state.data);
-      rerenderActiveView(); renderDetail();
-    });
-
-    row.appendChild(selA);
-    row.appendChild(selB);
-    row.appendChild(del);
-    section.appendChild(row);
-  });
-
-  const addRow = document.createElement('div');
-  addRow.className = 'add-row';
-  const addBtn = document.createElement('button');
-  addBtn.className = 'add-btn primary';
-  addBtn.textContent = '+ Agregar fila';
-  addBtn.addEventListener('click', () => {
-    snapshotDayBeforeEdit(day);
-    if (!state.data[String(day)]) state.data[String(day)] = [];
-    state.data[String(day)].push([null, null]);
-    saveMonthData(state.year, state.month, state.data);
-    rerenderActiveView(); renderDetail();
-  });
-  addRow.appendChild(addBtn);
-  section.appendChild(addRow);
-
-  // Botón Deshacer
-  if (hasHistory(state.year, state.month, day)) {
-    const undoBtn = document.createElement('button');
-    undoBtn.className = 'undo-btn';
-    undoBtn.innerHTML = '↶ Deshacer último cambio';
-    undoBtn.addEventListener('click', () => undoDay(day));
-    section.appendChild(undoBtn);
+    card.appendChild(section);
   }
 
-  card.appendChild(section);
   det.innerHTML = '';
   det.appendChild(card);
 }
@@ -773,19 +902,19 @@ function navPrev() {
     state.month--;
     if (state.month < 1) { state.month = 12; state.year--; }
     state.selectedDay = null;
-    state.data = loadMonthData(state.year, state.month);
+    reloadCurrentMonth();
     renderMonthView(); renderDetail(); renderFilters();
   } else if (state.view === 'week') {
     const dt = new Date(state.year, state.month - 1, state.day);
     dt.setDate(dt.getDate() - 7);
     state.year = dt.getFullYear(); state.month = dt.getMonth() + 1; state.day = dt.getDate();
-    state.data = loadMonthData(state.year, state.month);
+    reloadCurrentMonth();
     renderWeekView(); renderFilters();
   } else {
     const dt = new Date(state.year, state.month - 1, state.day);
     dt.setDate(dt.getDate() - 1);
     state.year = dt.getFullYear(); state.month = dt.getMonth() + 1; state.day = dt.getDate();
-    state.data = loadMonthData(state.year, state.month);
+    reloadCurrentMonth();
     renderDayView(); renderFilters();
   }
 }
@@ -794,19 +923,19 @@ function navNext() {
     state.month++;
     if (state.month > 12) { state.month = 1; state.year++; }
     state.selectedDay = null;
-    state.data = loadMonthData(state.year, state.month);
+    reloadCurrentMonth();
     renderMonthView(); renderDetail(); renderFilters();
   } else if (state.view === 'week') {
     const dt = new Date(state.year, state.month - 1, state.day);
     dt.setDate(dt.getDate() + 7);
     state.year = dt.getFullYear(); state.month = dt.getMonth() + 1; state.day = dt.getDate();
-    state.data = loadMonthData(state.year, state.month);
+    reloadCurrentMonth();
     renderWeekView(); renderFilters();
   } else {
     const dt = new Date(state.year, state.month - 1, state.day);
     dt.setDate(dt.getDate() + 1);
     state.year = dt.getFullYear(); state.month = dt.getMonth() + 1; state.day = dt.getDate();
-    state.data = loadMonthData(state.year, state.month);
+    reloadCurrentMonth();
     renderDayView(); renderFilters();
   }
 }
@@ -815,7 +944,7 @@ function goToday() {
   state.month = today.getMonth() + 1;
   state.day = today.getDate();
   state.selectedDay = state.view === 'month' ? today.getDate() : null;
-  state.data = loadMonthData(state.year, state.month);
+  reloadCurrentMonth();
   rerenderActiveView();
   if (state.view === 'month') renderDetail();
   renderFilters();
@@ -825,7 +954,7 @@ function jumpTo(y, m) {
   state.year = y; state.month = m;
   state.day = Math.min(state.day, new Date(y, m, 0).getDate());
   state.selectedDay = null;
-  state.data = loadMonthData(state.year, state.month);
+  reloadCurrentMonth();
   rerenderActiveView();
   if (state.view === 'month') renderDetail();
   renderFilters();
@@ -976,7 +1105,7 @@ function importData(file) {
         }
       }
       showToast(`${count} meses importados`);
-      state.data = loadMonthData(state.year, state.month);
+      reloadCurrentMonth();
       rerenderActiveView(); renderDetail();
     } catch (err) {
       showToast('Archivo inválido'); console.error(err);
@@ -988,10 +1117,62 @@ function importData(file) {
 function clearCurrentMonth() {
   if (!confirm(`¿Borrar todos los datos de ${MES_NAMES[state.month - 1]} ${state.year}?`)) return;
   state.data = {};
+  state._feriados = {};
   state.selectedDay = null;
   saveMonthData(state.year, state.month, state.data);
+  saveFeriados(state.year, state.month, state._feriados);
   rerenderActiveView(); renderDetail();
   showToast('Mes borrado');
+}
+
+// ---------- Generador de mes ----------
+// Lógica:
+// - Lunes + Martes: mismo equipo (turno de 2 días)
+// - Miércoles + Jueves: otro equipo (turno de 2 días)
+// - Viernes: 1 equipo (turno de 1 día)
+// - Sábado + Domingo: otro equipo (turno de 2 días)
+// Por semana se eligen 4 equipos distintos de DEFAULT_TEAMS al azar.
+function generateMonth() {
+  const teams = (typeof DEFAULT_TEAMS !== 'undefined') ? DEFAULT_TEAMS : [];
+  if (teams.length < 4) {
+    showToast('No hay suficientes equipos definidos');
+    return;
+  }
+  const msg = `Esto va a reemplazar TODOS los turnos de ${MES_NAMES[state.month - 1]} ${state.year} con una asignación generada. ¿Continuar?`;
+  if (!confirm(msg)) return;
+
+  const y = state.year, m = state.month;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const newData = {};
+  let weekTeams = null;
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dt = new Date(y, m - 1, d);
+    const dow = dt.getDay(); // 0=Dom, 1=Lun, ..., 6=Sáb
+
+    // Resetear equipos de la semana al cruzar Lunes (o al primer día)
+    if (dow === 1 || weekTeams === null) {
+      const shuffled = teams.slice().sort(() => Math.random() - 0.5);
+      weekTeams = shuffled.slice(0, 4);
+    }
+
+    let team;
+    if (dow === 1 || dow === 2) team = weekTeams[0];      // Lun-Mar
+    else if (dow === 3 || dow === 4) team = weekTeams[1]; // Mié-Jue
+    else if (dow === 5) team = weekTeams[2];              // Vie
+    else team = weekTeams[3];                              // Sáb-Dom
+
+    if (team && !isFeriado(y, m, d)) {
+      newData[String(d)] = [[team[0], team[1]]];
+    }
+  }
+
+  // Guardar y refrescar
+  state.data = newData;
+  saveMonthData(y, m, newData);
+  state.selectedDay = null;
+  rerenderActiveView(); renderDetail();
+  showToast('Turnos generados');
 }
 
 // ---------- Install prompt ----------
@@ -1053,6 +1234,7 @@ function wireUp() {
       if (a === 'export') exportData();
       else if (a === 'import') document.getElementById('import-file').click();
       else if (a === 'clear') clearCurrentMonth();
+      else if (a === 'generate') generateMonth();
       else if (a === 'install') triggerInstall();
     });
   });
@@ -1089,7 +1271,7 @@ function wireUp() {
 // ---------- Boot ----------
 function boot() {
   initSeed();
-  state.data = loadMonthData(state.year, state.month);
+  reloadCurrentMonth();
   rerenderActiveView();
   renderFilters();
   wireUp();
