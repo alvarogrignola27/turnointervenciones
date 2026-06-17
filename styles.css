@@ -352,6 +352,46 @@ input, select { font: inherit; }
 }
 .pill.empty { background: transparent; color: transparent; }
 
+/* Pill que ocupa toda la fila (Otros con un solo nombre) */
+.pill.pill-wide,
+.wk-pill.pill-wide,
+.dv-row-pill.pill-wide {
+  flex: 1 1 100%;
+  width: 100%;
+}
+
+/* Pill editable (es un <select> estilizado como pill) */
+.pill.pill-edit,
+.wk-pill.pill-edit,
+.dv-row-pill.pill-edit {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+}
+.pill.pill-edit {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='6' height='4' viewBox='0 0 6 4'><path fill='%23000000' fill-opacity='0.4' d='M3 4L0 0h6z'/></svg>");
+  padding-right: 12px;
+}
+.wk-pill.pill-edit {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'><path fill='%23000000' fill-opacity='0.4' d='M4 5L0 0h8z'/></svg>");
+  padding-right: 18px;
+}
+.dv-row-pill.pill-edit {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23000000' fill-opacity='0.4' d='M5 6L0 0h10z'/></svg>");
+  padding-right: 22px;
+}
+.pill.pill-edit.empty,
+.wk-pill.pill-edit.empty,
+.dv-row-pill.pill-edit.empty {
+  background-color: #f2f2f7; color: #c7c7cc;
+}
+.pill-edit option { background: #fff; color: #1c1c1e; }
+
 /* ========== WEEK VIEW ========== */
 .week-grid {
   display: flex; flex-direction: column; gap: 8px;

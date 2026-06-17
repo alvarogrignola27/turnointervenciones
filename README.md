@@ -158,6 +158,11 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v6
+- **Generador con cap ESTRICTO**: si ponés "máx/mes: 4", se respeta a rajatabla. Los días que sobran quedan vacíos y aparece un toast indicando cuántos no se asignaron (para que subas el cupo)
+- **TODOS los tiles editables**: en cualquier vista (mes / semana / día) tocás un pill y se abre el dropdown con los 15 del roster + "Otros". Reemplazos rápidos sin abrir el panel.
+- **Pills de "Otros" ancho completo**: cuando una fila de Otros tiene un solo nombre (oficios MARTIN / ALVARO / abogados), el pill ocupa todo el ancho del tile en lugar de dejar un hueco al lado.
+
 ### v5
 - "Equipo a cargo" → renombrado a "Equipo de intervención" en todas las vistas
 - **Tiles editables**: las píldoras del equipo de intervención son tap-ables → dropdown con los 15 del roster para hacer reemplazos rápidos sin abrir el editor

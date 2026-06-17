@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '5';
+const APP_VERSION = '6';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -239,6 +239,115 @@ function isWeekend(y, m, d) {
   return dow === 0 || dow === 6;
 }
 
+// ---------- Helpers de renderización de pills (editables) ----------
+// Construye una pill (div o select) para mostrar un nombre.
+// opts: { editable, onChange, className, ariaLabel }
+function makePill(name, opts = {}) {
+  const cls = opts.className || 'pill';
+  if (opts.editable) {
+    const sel = document.createElement('select');
+    sel.className = cls + ' pill-edit';
+    if (opts.ariaLabel) sel.setAttribute('aria-label', opts.ariaLabel);
+    if (name) {
+      sel.style.background = colorFor(name);
+      sel.style.color = textColorFor(name);
+    } else {
+      sel.classList.add('empty');
+    }
+    // Opciones: Equipo + Otros
+    const empty = document.createElement('option');
+    empty.value = ''; empty.textContent = '—';
+    sel.appendChild(empty);
+    const ogR = document.createElement('optgroup');
+    ogR.label = 'Equipo';
+    ROSTER.forEach(n => {
+      const o = document.createElement('option');
+      o.value = n; o.textContent = n;
+      if (n === name) o.selected = true;
+      ogR.appendChild(o);
+    });
+    sel.appendChild(ogR);
+    const ogO = document.createElement('optgroup');
+    ogO.label = 'Otros';
+    OTROS.forEach(n => {
+      const o = document.createElement('option');
+      o.value = n; o.textContent = n;
+      if (n === name) o.selected = true;
+      ogO.appendChild(o);
+    });
+    sel.appendChild(ogO);
+    // Eventos: no propagar para no abrir el panel del día
+    sel.addEventListener('click', (e) => e.stopPropagation());
+    sel.addEventListener('change', (e) => {
+      e.stopPropagation();
+      const newName = e.target.value || null;
+      if (opts.onChange) opts.onChange(newName);
+    });
+    return sel;
+  }
+  // Read-only
+  const pill = document.createElement('span');
+  pill.className = cls;
+  if (name) {
+    pill.textContent = opts.abbrev ? abbrev(name) : name;
+    pill.style.background = colorFor(name);
+    pill.style.color = textColorFor(name);
+  } else {
+    pill.classList.add('empty');
+    pill.textContent = '';
+  }
+  return pill;
+}
+
+// Renderiza los pills de un slot. Si el slot es "Otros" con un solo nombre,
+// devuelve UN pill ancho. Si no, devuelve 2 pills side-by-side.
+// opts: { editable, day, slotIdx, className, abbrev }
+function renderSlotPills(slot, opts = {}) {
+  const [a, b] = slot;
+  const teamLike = isRosterTeam(slot);
+  const hasA = !!a, hasB = !!b;
+  const oneOnly = (hasA && !hasB) || (!hasA && hasB);
+
+  // "Otros" full-width: cuando NO es un team del roster Y solo hay un nombre
+  if (!teamLike && oneOnly) {
+    const n = hasA ? a : b;
+    const sideIdx = hasA ? 0 : 1;
+    const pill = makePill(n, {
+      editable: opts.editable,
+      className: (opts.className || 'pill') + ' pill-wide',
+      abbrev: opts.abbrev,
+      onChange: opts.editable ? (newName) => {
+        opts.editable && opts.onChange && opts.onChange(opts.slotIdx, sideIdx, newName);
+      } : null,
+    });
+    return [pill];
+  }
+
+  // Standard: 2 pills side by side
+  return [a, b].map((n, sideIdx) => makePill(n, {
+    editable: opts.editable,
+    className: opts.className,
+    abbrev: opts.abbrev,
+    onChange: opts.editable ? (newName) => {
+      opts.editable && opts.onChange && opts.onChange(opts.slotIdx, sideIdx, newName);
+    } : null,
+  }));
+}
+
+// Handler unificado: actualiza un nombre en data del día actual
+function updateSlotName(day, slotIdx, sideIdx, newName) {
+  snapshotDayBeforeEdit(day);
+  if (!state.data[String(day)]) state.data[String(day)] = [];
+  while (state.data[String(day)].length <= slotIdx) {
+    state.data[String(day)].push([null, null]);
+  }
+  state.data[String(day)][slotIdx][sideIdx] = newName;
+  cleanupDay(day);
+  saveMonthData(state.year, state.month, state.data);
+  rerenderActiveView();
+  if (state.view === 'month' && state.selectedDay !== null) renderDetail();
+}
+
 // ---------- Lógica de Equipo de intervención / Equipo de apoyo ----------
 function teamsEqual(t1, t2) {
   if (!t1 || !t2) return false;
@@ -366,21 +475,17 @@ function renderMonthView() {
 
     const slots = state.data[String(day)] || [];
     const visibleSlots = slots.slice(0, 4);
-    visibleSlots.forEach(([a, b]) => {
+    visibleSlots.forEach((slot, slotIdx) => {
       const row = document.createElement('div');
       row.className = 'slot';
-      [a, b].forEach(name => {
-        const pill = document.createElement('span');
-        pill.className = 'pill';
-        if (name) {
-          pill.textContent = abbrev(name);
-          pill.style.background = colorFor(name);
-          pill.style.color = textColorFor(name);
-        } else {
-          pill.classList.add('empty');
-        }
-        row.appendChild(pill);
+      const pills = renderSlotPills(slot, {
+        editable: true,
+        slotIdx,
+        className: 'pill',
+        abbrev: true,
+        onChange: (sIdx, sideIdx, newName) => updateSlotName(day, sIdx, sideIdx, newName),
       });
+      pills.forEach(p => row.appendChild(p));
       el.appendChild(row);
     });
 
@@ -473,29 +578,25 @@ function renderWeekView() {
       empty.textContent = 'Sin asignar';
       slotsEl.appendChild(empty);
     } else {
-      slots.forEach(([a, b]) => {
+      const isCurrentMonth = (y === state.year && m === state.month);
+      slots.forEach((slot, slotIdx) => {
         const row = document.createElement('div');
         row.className = 'wk-slot';
-        [a, b].forEach(n => {
-          const p = document.createElement('div');
-          p.className = 'wk-pill';
-          if (n) {
-            p.textContent = n;
-            p.style.background = colorFor(n);
-            p.style.color = textColorFor(n);
-          } else {
-            p.classList.add('empty');
-            p.textContent = '—';
-          }
-          row.appendChild(p);
+        const pills = renderSlotPills(slot, {
+          editable: isCurrentMonth,
+          slotIdx,
+          className: 'wk-pill',
+          abbrev: false,
+          onChange: (sIdx, sideIdx, newName) => updateSlotName(d, sIdx, sideIdx, newName),
         });
+        pills.forEach(p => row.appendChild(p));
         slotsEl.appendChild(row);
       });
     }
     card.appendChild(slotsEl);
 
+    // Click en la tarjeta abre vista día (pero los selects no propagan)
     card.addEventListener('click', () => {
-      // Jump to day view for this date
       state.year = y;
       state.month = m;
       state.day = d;
@@ -549,30 +650,31 @@ function renderDayView() {
   const teamRes = findTeamSlot(slots);
   const teamSlot = teamRes ? teamRes.slot : null;
   if (slots && slots.length > 0) {
-    const otherSlots = slots.filter(s => !teamSlot || !teamsEqual(s, teamSlot));
-    if (otherSlots.length > 0) {
+    const isCurrentMonth = (y === state.year && m === state.month);
+    // Buscar índices originales de los slots "otros"
+    const otherIndices = [];
+    slots.forEach((s, i) => {
+      if (!teamSlot || !teamsEqual(s, teamSlot)) otherIndices.push(i);
+    });
+    if (otherIndices.length > 0) {
       const otherSec = document.createElement('div');
       otherSec.className = 'dv-section';
       const lbl = document.createElement('div');
       lbl.className = 'dv-section-label';
       lbl.textContent = 'Otros';
       otherSec.appendChild(lbl);
-      otherSlots.forEach(([a, b]) => {
+      otherIndices.forEach((slotIdx) => {
+        const slot = slots[slotIdx];
         const row = document.createElement('div');
         row.className = 'dv-row';
-        [a, b].forEach(n => {
-          const p = document.createElement('div');
-          p.className = 'dv-row-pill';
-          if (n) {
-            p.textContent = n;
-            p.style.background = colorFor(n);
-            p.style.color = textColorFor(n);
-          } else {
-            p.classList.add('empty');
-            p.textContent = '—';
-          }
-          row.appendChild(p);
+        const pills = renderSlotPills(slot, {
+          editable: isCurrentMonth,
+          slotIdx,
+          className: 'dv-row-pill',
+          abbrev: false,
+          onChange: (sIdx, sideIdx, newName) => updateSlotName(d, sIdx, sideIdx, newName),
         });
+        pills.forEach(p => row.appendChild(p));
         otherSec.appendChild(row);
       });
       card.appendChild(otherSec);
@@ -1307,13 +1409,15 @@ function generateMonth() {
   const newData = {};
   const usage = teams.map(() => 0);
   let weekendIdx = loadWeekendRotation();
+  const unassignedDays = [];
 
-  // Helper: ¿se puede usar este equipo?
+  // Helper: ¿se puede usar este equipo? (respeta cap estricto)
   function canUse(idx, addDays) {
     const max = teams[idx].maxDays || Infinity;
     return (usage[idx] + addDays) <= max;
   }
   // Helper: índice del equipo menos usado, excluyendo los ya usados esta semana
+  // Devuelve -1 si NO HAY ninguno disponible (respetando cap)
   function pickLeastUsed(excludeIdxs, addDays) {
     let bestIdx = -1, bestUsage = Infinity;
     for (let i = 0; i < teams.length; i++) {
@@ -1321,21 +1425,31 @@ function generateMonth() {
       if (!canUse(i, addDays)) continue;
       if (usage[i] < bestUsage) { bestIdx = i; bestUsage = usage[i]; }
     }
-    if (bestIdx >= 0) return bestIdx;
-    // Si todos llenos por maxDays, ignorar el cap (último recurso)
-    for (let i = 0; i < teams.length; i++) {
-      if (excludeIdxs.has(i)) continue;
-      if (usage[i] < bestUsage) { bestIdx = i; bestUsage = usage[i]; }
-    }
     return bestIdx;
   }
 
+  // Asignar slots: aplica equipo a los días dados (saltea feriados)
+  function assignSlot(teamIdx, days) {
+    if (teamIdx < 0) {
+      days.forEach(d => { if (d !== null && !isFeriado(y, m, d)) unassignedDays.push(d); });
+      return false;
+    }
+    const t = teams[teamIdx];
+    days.forEach(d => {
+      if (d === null) return;
+      if (isFeriado(y, m, d)) return;
+      newData[String(d)] = [[t.a, t.b]];
+      usage[teamIdx]++;
+    });
+    return true;
+  }
+
   // Agrupar días por semana (Mon=arranque)
-  const weeks = []; // cada week = { mon, tue, wed, thu, fri, sat, sun } con día o null
+  const weeks = [];
   let current = null;
   for (let d = 1; d <= daysInMonth; d++) {
     const dt = new Date(y, m - 1, d);
-    let dow = dt.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    let dow = dt.getDay();
     dow = dow === 0 ? 6 : dow - 1; // 0=Mon ... 6=Sun
     if (current === null || dow === 0) {
       current = { 0: null, 1: null, 2: null, 3: null, 4: null, 5: null, 6: null };
@@ -1348,13 +1462,12 @@ function generateMonth() {
   weeks.forEach((wk) => {
     const used = new Set();
 
-    // Slot 1: Sat-Sun (rotación global)
+    // Slot Sat-Sun: rotación global
     const hasSat = wk[5] !== null;
     const hasSun = wk[6] !== null;
     if (hasSat || hasSun) {
-      // Encontrar el siguiente equipo en rotación que pueda asignarse
       const addDays = (hasSat ? 1 : 0) + (hasSun ? 1 : 0);
-      let attempts = 0, weekendTeam = -1;
+      let weekendTeam = -1, attempts = 0;
       while (attempts < teams.length) {
         const candidate = weekendIdx % teams.length;
         if (canUse(candidate, addDays) && !used.has(candidate)) {
@@ -1364,58 +1477,35 @@ function generateMonth() {
         weekendIdx++;
         attempts++;
       }
-      if (weekendTeam < 0) {
-        // No queda nadie con cupo - usar el menos usado igual
-        weekendTeam = pickLeastUsed(used, addDays);
-      }
-      if (weekendTeam >= 0) {
-        const t = teams[weekendTeam];
-        if (hasSat && !isFeriado(y, m, wk[5])) {
-          newData[String(wk[5])] = [[t.a, t.b]]; usage[weekendTeam]++;
-        }
-        if (hasSun && !isFeriado(y, m, wk[6])) {
-          newData[String(wk[6])] = [[t.a, t.b]]; usage[weekendTeam]++;
-        }
+      // Si no se pudo (todos pasaron su cap), buscar el menos usado (respetando cap)
+      if (weekendTeam < 0) weekendTeam = pickLeastUsed(used, addDays);
+      if (assignSlot(weekendTeam, [wk[5], wk[6]])) {
         used.add(weekendTeam);
         weekendIdx++;
       }
     }
 
-    // Slot 2: Mon-Tue
+    // Slot Mon-Tue
     const hasMon = wk[0] !== null, hasTue = wk[1] !== null;
     if (hasMon || hasTue) {
       const addDays = (hasMon ? 1 : 0) + (hasTue ? 1 : 0);
       const idx = pickLeastUsed(used, addDays);
-      if (idx >= 0) {
-        const t = teams[idx];
-        if (hasMon && !isFeriado(y, m, wk[0])) { newData[String(wk[0])] = [[t.a, t.b]]; usage[idx]++; }
-        if (hasTue && !isFeriado(y, m, wk[1])) { newData[String(wk[1])] = [[t.a, t.b]]; usage[idx]++; }
-        used.add(idx);
-      }
+      if (assignSlot(idx, [wk[0], wk[1]])) used.add(idx);
     }
 
-    // Slot 3: Wed-Thu
+    // Slot Wed-Thu
     const hasWed = wk[2] !== null, hasThu = wk[3] !== null;
     if (hasWed || hasThu) {
       const addDays = (hasWed ? 1 : 0) + (hasThu ? 1 : 0);
       const idx = pickLeastUsed(used, addDays);
-      if (idx >= 0) {
-        const t = teams[idx];
-        if (hasWed && !isFeriado(y, m, wk[2])) { newData[String(wk[2])] = [[t.a, t.b]]; usage[idx]++; }
-        if (hasThu && !isFeriado(y, m, wk[3])) { newData[String(wk[3])] = [[t.a, t.b]]; usage[idx]++; }
-        used.add(idx);
-      }
+      if (assignSlot(idx, [wk[2], wk[3]])) used.add(idx);
     }
 
-    // Slot 4: Fri
+    // Slot Fri
     const hasFri = wk[4] !== null;
     if (hasFri) {
       const idx = pickLeastUsed(used, 1);
-      if (idx >= 0) {
-        const t = teams[idx];
-        if (!isFeriado(y, m, wk[4])) { newData[String(wk[4])] = [[t.a, t.b]]; usage[idx]++; }
-        used.add(idx);
-      }
+      if (assignSlot(idx, [wk[4]])) used.add(idx);
     }
   });
 
@@ -1425,7 +1515,12 @@ function generateMonth() {
   saveWeekendRotation(weekendIdx);
   state.selectedDay = null;
   rerenderActiveView(); renderDetail();
-  showToast('Turnos generados');
+
+  if (unassignedDays.length > 0) {
+    showToast(`Turnos generados. ${unassignedDays.length} día(s) sin asignar — subí el cupo máx/mes.`);
+  } else {
+    showToast('Turnos generados');
+  }
 }
 
 // ---------- Install prompt ----------
