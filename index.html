@@ -12,6 +12,10 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="styles.css">
+  <!-- Firebase SDK (compat) - se conecta solo si está configurado -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 </head>
 <body>
   <div id="app">
@@ -76,12 +80,16 @@
       <button data-action="gen-settings">⚙️ Configurar equipos del generador</button>
       <button data-action="colors-settings">🎨 Colores de personas</button>
       <button data-action="load-holidays">🇦🇷 Precargar feriados nacionales</button>
+      <button data-action="sync-settings">☁️ Sincronización en la nube</button>
       <button data-action="export">Exportar datos (JSON)</button>
       <button data-action="import">Importar datos (JSON)</button>
       <button data-action="clear">Borrar mes actual</button>
       <button data-action="install" id="install-btn" class="hidden">Instalar app</button>
       <button data-action="close">Cerrar</button>
-      <div class="menu-version">Versión <span id="app-version">8</span></div>
+      <div class="menu-version">
+        Versión <span id="app-version">10</span>
+        <div class="sync-status-indicator idle" id="sync-status-indicator">⚪ Sin conectar</div>
+      </div>
       <input type="file" id="import-file" accept="application/json" class="hidden">
     </div>
 
@@ -93,6 +101,7 @@
           <button class="modal-close" id="gen-modal-close" aria-label="Cerrar">×</button>
         </div>
         <p class="modal-sub">Definí las parejas (o tríos) de equipos y el máximo de días por mes que va a hacer cada uno. El generador balancea automáticamente y rota los fines de semana.</p>
+        <div id="gen-day-counter" class="gen-day-counter"></div>
         <div id="gen-teams-list" class="gen-teams-list"></div>
         <button id="gen-add-team" class="gen-add-team">+ Agregar equipo</button>
         <div class="modal-footer">
@@ -114,6 +123,49 @@
         <div class="modal-footer">
           <button id="colors-reset" class="modal-btn secondary">Restaurar default</button>
           <button id="colors-close-btn" class="modal-btn primary">Listo</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sync-modal" class="modal hidden" role="dialog" aria-labelledby="sync-modal-title">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2 id="sync-modal-title">Sincronización en la nube</h2>
+          <button class="modal-close" id="sync-modal-close" aria-label="Cerrar">×</button>
+        </div>
+        <p class="modal-sub">
+          Sincronizá los datos entre tu PC y celular usando Firebase (gratis).
+          <br><br>
+          <b>Setup (1 vez):</b><br>
+          1. Andá a <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> y creá un proyecto<br>
+          2. En el proyecto: "Build → Realtime Database → Create Database" (modo bloqueado está OK)<br>
+          3. "Build → Authentication → Sign-in method → habilitá Email/Password"<br>
+          4. En "Project Settings → General → Your apps → web app", copiá los datos abajo
+        </p>
+        <div class="sync-form">
+          <label>API Key
+            <input type="text" id="fb-apikey" placeholder="AIzaSyB...">
+          </label>
+          <label>Auth Domain
+            <input type="text" id="fb-authdomain" placeholder="mi-proyecto.firebaseapp.com">
+          </label>
+          <label>Database URL
+            <input type="text" id="fb-dburl" placeholder="https://mi-proyecto-default-rtdb.firebaseio.com">
+          </label>
+          <label>Project ID
+            <input type="text" id="fb-projectid" placeholder="mi-proyecto">
+          </label>
+          <label>Email (cualquier mail, se crea solo)
+            <input type="email" id="fb-email" placeholder="vos@mail.com">
+          </label>
+          <label>Password (mín 6 caracteres)
+            <input type="password" id="fb-password" placeholder="••••••">
+          </label>
+        </div>
+        <div class="modal-footer">
+          <button id="sync-disconnect" class="modal-btn secondary">Desconectar</button>
+          <button id="sync-connect" class="modal-btn primary">Conectar y sincronizar</button>
         </div>
       </div>
     </div>

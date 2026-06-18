@@ -18,6 +18,7 @@ PWA (Progressive Web App) para gestionar y consultar los turnos de intervencione
 - 🖥️ **Responsive**: en celular es compacta; en compu se expande tipo Google Calendar (1400px)
 - 🎨 Equipos coloreados según el código histórico del Excel
 - 📱 Instalable como app en Android e iOS (PWA)
+- ☁️ **Sincronización opcional en la nube** (Firebase): los datos viajan entre PC y celular automáticamente
 - 💾 Todos los datos quedan guardados en el teléfono (localStorage)
 - 🔄 Exportar/importar backups en JSON
 - 📶 Funciona sin internet una vez instalada
@@ -157,6 +158,24 @@ Para repos privados, GitHub Pages cuesta plata. Alternativa gratis: Cloudflare P
 Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
+
+### v10
+- **☁️ Sincronización en la nube** (Firebase): los datos se sincronizan automáticamente entre PC y celular. Setup de una sola vez con Firebase (gratis):
+  1. Crear proyecto en console.firebase.google.com
+  2. Habilitar Realtime Database + Authentication (Email/Password)
+  3. Copiar config en el modal "☁️ Sincronización en la nube" del menú
+  4. Listo — todos los cambios se sincronizan en segundos
+- Indicador de estado en el menú: ⚪ Sin conectar / 🟡 Conectando / 🟢 Sincronizado / 🔵 Sincronizando / 🔴 Error
+
+### v9
+- **Generador con reglas HARD** (no son sugerencias, son constraints estrictos):
+  - Mismo equipo NO puede hacer el mismo slot 2 semanas seguidas (fin del bug de "3 viernes con Campi+Montilla")
+  - Si un equipo hace **viernes**, la semana siguiente solo puede hacer **fin de semana** (no Lun-Mar/Mié-Jue/Vie). Así descansan entre activo y apoyo.
+- **Smart 2-day splitting**: si un slot de 2 días no tiene equipo con cupo, se parte en 2 equipos distintos (1 día cada uno). Antes los días quedaban vacíos.
+- **Contador de cupos** en el modal del generador: suma de máx/mes vs días del mes. Se actualiza en vivo:
+  - 🟢 Verde cuando = días del mes
+  - 🟡 Amarillo cuando sobran
+  - 🔴 Rojo cuando faltan
 
 ### v8
 - **Generador mucho más equitativo**:

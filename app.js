@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '8';
+const APP_VERSION = '10';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -19,6 +19,8 @@ const GEN_CONFIG_KEY = 'turnos:gen_config';
 const WEEKEND_ROT_KEY = 'turnos:gen_weekend_idx';
 const TEAM_HISTORY_KEY = 'turnos:gen_team_history';
 const PERSON_COLORS_KEY = 'turnos:person_colors';
+const FIREBASE_CONFIG_KEY = 'turnos:firebase_config';
+const FIREBASE_LAST_SYNC_KEY = 'turnos:firebase_last_sync';
 const MAX_HISTORY_PER_DAY = 10;
 
 // ---------- Estado ----------
@@ -63,6 +65,7 @@ function saveMonthData(y, m, data) {
   try {
     if (Object.keys(data).length === 0) localStorage.removeItem(key);
     else localStorage.setItem(key, JSON.stringify(data));
+    scheduleCloudPush();
   } catch (e) {
     showToast('Error al guardar');
     console.error('Save failed', e);
@@ -131,6 +134,7 @@ function saveFeriados(y, m, feriados) {
   try {
     if (Object.keys(feriados).length === 0) localStorage.removeItem(key);
     else localStorage.setItem(key, JSON.stringify(feriados));
+    scheduleCloudPush();
   } catch (e) { console.warn('Save feriado error', e); }
 }
 function isFeriado(y, m, d) {
@@ -249,12 +253,191 @@ function loadPersonColors() {
 }
 function savePersonColors(colors) {
   _personColorsCache = colors;
-  try { localStorage.setItem(PERSON_COLORS_KEY, JSON.stringify(colors)); }
-  catch (e) { console.warn('Save colors error', e); }
+  try {
+    localStorage.setItem(PERSON_COLORS_KEY, JSON.stringify(colors));
+    scheduleCloudPush();
+  } catch (e) { console.warn('Save colors error', e); }
 }
+// ---------- Sincronización en la nube (Firebase) ----------
+let _fbApp = null;
+let _fbAuth = null;
+let _fbDb = null;
+let _fbUser = null;
+let _syncTimer = null;
+let _suppressNextPush = false; // Para no rebotar al aplicar datos remotos
+
 function resetPersonColors() {
   _personColorsCache = {};
   localStorage.removeItem(PERSON_COLORS_KEY);
+}
+
+function loadFirebaseConfig() {
+  try {
+    return JSON.parse(localStorage.getItem(FIREBASE_CONFIG_KEY) || 'null');
+  } catch { return null; }
+}
+function saveFirebaseConfig(cfg) {
+  if (cfg === null) {
+    localStorage.removeItem(FIREBASE_CONFIG_KEY);
+  } else {
+    localStorage.setItem(FIREBASE_CONFIG_KEY, JSON.stringify(cfg));
+  }
+}
+
+function setSyncStatus(status, msg) {
+  const el = document.getElementById('sync-status-indicator');
+  if (!el) return;
+  el.className = `sync-status-indicator ${status}`;
+  const labels = {
+    'idle': '⚪ Sin conectar',
+    'connecting': '🟡 Conectando...',
+    'connected': '🟢 Sincronizado',
+    'syncing': '🔵 Sincronizando...',
+    'error': '🔴 Error'
+  };
+  el.textContent = msg || labels[status] || status;
+}
+
+async function initFirebaseSync() {
+  const cfg = loadFirebaseConfig();
+  if (!cfg || !cfg.firebase || !cfg.email || !cfg.password) {
+    setSyncStatus('idle');
+    return false;
+  }
+  if (typeof firebase === 'undefined') {
+    setSyncStatus('error', '🔴 SDK Firebase no cargó');
+    return false;
+  }
+  try {
+    setSyncStatus('connecting');
+    if (!_fbApp) {
+      _fbApp = firebase.initializeApp(cfg.firebase);
+      _fbAuth = firebase.auth();
+      _fbDb = firebase.database();
+    }
+    let cred;
+    try {
+      cred = await _fbAuth.signInWithEmailAndPassword(cfg.email, cfg.password);
+    } catch (e) {
+      if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-login-credentials') {
+        // Primera vez, crear cuenta
+        cred = await _fbAuth.createUserWithEmailAndPassword(cfg.email, cfg.password);
+      } else {
+        throw e;
+      }
+    }
+    _fbUser = cred.user;
+    setupRemoteListener();
+    setSyncStatus('connected');
+    return true;
+  } catch (e) {
+    console.error('Firebase init error:', e);
+    setSyncStatus('error', `🔴 ${e.code || e.message}`);
+    return false;
+  }
+}
+
+function setupRemoteListener() {
+  if (!_fbUser || !_fbDb) return;
+  const ref = _fbDb.ref(`users/${_fbUser.uid}/data`);
+  ref.on('value', (snap) => {
+    const data = snap.val();
+    if (!data || !data._timestamp) return;
+    const lastSync = parseInt(localStorage.getItem(FIREBASE_LAST_SYNC_KEY) || '0');
+    if (data._timestamp <= lastSync) return; // Datos viejos, ignorar
+    applyRemoteData(data);
+    localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(data._timestamp));
+  }, (err) => {
+    console.error('Firebase listener error:', err);
+    setSyncStatus('error', `🔴 ${err.message}`);
+  });
+}
+
+function applyRemoteData(data) {
+  _suppressNextPush = true;
+  // Aplica todas las claves turnos:* del remoto al localStorage
+  Object.keys(data).forEach(key => {
+    if (key.startsWith('turnos:') &&
+        !key.startsWith('turnos:hist:') &&
+        key !== FIREBASE_CONFIG_KEY &&
+        key !== FIREBASE_LAST_SYNC_KEY) {
+      if (data[key] === null || data[key] === undefined) {
+        localStorage.removeItem(key);
+      } else {
+        localStorage.setItem(key, data[key]);
+      }
+    }
+  });
+  // Invalidar caches y recargar
+  _personColorsCache = null;
+  state.data = loadMonthData(state.year, state.month);
+  state._feriados = loadFeriados(state.year, state.month);
+  rerenderActiveView();
+  renderFilters();
+  if (state.selectedDay !== null) renderDetail();
+  setSyncStatus('connected');
+  showToast('🔄 Datos sincronizados');
+  setTimeout(() => { _suppressNextPush = false; }, 100);
+}
+
+function scheduleCloudPush() {
+  if (_suppressNextPush) return;
+  if (!_fbUser || !_fbDb) return;
+  if (_syncTimer) clearTimeout(_syncTimer);
+  setSyncStatus('syncing');
+  _syncTimer = setTimeout(() => pushToCloud(), 1500);
+}
+
+async function pushToCloud() {
+  if (!_fbUser || !_fbDb) return;
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key.startsWith('turnos:') &&
+        !key.startsWith('turnos:hist:') &&
+        key !== FIREBASE_CONFIG_KEY &&
+        key !== FIREBASE_LAST_SYNC_KEY) {
+      data[key] = localStorage.getItem(key);
+    }
+  }
+  data._timestamp = Date.now();
+  try {
+    await _fbDb.ref(`users/${_fbUser.uid}/data`).set(data);
+    localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(data._timestamp));
+    setSyncStatus('connected');
+  } catch (e) {
+    console.error('Push to cloud failed:', e);
+    setSyncStatus('error', `🔴 ${e.message}`);
+  }
+}
+
+async function disconnectSync() {
+  if (_fbAuth) {
+    try { await _fbAuth.signOut(); } catch (e) {}
+  }
+  _fbApp = null; _fbAuth = null; _fbDb = null; _fbUser = null;
+  saveFirebaseConfig(null);
+  localStorage.removeItem(FIREBASE_LAST_SYNC_KEY);
+  setSyncStatus('idle');
+  showToast('Sincronización desconectada');
+}
+
+// ---------- Modal de configuración de sincronización ----------
+function openSyncSettings() {
+  document.getElementById('sync-modal').classList.remove('hidden');
+  renderSyncSettings();
+}
+function closeSyncSettings() {
+  document.getElementById('sync-modal').classList.add('hidden');
+}
+function renderSyncSettings() {
+  const cfg = loadFirebaseConfig() || { firebase: {}, email: '', password: '' };
+  document.getElementById('fb-apikey').value = cfg.firebase?.apiKey || '';
+  document.getElementById('fb-authdomain').value = cfg.firebase?.authDomain || '';
+  document.getElementById('fb-dburl').value = cfg.firebase?.databaseURL || '';
+  document.getElementById('fb-projectid').value = cfg.firebase?.projectId || '';
+  document.getElementById('fb-email').value = cfg.email || '';
+  document.getElementById('fb-password').value = cfg.password || '';
 }
 function isToday(y, m, d) {
   return y === today.getFullYear() && m === today.getMonth() + 1 && d === today.getDate();
@@ -1347,10 +1530,33 @@ function closeGenSettings() {
   document.getElementById('gen-modal').classList.add('hidden');
 }
 
+function updateGenDayCounter() {
+  const cfg = loadGenConfig();
+  const counter = document.getElementById('gen-day-counter');
+  if (!counter) return;
+  const totalMax = cfg.teams.reduce((sum, t) => sum + (t.maxDays || 0), 0);
+  const daysInMonth = new Date(state.year, state.month, 0).getDate();
+  const monthName = MES_NAMES[state.month - 1];
+  counter.className = 'gen-day-counter';
+  if (totalMax === daysInMonth) {
+    counter.classList.add('green');
+    counter.innerHTML = `✓ Total cupos: <b>${totalMax}</b> = ${daysInMonth} días de ${monthName}`;
+  } else if (totalMax < daysInMonth) {
+    counter.classList.add('red');
+    counter.innerHTML = `⚠ Total cupos: <b>${totalMax}</b> &lt; ${daysInMonth} días de ${monthName} — faltan ${daysInMonth - totalMax} día(s)`;
+  } else {
+    counter.classList.add('yellow');
+    counter.innerHTML = `Total cupos: <b>${totalMax}</b> &gt; ${daysInMonth} días de ${monthName} — sobran ${totalMax - daysInMonth} día(s)`;
+  }
+}
+
 function renderGenSettings() {
   const cfg = loadGenConfig();
   const list = document.getElementById('gen-teams-list');
   list.innerHTML = '';
+
+  // Contador inicial
+  updateGenDayCounter();
 
   cfg.teams.forEach((team, idx) => {
     const row = document.createElement('div');
@@ -1440,6 +1646,12 @@ function renderGenSettings() {
     maxInp.addEventListener('change', (e) => {
       cfg.teams[idx].maxDays = parseInt(e.target.value) || 9;
       saveGenConfig(cfg);
+      updateGenDayCounter();
+    });
+    // Live update mientras tipea
+    maxInp.addEventListener('input', (e) => {
+      cfg.teams[idx].maxDays = parseInt(e.target.value) || 0;
+      updateGenDayCounter();
     });
     const lbl = document.createElement('span');
     lbl.className = 'max-days-label';
@@ -1552,14 +1764,17 @@ function loadGenConfig() {
   return { teams: deepCopy(DEFAULT_TEAMS) };
 }
 function saveGenConfig(cfg) {
-  try { localStorage.setItem(GEN_CONFIG_KEY, JSON.stringify(cfg)); }
-  catch (e) { console.warn('Save gen config error', e); }
+  try {
+    localStorage.setItem(GEN_CONFIG_KEY, JSON.stringify(cfg));
+    scheduleCloudPush();
+  } catch (e) { console.warn('Save gen config error', e); }
 }
 function loadWeekendRotation() {
   return parseInt(localStorage.getItem(WEEKEND_ROT_KEY) || '0', 10);
 }
 function saveWeekendRotation(idx) {
   localStorage.setItem(WEEKEND_ROT_KEY, String(idx));
+  scheduleCloudPush();
 }
 
 // ---------- Historial cross-month de equipos (para balanceo) ----------
@@ -1576,8 +1791,10 @@ function loadTeamHistory() {
   } catch { return {}; }
 }
 function saveTeamHistory(h) {
-  try { localStorage.setItem(TEAM_HISTORY_KEY, JSON.stringify(h)); }
-  catch (e) { console.warn('Save team history error', e); }
+  try {
+    localStorage.setItem(TEAM_HISTORY_KEY, JSON.stringify(h));
+    scheduleCloudPush();
+  } catch (e) { console.warn('Save team history error', e); }
 }
 function resetTeamHistory() {
   localStorage.removeItem(TEAM_HISTORY_KEY);
@@ -1702,25 +1919,22 @@ function generateMonth() {
   const teamKeys = teams.map(t => teamKey(t));
   const histDays = teams.map((_, i) => (teamHistory[teamKeys[i]]?.totalDays || 0));
 
-  // ¿Se puede usar este equipo? (respeta cap estricto)
   function canUse(idx, addDays) {
     const max = teams[idx].maxDays || Infinity;
     return (usage[idx] + addDays) <= max;
   }
 
-  // "Score" del equipo: equipos con menos días este mes Y menos días históricos
-  // tienen menor score → son preferidos.
-  // Peso fuerte al mes actual, peso suave al historial.
+  // Score: equipos con menos días este mes Y menos días históricos son preferidos.
+  // Peso fuerte al mes actual, suave al historial.
   function effectiveScore(idx) {
     return usage[idx] * 10 + histDays[idx];
   }
 
-  // Elige el mejor equipo disponible. `excludeHard` = no se pueden usar;
-  // `preferAvoid` = preferir no usar (soft constraint).
-  // Devuelve -1 si no hay opción disponible respetando el cap.
+  // Elige el mejor equipo disponible.
+  // - excludeHard: no se pueden usar (cap hit, ya usados esta semana, restricciones)
+  // - preferAvoid: preferir no usar (soft constraint, se ignora si no hay otra opción)
   function pickBest(excludeHard, addDays, preferAvoid) {
     let bestIdx = -1, bestScore = Infinity;
-    // Primer pasada: respetando preferAvoid
     for (let i = 0; i < teams.length; i++) {
       if (excludeHard.has(i)) continue;
       if (preferAvoid && preferAvoid.has(i)) continue;
@@ -1729,7 +1943,7 @@ function generateMonth() {
       if (s < bestScore) { bestIdx = i; bestScore = s; }
     }
     if (bestIdx >= 0) return bestIdx;
-    // Segunda pasada: ignorando preferAvoid (fallback)
+    // Fallback: ignorar preferAvoid
     for (let i = 0; i < teams.length; i++) {
       if (excludeHard.has(i)) continue;
       if (!canUse(i, addDays)) continue;
@@ -1739,12 +1953,10 @@ function generateMonth() {
     return bestIdx;
   }
 
-  // Asignar slots: aplica equipo a los días dados (saltea feriados)
+  // Asignar slot completo (1+ días al mismo equipo). Salta feriados.
+  // Devuelve el índice del equipo asignado o -1 si no se pudo.
   function assignSlot(teamIdx, days) {
-    if (teamIdx < 0) {
-      days.forEach(d => { if (d !== null && !isFeriado(y, m, d)) unassignedDays.push(d); });
-      return false;
-    }
+    if (teamIdx < 0) return -1;
     const t = teams[teamIdx];
     days.forEach(d => {
       if (d === null) return;
@@ -1754,16 +1966,56 @@ function generateMonth() {
       newData[String(d)] = slots;
       usage[teamIdx]++;
     });
-    return true;
+    return teamIdx;
   }
 
-  // Agrupar días por semana (Mon=arranque)
+  // Asignar un slot de 2 días: primero intenta un solo equipo. Si no hay,
+  // PARTE el slot en 2 equipos distintos (1 día cada uno).
+  function assignTwoDaySlot(days, excludeHard, preferAvoid) {
+    const realDays = days.filter(d => d !== null && !isFeriado(y, m, d));
+    const addDays = realDays.length;
+    if (addDays === 0) return -1;
+
+    // Intento 1: un solo equipo para los 2 días
+    const idx = pickBest(excludeHard, addDays, preferAvoid);
+    if (idx >= 0) {
+      assignSlot(idx, days);
+      return idx;
+    }
+
+    // Intento 2: partir en 2 equipos distintos (1 día cada uno)
+    // Solo si hay realmente 2 días reales y la asignación de 2 falló por cap
+    if (addDays === 2) {
+      const localUsed = new Set(excludeHard);
+      let lastUsed = -1;
+      for (const d of days) {
+        if (d === null || isFeriado(y, m, d)) continue;
+        const i = pickBest(localUsed, 1, preferAvoid);
+        if (i >= 0) {
+          assignSlot(i, [d]);
+          localUsed.add(i);
+          lastUsed = i;
+        } else {
+          unassignedDays.push(d);
+        }
+      }
+      return lastUsed;
+    }
+
+    // No se pudo
+    days.forEach(d => {
+      if (d !== null && !isFeriado(y, m, d)) unassignedDays.push(d);
+    });
+    return -1;
+  }
+
+  // Agrupar días por semana (Lun=arranque)
   const weeks = [];
   let current = null;
   for (let d = 1; d <= daysInMonth; d++) {
     const dt = new Date(y, m - 1, d);
     let dow = dt.getDay();
-    dow = dow === 0 ? 6 : dow - 1; // 0=Mon ... 6=Sun
+    dow = dow === 0 ? 6 : dow - 1; // 0=Lun ... 6=Dom
     if (current === null || dow === 0) {
       current = { 0: null, 1: null, 2: null, 3: null, 4: null, 5: null, 6: null };
       weeks.push(current);
@@ -1771,39 +2023,46 @@ function generateMonth() {
     current[dow] = d;
   }
 
-  // Track del equipo asignado en cada slot la semana anterior, para evitar
-  // que el mismo equipo haga el mismo slot 2+ semanas seguidas.
+  // Track del último equipo en cada slot la semana anterior
+  // Reglas HARD:
+  //   1. Mismo equipo NO puede hacer el mismo slot 2 semanas seguidas
+  //   2. Si un equipo hizo VIERNES la semana pasada, solo puede hacer
+  //      el fin de semana (no Lun-Mar, Mié-Jue, Vie de esta semana)
+  let lastWeekFridayTeam = -1;   // descansa esta semana excepto en finde
   const lastSlotTeam = { weekend: -1, monTue: -1, wedThu: -1, fri: -1 };
 
-  // Asignar equipos a cada semana
   weeks.forEach((wk) => {
     const used = new Set();
 
-    // Slot Sat-Sun: rotación global + evitar mismo equipo que la semana pasada
+    // === Slot Sat-Sun: rotación global + evitar mismo equipo que finde anterior ===
     const hasSat = wk[5] !== null;
     const hasSun = wk[6] !== null;
+    let thisWeekendTeam = -1;
     if (hasSat || hasSun) {
-      const addDays = (hasSat ? 1 : 0) + (hasSun ? 1 : 0);
-      const avoid = new Set();
-      if (lastSlotTeam.weekend >= 0) avoid.add(lastSlotTeam.weekend);
+      const realCount = (hasSat && !isFeriado(y, m, wk[5]) ? 1 : 0) +
+                        (hasSun && !isFeriado(y, m, wk[6]) ? 1 : 0);
+      // HARD: no el mismo equipo que el finde anterior
+      const hardExclude = new Set(used);
+      if (lastSlotTeam.weekend >= 0) hardExclude.add(lastSlotTeam.weekend);
 
-      let weekendTeam = -1, attempts = 0;
-      while (attempts < teams.length) {
+      // Buscar siguiente equipo en rotación que cumpla
+      let attempts = 0;
+      while (attempts < teams.length * 2) {
         const candidate = weekendIdx % teams.length;
-        if (canUse(candidate, addDays) && !used.has(candidate) && !avoid.has(candidate)) {
-          weekendTeam = candidate;
+        if (canUse(candidate, realCount) && !hardExclude.has(candidate)) {
+          thisWeekendTeam = candidate;
           break;
         }
         weekendIdx++;
         attempts++;
       }
-      // Fallback sin la restricción de "evitar" (puede pasar si solo queda 1 equipo)
-      if (weekendTeam < 0) {
+      // Fallback: ignorar restricción de "no mismo que anterior" si quedó un solo equipo
+      if (thisWeekendTeam < 0) {
         attempts = 0;
-        while (attempts < teams.length) {
+        while (attempts < teams.length * 2) {
           const candidate = weekendIdx % teams.length;
-          if (canUse(candidate, addDays) && !used.has(candidate)) {
-            weekendTeam = candidate;
+          if (canUse(candidate, realCount) && !used.has(candidate)) {
+            thisWeekendTeam = candidate;
             break;
           }
           weekendIdx++;
@@ -1811,52 +2070,77 @@ function generateMonth() {
         }
       }
       // Último recurso: el menos usado
-      if (weekendTeam < 0) weekendTeam = pickBest(used, addDays, null);
+      if (thisWeekendTeam < 0) thisWeekendTeam = pickBest(used, realCount, null);
 
-      if (assignSlot(weekendTeam, [wk[5], wk[6]])) {
-        used.add(weekendTeam);
-        lastSlotTeam.weekend = weekendTeam;
+      // Asignar (con posible split si no hay 1 equipo para 2 días)
+      if (realCount === 2 && thisWeekendTeam < 0) {
+        thisWeekendTeam = assignTwoDaySlot([wk[5], wk[6]], used, null);
+      } else if (thisWeekendTeam >= 0) {
+        assignSlot(thisWeekendTeam, [wk[5], wk[6]]);
+      }
+      if (thisWeekendTeam >= 0) {
+        used.add(thisWeekendTeam);
+        lastSlotTeam.weekend = thisWeekendTeam;
         weekendIdx++;
       }
     }
 
-    // Slot Mon-Tue
+    // === Construir el set "hard exclude" extra para slots de semana ===
+    // El equipo que hizo VIERNES la semana pasada NO puede hacer Lun-Mar/Mié-Jue/Vie
+    const restExclude = new Set();
+    if (lastWeekFridayTeam >= 0) restExclude.add(lastWeekFridayTeam);
+
+    // === Slot Lun-Mar ===
     const hasMon = wk[0] !== null, hasTue = wk[1] !== null;
     if (hasMon || hasTue) {
-      const addDays = (hasMon ? 1 : 0) + (hasTue ? 1 : 0);
-      const avoid = new Set();
-      if (lastSlotTeam.monTue >= 0) avoid.add(lastSlotTeam.monTue);
-      const idx = pickBest(used, addDays, avoid);
-      if (assignSlot(idx, [wk[0], wk[1]])) {
+      // HARD: ya usado esta semana + descanso post-viernes + slot consecutivo
+      const hardExclude = new Set(used);
+      restExclude.forEach(i => hardExclude.add(i));
+      if (lastSlotTeam.monTue >= 0) hardExclude.add(lastSlotTeam.monTue);
+
+      const idx = assignTwoDaySlot([wk[0], wk[1]], hardExclude, null);
+      if (idx >= 0) {
         used.add(idx);
         lastSlotTeam.monTue = idx;
       }
     }
 
-    // Slot Wed-Thu
+    // === Slot Mié-Jue ===
     const hasWed = wk[2] !== null, hasThu = wk[3] !== null;
     if (hasWed || hasThu) {
-      const addDays = (hasWed ? 1 : 0) + (hasThu ? 1 : 0);
-      const avoid = new Set();
-      if (lastSlotTeam.wedThu >= 0) avoid.add(lastSlotTeam.wedThu);
-      const idx = pickBest(used, addDays, avoid);
-      if (assignSlot(idx, [wk[2], wk[3]])) {
+      const hardExclude = new Set(used);
+      restExclude.forEach(i => hardExclude.add(i));
+      if (lastSlotTeam.wedThu >= 0) hardExclude.add(lastSlotTeam.wedThu);
+
+      const idx = assignTwoDaySlot([wk[2], wk[3]], hardExclude, null);
+      if (idx >= 0) {
         used.add(idx);
         lastSlotTeam.wedThu = idx;
       }
     }
 
-    // Slot Fri
+    // === Slot Viernes ===
     const hasFri = wk[4] !== null;
+    let thisWeekFriTeam = -1;
     if (hasFri) {
-      const avoid = new Set();
-      if (lastSlotTeam.fri >= 0) avoid.add(lastSlotTeam.fri);
-      const idx = pickBest(used, 1, avoid);
-      if (assignSlot(idx, [wk[4]])) {
-        used.add(idx);
-        lastSlotTeam.fri = idx;
+      const hardExclude = new Set(used);
+      restExclude.forEach(i => hardExclude.add(i));
+      if (lastSlotTeam.fri >= 0) hardExclude.add(lastSlotTeam.fri);
+
+      thisWeekFriTeam = pickBest(hardExclude, 1, null);
+      if (thisWeekFriTeam >= 0) {
+        assignSlot(thisWeekFriTeam, [wk[4]]);
+        used.add(thisWeekFriTeam);
+        lastSlotTeam.fri = thisWeekFriTeam;
+      } else if (!isFeriado(y, m, wk[4])) {
+        unassignedDays.push(wk[4]);
       }
     }
+
+    // Al final de la semana: actualizar el "descanso post-viernes"
+    // (si esta semana hubo viernes asignado, ese equipo descansa la próxima
+    //  semana excepto en el finde)
+    lastWeekFridayTeam = thisWeekFriTeam;
   });
 
   // Guardar mes
@@ -1876,7 +2160,7 @@ function generateMonth() {
   rerenderActiveView(); renderDetail();
 
   if (unassignedDays.length > 0) {
-    showToast(`Turnos generados. ${unassignedDays.length} día(s) sin asignar — subí el cupo máx/mes.`);
+    showToast(`Turnos generados. ${unassignedDays.length} día(s) sin asignar — revisá los cupos.`);
   } else {
     showToast('Turnos generados');
   }
@@ -1945,6 +2229,7 @@ function wireUp() {
       else if (a === 'gen-settings') openGenSettings();
       else if (a === 'colors-settings') openColorsSettings();
       else if (a === 'load-holidays') preloadArgentinaHolidays();
+      else if (a === 'sync-settings') openSyncSettings();
       else if (a === 'install') triggerInstall();
     });
   });
@@ -1979,6 +2264,39 @@ function wireUp() {
     renderColorsSettings();
     rerenderActiveView();
     showToast('Colores restaurados');
+  });
+
+  // Modal de sincronización
+  document.getElementById('sync-modal-close').addEventListener('click', closeSyncSettings);
+  document.querySelector('#sync-modal .modal-backdrop').addEventListener('click', closeSyncSettings);
+  document.getElementById('sync-connect').addEventListener('click', async () => {
+    const cfg = {
+      firebase: {
+        apiKey: document.getElementById('fb-apikey').value.trim(),
+        authDomain: document.getElementById('fb-authdomain').value.trim(),
+        databaseURL: document.getElementById('fb-dburl').value.trim(),
+        projectId: document.getElementById('fb-projectid').value.trim(),
+      },
+      email: document.getElementById('fb-email').value.trim(),
+      password: document.getElementById('fb-password').value,
+    };
+    if (!cfg.firebase.apiKey || !cfg.firebase.databaseURL || !cfg.email || !cfg.password) {
+      showToast('Faltan datos obligatorios');
+      return;
+    }
+    saveFirebaseConfig(cfg);
+    const ok = await initFirebaseSync();
+    if (ok) {
+      closeSyncSettings();
+      showToast('🟢 Sincronización activada');
+      // Empuje inicial de datos
+      setTimeout(() => pushToCloud(), 1000);
+    }
+  });
+  document.getElementById('sync-disconnect').addEventListener('click', async () => {
+    if (!confirm('Desconectar sincronización? Tus datos seguirán en este dispositivo.')) return;
+    await disconnectSync();
+    closeSyncSettings();
   });
   document.getElementById('import-file').addEventListener('change', (e) => {
     if (e.target.files[0]) importData(e.target.files[0]);
@@ -2017,5 +2335,7 @@ function boot() {
   rerenderActiveView();
   renderFilters();
   wireUp();
+  // Auto-conectar sync si hay config guardada
+  setTimeout(() => initFirebaseSync(), 500);
 }
 boot();
