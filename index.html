@@ -81,13 +81,14 @@
       <button data-action="colors-settings">🎨 Colores de personas</button>
       <button data-action="load-holidays">🇦🇷 Precargar feriados nacionales</button>
       <button data-action="sync-settings">☁️ Sincronización en la nube</button>
+      <button data-action="reset-gen-password">🔑 Cambiar contraseña del generador</button>
       <button data-action="export">Exportar datos (JSON)</button>
       <button data-action="import">Importar datos (JSON)</button>
       <button data-action="clear">Borrar mes actual</button>
       <button data-action="install" id="install-btn" class="hidden">Instalar app</button>
       <button data-action="close">Cerrar</button>
       <div class="menu-version">
-        Versión <span id="app-version">11</span>
+        Versión <span id="app-version">13</span>
         <div class="sync-status-indicator idle" id="sync-status-indicator">⚪ Sin conectar</div>
       </div>
       <input type="file" id="import-file" accept="application/json" class="hidden">
@@ -102,6 +103,13 @@
         </div>
         <p class="modal-sub">Definí las parejas (o tríos) de equipos y el máximo de días por mes que va a hacer cada uno. El generador balancea automáticamente y rota los fines de semana.</p>
         <div id="gen-day-counter" class="gen-day-counter"></div>
+        <label class="gen-auto-rotate-row">
+          <input type="checkbox" id="gen-auto-rotate-toggle">
+          <span>
+            <b>🔄 Rotación automática de cupos altos</b><br>
+            <small>Cada mes, los equipos con menos días totales reciben los cupos más altos. Se balancea solo a la larga.</small>
+          </span>
+        </label>
         <div id="gen-teams-list" class="gen-teams-list"></div>
         <button id="gen-add-team" class="gen-add-team">+ Agregar equipo</button>
         <div class="modal-footer">

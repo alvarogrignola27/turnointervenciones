@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '11';
+const APP_VERSION = '13';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -21,6 +21,8 @@ const TEAM_HISTORY_KEY = 'turnos:gen_team_history';
 const PERSON_COLORS_KEY = 'turnos:person_colors';
 const FIREBASE_CONFIG_KEY = 'turnos:firebase_config';
 const FIREBASE_LAST_SYNC_KEY = 'turnos:firebase_last_sync';
+const GEN_PASSWORD_KEY = 'turnos:gen_password';
+const GEN_AUTO_ROTATE_KEY = 'turnos:gen_auto_rotate';
 const MAX_HISTORY_PER_DAY = 10;
 
 // ---------- Estado ----------
@@ -459,6 +461,60 @@ async function disconnectSync() {
   localStorage.removeItem(FIREBASE_LAST_SYNC_KEY);
   setSyncStatus('idle');
   showToast('Sincronización desconectada');
+}
+
+// ---------- Contraseña del generador ----------
+// Hash simple (no es criptografía seria, solo evita que el usuario casual genere)
+function hashGenPassword(pwd) {
+  let h = 5381;
+  for (let i = 0; i < pwd.length; i++) {
+    h = ((h << 5) + h) + pwd.charCodeAt(i);
+    h = h & 0xFFFFFFFF;
+  }
+  return String(h);
+}
+function loadGenPasswordHash() {
+  return localStorage.getItem(GEN_PASSWORD_KEY) || null;
+}
+function saveGenPasswordHash(hash) {
+  if (hash) localStorage.setItem(GEN_PASSWORD_KEY, hash);
+  else localStorage.removeItem(GEN_PASSWORD_KEY);
+  scheduleCloudPush();
+}
+// Verifica que la contraseña ingresada coincida con la guardada.
+// Si no hay contraseña guardada, pide al usuario que defina una.
+// Retorna true si el usuario está autorizado a generar.
+function checkGenPassword() {
+  const storedHash = loadGenPasswordHash();
+  if (!storedHash) {
+    // Primera vez: definir contraseña
+    const pwd1 = prompt('Definí una contraseña para generar turnos.\nSe te va a pedir cada vez que generes:');
+    if (!pwd1 || pwd1.length < 4) {
+      if (pwd1 !== null) alert('La contraseña tiene que tener al menos 4 caracteres.');
+      return false;
+    }
+    const pwd2 = prompt('Repetí la contraseña para confirmarla:');
+    if (pwd1 !== pwd2) {
+      alert('Las contraseñas no coinciden.');
+      return false;
+    }
+    saveGenPasswordHash(hashGenPassword(pwd1));
+    showToast('Contraseña guardada');
+    return true;
+  }
+  // Ya hay contraseña: pedirla
+  const pwd = prompt('Ingresá la contraseña para generar:');
+  if (!pwd) return false;
+  if (hashGenPassword(pwd) !== storedHash) {
+    alert('Contraseña incorrecta.');
+    return false;
+  }
+  return true;
+}
+function resetGenPassword() {
+  if (!confirm('¿Borrar la contraseña del generador? Después podrás definir una nueva.')) return;
+  saveGenPasswordHash(null);
+  showToast('Contraseña borrada. Definí una nueva al generar.');
 }
 
 // ---------- Modal de configuración de sincronización ----------
@@ -1032,7 +1088,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   sec1.appendChild(team1);
   block.appendChild(sec1);
 
-  // EQUIPO DE APOYO (read-only)
+  // EQUIPO DE APOYO (editable cuando edit mode está activo, igual que intervención)
   const sec2 = document.createElement('div');
   sec2.className = 'di-section';
   const lbl2 = document.createElement('div');
@@ -1044,18 +1100,75 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   const team2 = document.createElement('div');
   team2.className = 'di-team';
   if (apoyo) {
-    [apoyo.team[0], apoyo.team[1]].forEach(n => {
-      const pill = document.createElement('div');
-      pill.className = 'di-team-pill';
-      if (n) {
-        pill.textContent = n;
-        pill.style.background = colorFor(n);
-        pill.style.color = textColorFor(n);
+    // Buscar info del slot para poder editarlo
+    const apY = apoyo.date.getFullYear();
+    const apM = apoyo.date.getMonth() + 1;
+    const apD = apoyo.date.getDate();
+    const apSlots = getDayDataAny(apY, apM, apD);
+    const apTeamRes = findTeamSlot(apSlots);
+    const apSlotIdx = apTeamRes ? apTeamRes.idx : 0;
+
+    [apoyo.team[0], apoyo.team[1]].forEach((n, sideIdx) => {
+      if (editable) {
+        const sel = document.createElement('select');
+        sel.className = 'di-team-pill di-select-pill';
+        if (n) {
+          sel.style.background = colorFor(n);
+          sel.style.color = textColorFor(n);
+        } else {
+          sel.classList.add('empty');
+        }
+        const empty = document.createElement('option');
+        empty.value = ''; empty.textContent = '—';
+        sel.appendChild(empty);
+        ROSTER.forEach(name => {
+          const o = document.createElement('option');
+          o.value = name; o.textContent = name;
+          if (name === n) o.selected = true;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change', (e) => {
+          const newName = e.target.value || null;
+          // Editar el slot del día del equipo de apoyo (puede ser otro mes)
+          const isCurMonth = (apY === state.year && apM === state.month);
+          let data;
+          if (isCurMonth) {
+            snapshotDayBeforeEdit(apD);
+            data = state.data;
+          } else {
+            data = loadMonthData(apY, apM);
+          }
+          if (!data[String(apD)]) data[String(apD)] = [[null, null]];
+          if (!data[String(apD)][apSlotIdx]) data[String(apD)][apSlotIdx] = [null, null];
+          data[String(apD)][apSlotIdx][sideIdx] = newName;
+          // Limpieza inline básica (si los dos son null, sacar el slot)
+          if (!data[String(apD)][apSlotIdx][0] && !data[String(apD)][apSlotIdx][1]) {
+            data[String(apD)].splice(apSlotIdx, 1);
+            if (data[String(apD)].length === 0) delete data[String(apD)];
+          }
+          if (isCurMonth) {
+            state.data = data;
+            saveMonthData(state.year, state.month, state.data);
+          } else {
+            saveMonthData(apY, apM, data);
+          }
+          rerenderActiveView();
+          renderDetail();
+        });
+        team2.appendChild(sel);
       } else {
-        pill.classList.add('empty');
-        pill.textContent = '—';
+        const pill = document.createElement('div');
+        pill.className = 'di-team-pill';
+        if (n) {
+          pill.textContent = n;
+          pill.style.background = colorFor(n);
+          pill.style.color = textColorFor(n);
+        } else {
+          pill.classList.add('empty');
+          pill.textContent = '—';
+        }
+        team2.appendChild(pill);
       }
-      team2.appendChild(pill);
     });
     sec2.appendChild(team2);
     const note = document.createElement('div');
@@ -1576,23 +1689,53 @@ function updateGenDayCounter() {
   const totalMax = cfg.teams.reduce((sum, t) => sum + (t.maxDays || 0), 0);
   const daysInMonth = new Date(state.year, state.month, 0).getDate();
   const monthName = MES_NAMES[state.month - 1];
-  counter.className = 'gen-day-counter';
+
+  let baseMsg;
   if (totalMax === daysInMonth) {
-    counter.classList.add('green');
-    counter.innerHTML = `✓ Total cupos: <b>${totalMax}</b> = ${daysInMonth} días de ${monthName}`;
+    counter.className = 'gen-day-counter green';
+    baseMsg = `✓ Total cupos: <b>${totalMax}</b> = ${daysInMonth} días de ${monthName}`;
   } else if (totalMax < daysInMonth) {
-    counter.classList.add('red');
-    counter.innerHTML = `⚠ Total cupos: <b>${totalMax}</b> &lt; ${daysInMonth} días de ${monthName} — faltan ${daysInMonth - totalMax} día(s)`;
+    counter.className = 'gen-day-counter red';
+    baseMsg = `⚠ Total cupos: <b>${totalMax}</b> &lt; ${daysInMonth} días de ${monthName} — faltan ${daysInMonth - totalMax} día(s)`;
   } else {
-    counter.classList.add('yellow');
-    counter.innerHTML = `Total cupos: <b>${totalMax}</b> &gt; ${daysInMonth} días de ${monthName} — sobran ${totalMax - daysInMonth} día(s)`;
+    counter.className = 'gen-day-counter yellow';
+    baseMsg = `Total cupos: <b>${totalMax}</b> &gt; ${daysInMonth} días de ${monthName} — sobran ${totalMax - daysInMonth} día(s)`;
   }
+
+  // Si la rotación automática está activa, mostrar preview de quién tendrá cupo alto este mes
+  if (loadAutoRotate() && cfg.teams.length > 0) {
+    const teamHistory = loadTeamHistory();
+    const teamKeys = cfg.teams.map(t => teamKey(t));
+    const effective = computeRotatedMaxes(cfg.teams, teamHistory, teamKeys);
+    const userMaxes = cfg.teams.map(t => t.maxDays || 0);
+    const maxVal = Math.max(...userMaxes);
+    const minVal = Math.min(...userMaxes);
+    if (maxVal !== minVal) {
+      const highTeams = cfg.teams
+        .map((t, i) => ({ name: shortTeamName(t), maxThis: effective[i] }))
+        .filter(x => x.maxThis === maxVal)
+        .map(x => x.name);
+      baseMsg += `<br><small>🔄 Este mes con cupo alto (${maxVal}): <b>${highTeams.join(', ')}</b></small>`;
+    }
+  }
+
+  counter.innerHTML = baseMsg;
+}
+
+function shortTeamName(t) {
+  const parts = [t.a, t.b];
+  if (t.c) parts.push(t.c);
+  return parts.filter(Boolean).map(n => n.substring(0, 4)).join('+');
 }
 
 function renderGenSettings() {
   const cfg = loadGenConfig();
   const list = document.getElementById('gen-teams-list');
   list.innerHTML = '';
+
+  // Estado del toggle de rotación automática
+  const toggle = document.getElementById('gen-auto-rotate-toggle');
+  if (toggle) toggle.checked = loadAutoRotate();
 
   // Contador inicial
   updateGenDayCounter();
@@ -1839,6 +1982,43 @@ function resetTeamHistory() {
   localStorage.removeItem(TEAM_HISTORY_KEY);
 }
 
+// ---------- Rotación automática de cupos altos entre meses ----------
+function loadAutoRotate() {
+  return localStorage.getItem(GEN_AUTO_ROTATE_KEY) === '1';
+}
+function saveAutoRotate(on) {
+  if (on) localStorage.setItem(GEN_AUTO_ROTATE_KEY, '1');
+  else localStorage.removeItem(GEN_AUTO_ROTATE_KEY);
+  scheduleCloudPush();
+}
+
+// Calcula los maxDays "rotados" para este mes:
+// - Toma los maxDays que definió el usuario (template de cupos)
+// - Los reasigna ordenando los equipos por su historial total ascendente
+//   (equipos con menos días totales reciben los maxDays más altos)
+// - Así, en el largo plazo, todos los equipos van rotando entre cupos altos y bajos
+function computeRotatedMaxes(teams, teamHistory, teamKeys) {
+  const userMaxes = teams.map(t => t.maxDays || 0);
+  // Template ordenado descendente (e.g., [5, 5, 5, 4, 4, 4, 4])
+  const template = [...userMaxes].sort((a, b) => b - a);
+
+  // Historial total de días por equipo
+  const histDays = teams.map((_, i) => (teamHistory[teamKeys[i]]?.totalDays || 0));
+
+  // Índices ordenados por historial ascendente (menos usados primero)
+  // En caso de empate, los índices más bajos van primero (estable, determinista)
+  const sortedIdx = histDays
+    .map((d, i) => ({ i, d }))
+    .sort((a, b) => a.d - b.d || a.i - b.i)
+    .map(x => x.i);
+
+  const result = new Array(teams.length);
+  sortedIdx.forEach((teamIdx, position) => {
+    result[teamIdx] = template[position];
+  });
+  return result;
+}
+
 // ---------- Feriados nacionales de Argentina ----------
 // Algoritmo de Pascua (Gregoriano anónimo)
 function easterDate(year) {
@@ -1943,10 +2123,24 @@ function generateMonth() {
     openGenSettings();
     return;
   }
+
+  // === CHECK 0: contraseña ===
+  if (!checkGenPassword()) return;
+
+  const y = state.year, m = state.month;
+
+  // === CHECK 1: el mes anterior tiene que tener datos (continuidad) ===
+  const prevY = m === 1 ? y - 1 : y;
+  const prevM = m === 1 ? 12 : m - 1;
+  const prevData = loadMonthData(prevY, prevM);
+  if (Object.keys(prevData).length === 0) {
+    alert(`No se puede generar ${MES_NAMES[m-1]} ${y}.\n\nPrimero generá ${MES_NAMES[prevM-1]} ${prevY} (no tiene datos) para que el generador pueda continuar la rotación.`);
+    return;
+  }
+
   const msg = `Esto va a reemplazar TODOS los turnos de ${MES_NAMES[state.month - 1]} ${state.year} con una asignación generada. ¿Continuar?`;
   if (!confirm(msg)) return;
 
-  const y = state.year, m = state.month;
   const daysInMonth = new Date(y, m, 0).getDate();
   const newData = {};
   const usage = teams.map(() => 0);
@@ -1958,8 +2152,24 @@ function generateMonth() {
   const teamKeys = teams.map(t => teamKey(t));
   const histDays = teams.map((_, i) => (teamHistory[teamKeys[i]]?.totalDays || 0));
 
+  // Si la rotación automática está activa, recalcular los maxDays para este mes
+  // (los equipos con menos historial reciben los cupos más altos)
+  const autoRotateOn = loadAutoRotate();
+  const effectiveMaxes = autoRotateOn
+    ? computeRotatedMaxes(teams, teamHistory, teamKeys)
+    : teams.map(t => t.maxDays || 0);
+
+  // Helper: buscar índice del equipo que coincide con una dupla [a, b]
+  function findTeamIdxBySlot(slotPair) {
+    if (!slotPair) return -1;
+    return teams.findIndex(t =>
+      (t.a === slotPair[0] && t.b === slotPair[1]) ||
+      (t.a === slotPair[1] && t.b === slotPair[0])
+    );
+  }
+
   function canUse(idx, addDays) {
-    const max = teams[idx].maxDays || Infinity;
+    const max = effectiveMaxes[idx] != null ? effectiveMaxes[idx] : Infinity;
     return (usage[idx] + addDays) <= max;
   }
 
@@ -2062,6 +2272,42 @@ function generateMonth() {
     current[dow] = d;
   }
 
+  // === CONTINUIDAD CROSS-MONTH ===
+  // Si el mes anterior terminó en medio de un slot (Lun, Mié o Sáb),
+  // el día 1 del mes nuevo continúa ese slot con el mismo equipo.
+  const prevDaysInMonth = new Date(prevY, prevM, 0).getDate();
+  const lastDayOfPrev = new Date(prevY, prevM - 1, prevDaysInMonth);
+  const lastDow = lastDayOfPrev.getDay(); // 0=Dom, 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb
+  const lastTeamSlot = prevData[String(prevDaysInMonth)]?.[0];
+  const lastTeamIdx = findTeamIdxBySlot(lastTeamSlot);
+
+  let preAssignedDay1 = false;
+  let preAssignedSlotType = null;  // 'monTue' | 'wedThu' | 'satSun'
+  let preAssignedTeamIdx = -1;
+
+  if (lastTeamIdx >= 0) {
+    if (lastDow === 1)      preAssignedSlotType = 'monTue';  // Lun → Mar arranca nuevo mes
+    else if (lastDow === 3) preAssignedSlotType = 'wedThu';  // Mié → Jue
+    else if (lastDow === 6) preAssignedSlotType = 'satSun';  // Sáb → Dom
+
+    if (preAssignedSlotType) {
+      // Pre-asignar día 1 al mismo equipo (completa el slot que arrancó el mes pasado)
+      assignSlot(lastTeamIdx, [1]);
+      preAssignedDay1 = true;
+      preAssignedTeamIdx = lastTeamIdx;
+    }
+  }
+
+  // === INICIALIZAR lastSlotTeam Y lastWeekFridayTeam DESDE LA ÚLTIMA SEMANA COMPLETA DEL MES ANTERIOR ===
+  // La "última semana completa" es la que termina antes del slot que cruza meses
+  // (o la última semana del mes si no hay cruce).
+  let spanStart;
+  if (lastDow === 0) spanStart = null;  // Domingo: la semana cerró exactamente, sin cruce
+  else spanStart = prevDaysInMonth - (lastDow - 1);  // Lun=1 → spanStart=lastDay; Sáb=6 → spanStart=lastDay-5
+
+  const lastFullWeekEnd = spanStart !== null ? spanStart - 1 : prevDaysInMonth;
+  const lastFullWeekStart = Math.max(1, lastFullWeekEnd - 6);
+
   // Track del último equipo en cada slot la semana anterior
   // Reglas HARD:
   //   1. Mismo equipo NO puede hacer el mismo slot 2 semanas seguidas
@@ -2070,14 +2316,50 @@ function generateMonth() {
   let lastWeekFridayTeam = -1;   // descansa esta semana excepto en finde
   const lastSlotTeam = { weekend: -1, monTue: -1, wedThu: -1, fri: -1 };
 
-  weeks.forEach((wk) => {
+  // Recorrer la última semana completa del mes anterior buscando los equipos por slot
+  for (let d = lastFullWeekEnd; d >= lastFullWeekStart; d--) {
+    if (d < 1) break;
+    const dt = new Date(prevY, prevM - 1, d);
+    const dow = dt.getDay();  // 0=Dom, 1=Lun, ..., 6=Sáb
+    const slot = prevData[String(d)]?.[0];
+    if (!slot) continue;
+    const teamIdx = findTeamIdxBySlot(slot);
+    if (teamIdx < 0) continue;
+
+    if (dow === 1 || dow === 2) {
+      if (lastSlotTeam.monTue < 0) lastSlotTeam.monTue = teamIdx;
+    } else if (dow === 3 || dow === 4) {
+      if (lastSlotTeam.wedThu < 0) lastSlotTeam.wedThu = teamIdx;
+    } else if (dow === 5) {
+      if (lastSlotTeam.fri < 0) lastSlotTeam.fri = teamIdx;
+      if (lastWeekFridayTeam < 0) lastWeekFridayTeam = teamIdx;
+    } else {
+      if (lastSlotTeam.weekend < 0) lastSlotTeam.weekend = teamIdx;
+    }
+  }
+
+  // Si hay pre-asignación (slot que cruza meses), actualizar lastSlotTeam para que
+  // la semana siguiente no repita ese mismo equipo en el mismo slot
+  if (preAssignedDay1) {
+    if (preAssignedSlotType === 'monTue')      lastSlotTeam.monTue = preAssignedTeamIdx;
+    else if (preAssignedSlotType === 'wedThu') lastSlotTeam.wedThu = preAssignedTeamIdx;
+    else if (preAssignedSlotType === 'satSun') lastSlotTeam.weekend = preAssignedTeamIdx;
+  }
+
+  weeks.forEach((wk, weekIdx) => {
     const used = new Set();
+
+    // Si en la primera semana ya pre-asignamos el día 1, marcamos el equipo como
+    // "usado en esta semana" para que no se repita en otros slots de la misma semana
+    if (weekIdx === 0 && preAssignedDay1) {
+      used.add(preAssignedTeamIdx);
+    }
 
     // === Slot Sat-Sun: rotación global + evitar mismo equipo que finde anterior ===
     const hasSat = wk[5] !== null;
     const hasSun = wk[6] !== null;
     let thisWeekendTeam = -1;
-    if (hasSat || hasSun) {
+    if ((hasSat || hasSun) && !(weekIdx === 0 && preAssignedSlotType === 'satSun')) {
       const realCount = (hasSat && !isFeriado(y, m, wk[5]) ? 1 : 0) +
                         (hasSun && !isFeriado(y, m, wk[6]) ? 1 : 0);
       // HARD: no el mismo equipo que el finde anterior
@@ -2122,6 +2404,10 @@ function generateMonth() {
         lastSlotTeam.weekend = thisWeekendTeam;
         weekendIdx++;
       }
+    } else if (weekIdx === 0 && preAssignedSlotType === 'satSun') {
+      // Slot Sáb-Dom ya pre-asignado (día 1 = Domingo, continúa el slot del mes anterior)
+      thisWeekendTeam = preAssignedTeamIdx;
+      lastSlotTeam.weekend = preAssignedTeamIdx;
     }
 
     // === Construir el set "hard exclude" extra para slots de semana ===
@@ -2131,7 +2417,7 @@ function generateMonth() {
 
     // === Slot Lun-Mar ===
     const hasMon = wk[0] !== null, hasTue = wk[1] !== null;
-    if (hasMon || hasTue) {
+    if ((hasMon || hasTue) && !(weekIdx === 0 && preAssignedSlotType === 'monTue')) {
       // HARD: ya usado esta semana + descanso post-viernes + slot consecutivo
       const hardExclude = new Set(used);
       restExclude.forEach(i => hardExclude.add(i));
@@ -2142,11 +2428,14 @@ function generateMonth() {
         used.add(idx);
         lastSlotTeam.monTue = idx;
       }
+    } else if (weekIdx === 0 && preAssignedSlotType === 'monTue') {
+      // Slot Lun-Mar ya pre-asignado (día 1 = Martes, continúa)
+      lastSlotTeam.monTue = preAssignedTeamIdx;
     }
 
     // === Slot Mié-Jue ===
     const hasWed = wk[2] !== null, hasThu = wk[3] !== null;
-    if (hasWed || hasThu) {
+    if ((hasWed || hasThu) && !(weekIdx === 0 && preAssignedSlotType === 'wedThu')) {
       const hardExclude = new Set(used);
       restExclude.forEach(i => hardExclude.add(i));
       if (lastSlotTeam.wedThu >= 0) hardExclude.add(lastSlotTeam.wedThu);
@@ -2156,6 +2445,9 @@ function generateMonth() {
         used.add(idx);
         lastSlotTeam.wedThu = idx;
       }
+    } else if (weekIdx === 0 && preAssignedSlotType === 'wedThu') {
+      // Slot Mié-Jue ya pre-asignado (día 1 = Jueves, continúa)
+      lastSlotTeam.wedThu = preAssignedTeamIdx;
     }
 
     // === Slot Viernes ===
@@ -2269,6 +2561,7 @@ function wireUp() {
       else if (a === 'colors-settings') openColorsSettings();
       else if (a === 'load-holidays') preloadArgentinaHolidays();
       else if (a === 'sync-settings') openSyncSettings();
+      else if (a === 'reset-gen-password') resetGenPassword();
       else if (a === 'install') triggerInstall();
     });
   });
@@ -2281,6 +2574,15 @@ function wireUp() {
     cfg.teams.push({ a: null, b: null, maxDays: 9 });
     saveGenConfig(cfg);
     renderGenSettings();
+  });
+  document.getElementById('gen-auto-rotate-toggle').addEventListener('change', (e) => {
+    saveAutoRotate(e.target.checked);
+    updateGenDayCounter();
+    if (e.target.checked) {
+      showToast('🔄 Rotación automática activada');
+    } else {
+      showToast('Rotación automática desactivada');
+    }
   });
   document.getElementById('gen-reset').addEventListener('click', () => {
     if (!confirm('¿Restaurar los equipos por defecto?')) return;

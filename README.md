@@ -159,6 +159,24 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v13
+- **🔄 Rotación automática de cupos altos entre meses** (toggle en el modal del generador). Cuando está activa:
+  - Mantiene el template de cupos que vos definiste (ej: 3 equipos con 5 y 4 con 4)
+  - Cada mes, los equipos con **menos días totales en el historial** reciben los cupos más altos
+  - Los equipos van rotando solos entre cupos altos y bajos → balance casi perfecto en el largo plazo
+  - El contador del modal muestra qué equipos van a tener cupo alto este mes (preview)
+- Test verificado: en 3 meses, todos los equipos quedan entre 12 y 13 días (diferencia máx-mín = 1).
+
+### v12
+- **Continuidad entre meses**: si el mes anterior termina en medio de un slot (Lun, Mié o Sáb), el día 1 del mes nuevo arranca con el mismo equipo para completar ese slot. La rotación de fines de semana y el descanso post-viernes también heredan del mes anterior.
+- **No se puede generar un mes si el anterior no tiene datos**: alert claro que dice qué mes hay que generar primero (ej: "Primero generá Octubre 2026").
+- **🔑 Contraseña para generar turnos**: primera vez se define (con confirmación), después se pide cada vez que se genera. Botón en el menú para borrarla/cambiarla.
+- **Equipo de apoyo editable**: en el modo edición del panel del día, los pills del equipo de apoyo también son selects (igual que los de intervención).
+
+### v11
+- **Diagnóstico de sincronización mejorado**: cuadro de status arriba del modal de Sync con feedback en vivo. Botón "🔍 Probar si Firebase cargó". Mensajes de error con sugerencia de solución.
+- **Service Worker network-first** para HTML/JS/CSS: las nuevas versiones llegan rápido. Firebase nunca se cachea.
+
 ### v10
 - **☁️ Sincronización en la nube** (Firebase): los datos se sincronizan automáticamente entre PC y celular. Setup de una sola vez con Firebase (gratis):
   1. Crear proyecto en console.firebase.google.com
