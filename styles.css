@@ -265,6 +265,21 @@ input, select { font: inherit; }
 }
 
 /* ========== Sync settings ========== */
+.sync-inline-status {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.4;
+  background: #f2f2f7;
+  color: #6c6c70;
+  white-space: pre-line;
+}
+.sync-inline-status.connecting { color: #8a6800; background: #fff4cc; border: 1px solid #f0c850; }
+.sync-inline-status.connected { color: #1e6f1e; background: #d4f1d4; border: 1px solid #7cc97c; }
+.sync-inline-status.syncing { color: #1f3a68; background: #d0e4ff; border: 1px solid #92b8e8; }
+.sync-inline-status.error { color: #8a2020; background: #fde0e0; border: 1px solid #e69090; }
 .sync-form {
   flex: 1; overflow-y: auto; padding: 0 16px 10px;
   display: flex; flex-direction: column; gap: 10px;

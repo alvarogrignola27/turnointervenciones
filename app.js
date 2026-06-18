@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '10';
+const APP_VERSION = '11';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -286,41 +286,63 @@ function saveFirebaseConfig(cfg) {
 
 function setSyncStatus(status, msg) {
   const el = document.getElementById('sync-status-indicator');
+  if (el) {
+    el.className = `sync-status-indicator ${status}`;
+    const labels = {
+      'idle': '⚪ Sin conectar',
+      'connecting': '🟡 Conectando...',
+      'connected': '🟢 Sincronizado',
+      'syncing': '🔵 Sincronizando...',
+      'error': '🔴 Error'
+    };
+    el.textContent = msg || labels[status] || status;
+  }
+}
+
+// Status visible dentro del modal de sincronización
+function setSyncInlineStatus(status, msg) {
+  const el = document.getElementById('sync-inline-status');
   if (!el) return;
-  el.className = `sync-status-indicator ${status}`;
-  const labels = {
-    'idle': '⚪ Sin conectar',
-    'connecting': '🟡 Conectando...',
-    'connected': '🟢 Sincronizado',
-    'syncing': '🔵 Sincronizando...',
-    'error': '🔴 Error'
-  };
-  el.textContent = msg || labels[status] || status;
+  el.className = `sync-inline-status ${status}`;
+  el.textContent = msg;
+  console.log('[sync]', status, msg);
 }
 
 async function initFirebaseSync() {
+  setSyncInlineStatus('connecting', '🟡 Verificando configuración...');
   const cfg = loadFirebaseConfig();
   if (!cfg || !cfg.firebase || !cfg.email || !cfg.password) {
     setSyncStatus('idle');
+    setSyncInlineStatus('idle', '⚪ Faltan datos para conectar');
     return false;
   }
   if (typeof firebase === 'undefined') {
-    setSyncStatus('error', '🔴 SDK Firebase no cargó');
+    setSyncStatus('error', '🔴 SDK no cargó');
+    setSyncInlineStatus('error',
+      '🔴 Firebase SDK no se cargó.\n' +
+      'Posibles causas:\n' +
+      '• Sin internet al abrir la app\n' +
+      '• Bloqueador de scripts activo\n' +
+      'Intentá: cerrar la app y volver a abrirla con internet.');
     return false;
   }
   try {
-    setSyncStatus('connecting');
+    setSyncInlineStatus('connecting', '🟡 Inicializando Firebase...');
     if (!_fbApp) {
       _fbApp = firebase.initializeApp(cfg.firebase);
       _fbAuth = firebase.auth();
       _fbDb = firebase.database();
     }
+    setSyncInlineStatus('connecting', '🟡 Iniciando sesión con ' + cfg.email + '...');
     let cred;
     try {
       cred = await _fbAuth.signInWithEmailAndPassword(cfg.email, cfg.password);
     } catch (e) {
-      if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-login-credentials') {
-        // Primera vez, crear cuenta
+      // Primera vez: crear cuenta
+      if (e.code === 'auth/user-not-found' ||
+          e.code === 'auth/invalid-login-credentials' ||
+          e.code === 'auth/invalid-credential') {
+        setSyncInlineStatus('connecting', '🟡 Primera vez. Creando cuenta...');
         cred = await _fbAuth.createUserWithEmailAndPassword(cfg.email, cfg.password);
       } else {
         throw e;
@@ -329,10 +351,27 @@ async function initFirebaseSync() {
     _fbUser = cred.user;
     setupRemoteListener();
     setSyncStatus('connected');
+    setSyncInlineStatus('connected', '🟢 Conectado como ' + _fbUser.email);
     return true;
   } catch (e) {
     console.error('Firebase init error:', e);
-    setSyncStatus('error', `🔴 ${e.code || e.message}`);
+    const errCode = e.code || 'error';
+    let hint = '';
+    if (errCode === 'auth/operation-not-allowed') {
+      hint = '\n\n👉 Habilitá "Email/Password" en\nFirebase → Authentication → Sign-in method';
+    } else if (errCode === 'auth/invalid-api-key' || errCode === 'auth/api-key-not-valid' || errCode.includes('api-key')) {
+      hint = '\n\n👉 La API Key está mal. Copiala de nuevo del Firebase Console.';
+    } else if (errCode === 'auth/weak-password') {
+      hint = '\n\n👉 La contraseña tiene que tener al menos 6 caracteres.';
+    } else if (errCode === 'auth/wrong-password') {
+      hint = '\n\n👉 Contraseña incorrecta para ese mail.';
+    } else if (errCode === 'PERMISSION_DENIED' || (e.message && e.message.includes('Permission'))) {
+      hint = '\n\n👉 Configurá las Database Rules. Mirá el README.';
+    } else if (errCode === 'auth/network-request-failed') {
+      hint = '\n\n👉 Sin conexión. Probá de nuevo con internet.';
+    }
+    setSyncStatus('error', `🔴 ${errCode}`);
+    setSyncInlineStatus('error', `🔴 ${errCode}\n${e.message || ''}${hint}`);
     return false;
   }
 }
@@ -2270,6 +2309,7 @@ function wireUp() {
   document.getElementById('sync-modal-close').addEventListener('click', closeSyncSettings);
   document.querySelector('#sync-modal .modal-backdrop').addEventListener('click', closeSyncSettings);
   document.getElementById('sync-connect').addEventListener('click', async () => {
+    setSyncInlineStatus('connecting', '🟡 Empezando conexión...');
     const cfg = {
       firebase: {
         apiKey: document.getElementById('fb-apikey').value.trim(),
@@ -2281,22 +2321,44 @@ function wireUp() {
       password: document.getElementById('fb-password').value,
     };
     if (!cfg.firebase.apiKey || !cfg.firebase.databaseURL || !cfg.email || !cfg.password) {
-      showToast('Faltan datos obligatorios');
+      setSyncInlineStatus('error', '🔴 Faltan datos obligatorios.\nRevisá: API Key, Database URL, Email y Password.');
       return;
     }
     saveFirebaseConfig(cfg);
     const ok = await initFirebaseSync();
     if (ok) {
-      closeSyncSettings();
-      showToast('🟢 Sincronización activada');
       // Empuje inicial de datos
-      setTimeout(() => pushToCloud(), 1000);
+      setSyncInlineStatus('syncing', '🔵 Subiendo datos al servidor...');
+      try {
+        await pushToCloud();
+        setSyncInlineStatus('connected', '🟢 ¡Listo! Datos sincronizados.\nYa podés cerrar este modal.');
+        showToast('🟢 Sincronización activa');
+      } catch (e) {
+        setSyncInlineStatus('error', `🔴 Error subiendo datos:\n${e.message}`);
+      }
+    }
+  });
+
+  // Botón de test del SDK
+  document.getElementById('sync-test-sdk').addEventListener('click', () => {
+    if (typeof firebase === 'undefined') {
+      setSyncInlineStatus('error',
+        '🔴 Firebase NO está cargado.\n\n' +
+        'Esto pasa si:\n' +
+        '• No hay internet cuando abriste la app\n' +
+        '• El service worker tiene cache vieja\n\n' +
+        'Solución: cerrá la app, fijate de tener internet, y abrila de nuevo. ' +
+        'Si seguís con error, desinstalá y reinstalá la PWA.');
+    } else {
+      const ver = (firebase.SDK_VERSION || firebase.app.SDK_VERSION || 'desconocida');
+      setSyncInlineStatus('connected',
+        `🟢 Firebase SDK cargado OK\nVersión: ${ver}\n\nYa podés conectar.`);
     }
   });
   document.getElementById('sync-disconnect').addEventListener('click', async () => {
     if (!confirm('Desconectar sincronización? Tus datos seguirán en este dispositivo.')) return;
     await disconnectSync();
-    closeSyncSettings();
+    setSyncInlineStatus('idle', '⚪ Desconectado');
   });
   document.getElementById('import-file').addEventListener('change', (e) => {
     if (e.target.files[0]) importData(e.target.files[0]);

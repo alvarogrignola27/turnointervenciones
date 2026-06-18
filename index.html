@@ -87,7 +87,7 @@
       <button data-action="install" id="install-btn" class="hidden">Instalar app</button>
       <button data-action="close">Cerrar</button>
       <div class="menu-version">
-        Versión <span id="app-version">10</span>
+        Versión <span id="app-version">11</span>
         <div class="sync-status-indicator idle" id="sync-status-indicator">⚪ Sin conectar</div>
       </div>
       <input type="file" id="import-file" accept="application/json" class="hidden">
@@ -144,6 +144,7 @@
           4. En "Project Settings → General → Your apps → web app", copiá los datos abajo
         </p>
         <div class="sync-form">
+          <div id="sync-inline-status" class="sync-inline-status">⚪ Listo para configurar</div>
           <label>API Key
             <input type="text" id="fb-apikey" placeholder="AIzaSyB...">
           </label>
@@ -157,11 +158,12 @@
             <input type="text" id="fb-projectid" placeholder="mi-proyecto">
           </label>
           <label>Email (cualquier mail, se crea solo)
-            <input type="email" id="fb-email" placeholder="vos@mail.com">
+            <input type="email" id="fb-email" placeholder="vos@mail.com" autocomplete="off">
           </label>
           <label>Password (mín 6 caracteres)
-            <input type="password" id="fb-password" placeholder="••••••">
+            <input type="password" id="fb-password" placeholder="••••••" autocomplete="off">
           </label>
+          <button id="sync-test-sdk" class="modal-btn secondary" style="margin-top:4px;">🔍 Probar si Firebase cargó</button>
         </div>
         <div class="modal-footer">
           <button id="sync-disconnect" class="modal-btn secondary">Desconectar</button>

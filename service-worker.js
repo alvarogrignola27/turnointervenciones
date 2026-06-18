@@ -1,7 +1,8 @@
 // Service Worker para Turnos de Intervenciones
-// Estrategia: cache-first para los assets de la app
+// Estrategia: network-first para HTML/JS (para que las nuevas versiones lleguen
+// rápido), cache-first para assets estáticos. Firebase nunca se cachea.
 
-const CACHE_NAME = 'turnos-v10';
+const CACHE_NAME = 'turnos-v11';
 const ASSETS = [
   './',
   './index.html',
@@ -34,15 +35,42 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  const url = event.request.url;
+
+  // NUNCA cachear Firebase ni Google APIs (necesitan red)
+  if (url.includes('firebase') ||
+      url.includes('googleapis.com') ||
+      url.includes('firebaseio.com') ||
+      url.includes('gstatic.com')) {
+    return; // dejar pasar al network sin intermediación
+  }
+
+  // Network-first para HTML, JS, CSS (para que las actualizaciones lleguen)
+  const isCode = url.endsWith('.html') || url.endsWith('.js') || url.endsWith('.css') || url.endsWith('/');
+  if (isCode) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === 'basic') {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request).then((c) => c || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // Cache-first para assets (íconos, etc)
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
       return fetch(event.request)
         .then((response) => {
-          // Solo cachear respuestas válidas del mismo origen
           if (response && response.status === 200 && response.type === 'basic') {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
           }
           return response;
         })
