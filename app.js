@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '13';
+const APP_VERSION = '14';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -15,6 +15,7 @@ const STORAGE_PREFIX = 'turnos:';
 const STORAGE_VERSION_KEY = 'turnos:_seed_version';
 const HISTORY_PREFIX = 'turnos:hist:';
 const FERIADO_PREFIX = 'turnos:feriado:';
+const FERIA_JUD_PREFIX = 'turnos:feria_jud:';
 const GEN_CONFIG_KEY = 'turnos:gen_config';
 const WEEKEND_ROT_KEY = 'turnos:gen_weekend_idx';
 const TEAM_HISTORY_KEY = 'turnos:gen_team_history';
@@ -159,6 +160,174 @@ function toggleFeriado(day) {
   saveFeriados(state.year, state.month, state._feriados);
 }
 
+// ---------- FERIA JUDICIAL (similar a feriado, color rojo) ----------
+function feriaJudKey(y, m) {
+  return `${FERIA_JUD_PREFIX}${y}-${String(m).padStart(2,'0')}`;
+}
+function loadFeriaJud(y, m) {
+  try {
+    const raw = localStorage.getItem(feriaJudKey(y, m));
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+function saveFeriaJud(y, m, fj) {
+  const key = feriaJudKey(y, m);
+  try {
+    if (Object.keys(fj).length === 0) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(fj));
+    scheduleCloudPush();
+  } catch (e) { console.warn('Save feria jud error', e); }
+}
+function isFeriaJud(y, m, d) {
+  if (y === state.year && m === state.month) {
+    return !!(state._feriaJud && state._feriaJud[String(d)]);
+  }
+  const f = loadFeriaJud(y, m);
+  return !!f[String(d)];
+}
+function toggleFeriaJud(day) {
+  if (!state._feriaJud) state._feriaJud = {};
+  const k = String(day);
+  if (state._feriaJud[k]) {
+    delete state._feriaJud[k];
+    showToast('Feria judicial quitada');
+  } else {
+    state._feriaJud[k] = true;
+    showToast('Marcado como feria judicial');
+  }
+  saveFeriaJud(state.year, state.month, state._feriaJud);
+}
+// Marca TODOS los días del mes actual como feria judicial (caso enero)
+function markWholeMonthAsFeriaJud() {
+  const days = new Date(state.year, state.month, 0).getDate();
+  if (!confirm(`Marcar TODOS los ${days} días de ${MES_NAMES[state.month-1]} ${state.year} como feria judicial?`)) return;
+  if (!state._feriaJud) state._feriaJud = {};
+  for (let d = 1; d <= days; d++) {
+    state._feriaJud[String(d)] = true;
+  }
+  saveFeriaJud(state.year, state.month, state._feriaJud);
+  rerenderActiveView();
+  if (state.selectedDay !== null) renderDetail();
+  showToast(`Mes completo marcado como feria judicial`);
+}
+// Marca un rango de días del mes actual (caso julio 13-26)
+function markRangeAsFeriaJud() {
+  const startStr = prompt(`Marcar feria judicial: día de inicio (1-${new Date(state.year, state.month, 0).getDate()})`);
+  if (!startStr) return;
+  const endStr = prompt('Día de fin (inclusive):');
+  if (!endStr) return;
+  const start = parseInt(startStr);
+  const end = parseInt(endStr);
+  const maxD = new Date(state.year, state.month, 0).getDate();
+  if (isNaN(start) || isNaN(end) || start < 1 || end > maxD || start > end) {
+    showToast('Rango inválido');
+    return;
+  }
+  if (!state._feriaJud) state._feriaJud = {};
+  for (let d = start; d <= end; d++) {
+    state._feriaJud[String(d)] = true;
+  }
+  saveFeriaJud(state.year, state.month, state._feriaJud);
+  rerenderActiveView();
+  if (state.selectedDay !== null) renderDetail();
+  showToast(`Días ${start} a ${end} marcados como feria judicial`);
+}
+
+// Devuelve true si el día NO debe asignarse un equipo (feriado o feria judicial)
+function isSkipDay(y, m, d) {
+  return isFeriado(y, m, d) || isFeriaJud(y, m, d);
+}
+
+// ---------- Exportar mes como imagen + compartir ----------
+async function exportAndShareMonth() {
+  if (typeof html2canvas === 'undefined') {
+    showToast('Esperá unos segundos a que cargue el módulo de imagen y reintentá');
+    return;
+  }
+
+  // Forzar vista mes y deseleccionar día
+  if (state.view !== 'month') {
+    state.view = 'month';
+    state.selectedDay = null;
+    rerenderActiveView();
+    renderDetail();
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  showToast('Generando imagen del mes...');
+
+  // Crear contenedor offscreen con título + calendario clonado
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;left:-9999px;top:0;background:#fff;padding:24px;width:1240px;font-family:-apple-system,system-ui,sans-serif;';
+
+  const title = document.createElement('h1');
+  title.textContent = `Turnos de Intervenciones — ${MES_NAMES[state.month - 1]} ${state.year}`;
+  title.style.cssText = 'margin:0 0 16px;font-size:24px;color:#1c1c1e;text-align:center;';
+  wrap.appendChild(title);
+
+  // Clonar el calendario actual
+  const monthView = document.getElementById('view-month');
+  if (!monthView) {
+    showToast('No hay vista de mes para exportar');
+    return;
+  }
+  const clone = monthView.cloneNode(true);
+  clone.querySelectorAll('.filtered-out, .filter-match').forEach(el => {
+    el.classList.remove('filtered-out', 'filter-match');
+  });
+  wrap.appendChild(clone);
+
+  // Footer
+  const footer = document.createElement('div');
+  footer.style.cssText = 'margin-top:12px;text-align:right;font-size:11px;color:#888;';
+  const now = new Date();
+  footer.textContent = `Generado ${now.toLocaleDateString('es-AR')} ${now.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'})} — Turnos de Intervenciones v${APP_VERSION}`;
+  wrap.appendChild(footer);
+
+  document.body.appendChild(wrap);
+
+  try {
+    const canvas = await html2canvas(wrap, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      logging: false,
+      useCORS: true
+    });
+
+    canvas.toBlob(async (blob) => {
+      const fileName = `Turnos ${MES_NAMES[state.month - 1]} ${state.year}.png`;
+      const file = new File([blob], fileName, { type: 'image/png' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            title: `Turnos ${MES_NAMES[state.month - 1]} ${state.year}`,
+            files: [file]
+          });
+          showToast('Compartido');
+          return;
+        } catch (e) {
+          if (e.name === 'AbortError') return;
+        }
+      }
+
+      // Fallback: download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Descargado. Compartilo desde la galería.');
+    }, 'image/png');
+
+  } catch (e) {
+    console.error('Export error:', e);
+    showToast('Error generando imagen');
+  } finally {
+    document.body.removeChild(wrap);
+  }
+}
+
 // Migra entradas legacy de 'FERIADO' en slots al sistema de flag aparte
 function migrateLegacyFeriados(y, m, data) {
   let changed = false;
@@ -200,6 +369,7 @@ function getDayDataAny(y, m, d) {
 function reloadCurrentMonth() {
   state.data = loadMonthData(state.year, state.month);
   state._feriados = loadFeriados(state.year, state.month);
+  state._feriaJud = loadFeriaJud(state.year, state.month);
 }
 
 // ---------- Inicialización del seed ----------
@@ -413,6 +583,7 @@ function applyRemoteData(data) {
   _personColorsCache = null;
   state.data = loadMonthData(state.year, state.month);
   state._feriados = loadFeriados(state.year, state.month);
+  state._feriaJud = loadFeriaJud(state.year, state.month);
   rerenderActiveView();
   renderFilters();
   if (state.selectedDay !== null) renderDetail();
@@ -756,6 +927,7 @@ function renderMonthView() {
     if (isToday(state.year, state.month, day)) el.classList.add('today');
     if (state.selectedDay === day) el.classList.add('selected');
     if (isFeriado(state.year, state.month, day)) el.classList.add('feriado');
+    if (isFeriaJud(state.year, state.month, day)) el.classList.add('feria-jud');
     if (filtersActive()) {
       if (dayMatchesFilters(day)) el.classList.add('filter-match');
       else el.classList.add('filtered-out');
@@ -766,12 +938,18 @@ function renderMonthView() {
     numEl.textContent = day;
     el.appendChild(numEl);
 
-    // Marca de feriado
+    // Marca de feriado / feria judicial
     if (isFeriado(state.year, state.month, day)) {
       const fer = document.createElement('span');
       fer.className = 'feriado-mark';
       fer.textContent = 'F';
       fer.title = 'Feriado';
+      el.appendChild(fer);
+    } else if (isFeriaJud(state.year, state.month, day)) {
+      const fer = document.createElement('span');
+      fer.className = 'feriado-mark feria-jud';
+      fer.textContent = 'FJ';
+      fer.title = 'Feria judicial';
       el.appendChild(fer);
     }
 
@@ -850,6 +1028,7 @@ function renderWeekView() {
     if (isToday(y, m, d)) card.classList.add('today');
     if (state.day === d && state.month === m && state.year === y) card.classList.add('selected');
     if (isFeriado(y, m, d)) card.classList.add('feriado');
+    if (isFeriaJud(y, m, d)) card.classList.add('feria-jud');
     // Aplicar filtros (solo en el mes actual)
     if (filtersActive() && y === state.year && m === state.month) {
       if (!dayMatchesFilters(d)) card.classList.add('filtered-out');
@@ -869,6 +1048,11 @@ function renderWeekView() {
       const fer = document.createElement('span');
       fer.className = 'wk-feriado-tag';
       fer.textContent = 'Feriado';
+      head.appendChild(fer);
+    } else if (isFeriaJud(y, m, d)) {
+      const fer = document.createElement('span');
+      fer.className = 'wk-feriado-tag feria-jud';
+      fer.textContent = 'Feria Jud.';
       head.appendChild(fer);
     }
     card.appendChild(head);
@@ -943,6 +1127,11 @@ function renderDayView() {
     const ferBadge = document.createElement('span');
     ferBadge.className = 'dv-feriado-badge';
     ferBadge.textContent = 'FERIADO';
+    header.appendChild(ferBadge);
+  } else if (isFeriaJud(y, m, d)) {
+    const ferBadge = document.createElement('span');
+    ferBadge.className = 'dv-feriado-badge feria-jud';
+    ferBadge.textContent = 'FERIA JUDICIAL';
     header.appendChild(ferBadge);
   }
   card.appendChild(header);
@@ -1234,6 +1423,18 @@ function renderDetail() {
     renderDetail();
   });
   card.appendChild(feriBtn);
+
+  // Botón Marcar/Quitar feria judicial
+  const fjBtn = document.createElement('button');
+  const isFj = isFeriaJud(state.year, state.month, day);
+  fjBtn.className = 'feriado-btn feria-jud-btn' + (isFj ? ' active' : '');
+  fjBtn.innerHTML = isFj ? '🔴 Quitar feria judicial' : '⭕ Marcar como feria judicial';
+  fjBtn.addEventListener('click', () => {
+    toggleFeriaJud(day);
+    rerenderActiveView();
+    renderDetail();
+  });
+  card.appendChild(fjBtn);
 
   // Toggle de edición avanzada
   const editToggle = document.createElement('button');
@@ -2209,7 +2410,7 @@ function generateMonth() {
     const t = teams[teamIdx];
     days.forEach(d => {
       if (d === null) return;
-      if (isFeriado(y, m, d)) return;
+      if (isSkipDay(y, m, d)) return;
       const slots = [[t.a, t.b]];
       if (t.c) slots.push([t.c, null]);
       newData[String(d)] = slots;
@@ -2221,7 +2422,7 @@ function generateMonth() {
   // Asignar un slot de 2 días: primero intenta un solo equipo. Si no hay,
   // PARTE el slot en 2 equipos distintos (1 día cada uno).
   function assignTwoDaySlot(days, excludeHard, preferAvoid) {
-    const realDays = days.filter(d => d !== null && !isFeriado(y, m, d));
+    const realDays = days.filter(d => d !== null && !isSkipDay(y, m, d));
     const addDays = realDays.length;
     if (addDays === 0) return -1;
 
@@ -2238,7 +2439,7 @@ function generateMonth() {
       const localUsed = new Set(excludeHard);
       let lastUsed = -1;
       for (const d of days) {
-        if (d === null || isFeriado(y, m, d)) continue;
+        if (d === null || isSkipDay(y, m, d)) continue;
         const i = pickBest(localUsed, 1, preferAvoid);
         if (i >= 0) {
           assignSlot(i, [d]);
@@ -2253,7 +2454,7 @@ function generateMonth() {
 
     // No se pudo
     days.forEach(d => {
-      if (d !== null && !isFeriado(y, m, d)) unassignedDays.push(d);
+      if (d !== null && !isSkipDay(y, m, d)) unassignedDays.push(d);
     });
     return -1;
   }
@@ -2360,8 +2561,8 @@ function generateMonth() {
     const hasSun = wk[6] !== null;
     let thisWeekendTeam = -1;
     if ((hasSat || hasSun) && !(weekIdx === 0 && preAssignedSlotType === 'satSun')) {
-      const realCount = (hasSat && !isFeriado(y, m, wk[5]) ? 1 : 0) +
-                        (hasSun && !isFeriado(y, m, wk[6]) ? 1 : 0);
+      const realCount = (hasSat && !isSkipDay(y, m, wk[5]) ? 1 : 0) +
+                        (hasSun && !isSkipDay(y, m, wk[6]) ? 1 : 0);
       // HARD: no el mismo equipo que el finde anterior
       const hardExclude = new Set(used);
       if (lastSlotTeam.weekend >= 0) hardExclude.add(lastSlotTeam.weekend);
@@ -2463,7 +2664,7 @@ function generateMonth() {
         assignSlot(thisWeekFriTeam, [wk[4]]);
         used.add(thisWeekFriTeam);
         lastSlotTeam.fri = thisWeekFriTeam;
-      } else if (!isFeriado(y, m, wk[4])) {
+      } else if (!isSkipDay(y, m, wk[4])) {
         unassignedDays.push(wk[4]);
       }
     }
@@ -2557,9 +2758,12 @@ function wireUp() {
       else if (a === 'import') document.getElementById('import-file').click();
       else if (a === 'clear') clearCurrentMonth();
       else if (a === 'generate') generateMonth();
+      else if (a === 'export-image') exportAndShareMonth();
       else if (a === 'gen-settings') openGenSettings();
       else if (a === 'colors-settings') openColorsSettings();
       else if (a === 'load-holidays') preloadArgentinaHolidays();
+      else if (a === 'mark-month-feria') markWholeMonthAsFeriaJud();
+      else if (a === 'mark-range-feria') markRangeAsFeriaJud();
       else if (a === 'sync-settings') openSyncSettings();
       else if (a === 'reset-gen-password') resetGenPassword();
       else if (a === 'install') triggerInstall();

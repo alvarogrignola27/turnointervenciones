@@ -159,6 +159,19 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v14
+- **⚖️ Feria judicial** (color rojo, distinto al amarillo del feriado):
+  - Botón "Marcar como feria judicial" en el panel de cada día (igual que feriado)
+  - Botón "Marcar mes completo como feria judicial" en el menú (para enero)
+  - Botón "Marcar rango de días como feria judicial" en el menú (para julio 13-26)
+  - El generador la respeta igual que los feriados (no asigna equipos esos días)
+  - Visual distinto: rojo en el calendario, badge "FJ" en la esquina, badge rojo en el panel
+- **📤 Compartir mes (imagen)**:
+  - Nuevo botón en el menú que exporta el calendario del mes actual como imagen PNG
+  - En mobile: abre el menú de compartir nativo (incluye WhatsApp) gracias al Web Share API
+  - En PC: descarga la imagen para que la compartas manualmente
+  - Incluye título "Turnos de Intervenciones — [Mes] [Año]" y footer con fecha de generación
+
 ### v13
 - **🔄 Rotación automática de cupos altos entre meses** (toggle en el modal del generador). Cuando está activa:
   - Mantiene el template de cupos que vos definiste (ej: 3 equipos con 5 y 4 con 4)

@@ -208,6 +208,30 @@ input, select { font: inherit; }
   margin-left: 8px;
 }
 
+/* ========== Feria judicial (rojo) ========== */
+.feria-jud-btn {
+  background: #fde0e0;
+  border: 1.5px solid #e57373;
+  color: #b71c1c;
+  margin-top: 8px;
+}
+.feria-jud-btn.active {
+  background: #c62828; color: #fff;
+  border-color: #b71c1c;
+}
+.day.feria-jud { background: #fde0e0; }
+.day.feria-jud.weekend { background: #f8c8c8; }
+.feriado-mark.feria-jud {
+  background: #c62828; color: #fff;
+}
+.wk-day.feria-jud { background: #fde0e0; }
+.wk-feriado-tag.feria-jud {
+  background: #c62828; color: #fff;
+}
+.dv-feriado-badge.feria-jud {
+  background: #c62828; color: #fff;
+}
+
 /* ========== Modal (Generator settings) ========== */
 .modal { position: fixed; inset: 0; z-index: 200; }
 .modal-backdrop {

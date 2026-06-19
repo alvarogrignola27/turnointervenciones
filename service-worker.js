@@ -2,7 +2,7 @@
 // Estrategia: network-first para HTML/JS (para que las nuevas versiones lleguen
 // rápido), cache-first para assets estáticos. Firebase nunca se cachea.
 
-const CACHE_NAME = 'turnos-v13';
+const CACHE_NAME = 'turnos-v14';
 const ASSETS = [
   './',
   './index.html',
@@ -41,8 +41,9 @@ self.addEventListener('fetch', (event) => {
   if (url.includes('firebase') ||
       url.includes('googleapis.com') ||
       url.includes('firebaseio.com') ||
-      url.includes('gstatic.com')) {
-    return; // dejar pasar al network sin intermediación
+      url.includes('gstatic.com') ||
+      url.includes('cdnjs.cloudflare.com')) {
+    return;
   }
 
   // Network-first para HTML, JS, CSS (para que las actualizaciones lleguen)
