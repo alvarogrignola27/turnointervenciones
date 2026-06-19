@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '15';
+const APP_VERSION = '16';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -3131,9 +3131,18 @@ function wireUp() {
   const v = document.getElementById('app-version');
   if (v) v.textContent = APP_VERSION;
 
-  const menuBtn = document.getElementById('menu-btn');
   const menu = document.getElementById('menu');
-  menuBtn.addEventListener('click', () => menu.classList.toggle('hidden'));
+  // 4 botones de categoría: cada uno abre el menú mostrando sólo su sección
+  document.querySelectorAll('.cat-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat = btn.dataset.cat;
+      // Ocultar todas las secciones del menú menos la elegida
+      menu.querySelectorAll('.menu-section').forEach(s => {
+        s.classList.toggle('hidden', s.dataset.section !== cat);
+      });
+      menu.classList.remove('hidden');
+    });
+  });
   menu.querySelectorAll('button[data-action]').forEach(btn => {
     btn.addEventListener('click', () => {
       const a = btn.dataset.action;
@@ -3270,7 +3279,7 @@ function wireUp() {
   });
 
   document.addEventListener('click', (e) => {
-    if (!menu.contains(e.target) && !menuBtn.contains(e.target)) menu.classList.add('hidden');
+    if (!menu.contains(e.target) && !e.target.closest('.cat-btn')) menu.classList.add('hidden');
     if (!picker.contains(e.target) && !titleBtn.contains(e.target)) picker.classList.add('hidden');
   });
 

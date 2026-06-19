@@ -73,35 +73,46 @@
       <div id="detail" class="detail"></div>
     </div>
 
-    <div class="footer-actions">
-      <button id="menu-btn" class="menu-btn" aria-label="Menú">⋯ Más</button>
+    <div class="footer-actions footer-actions-multi">
+      <button data-cat="generation" class="cat-btn">🎲<span>Generar</span></button>
+      <button data-cat="markers" class="cat-btn">⚖️<span>Marcar</span></button>
+      <button data-cat="custom" class="cat-btn">🎨<span>Personalizar</span></button>
+      <button data-cat="data" class="cat-btn">☁️<span>Datos</span></button>
     </div>
 
     <div id="menu" class="menu hidden">
-      <div class="menu-section-title">🎲 Generación</div>
-      <button data-action="generate">🎲 Generar mes</button>
-      <button data-action="gen-settings">⚙️ Configurar equipos del generador</button>
-      <button data-action="export-image">📤 Compartir mes (imagen)</button>
+      <div data-section="generation" class="menu-section">
+        <div class="menu-section-title">🎲 Generación</div>
+        <button data-action="generate">🎲 Generar mes</button>
+        <button data-action="gen-settings">⚙️ Configurar equipos del generador</button>
+        <button data-action="export-image">📤 Compartir mes (imagen)</button>
+      </div>
 
-      <div class="menu-section-title">⚖️ Marcadores</div>
-      <button data-action="load-holidays">🇦🇷 Precargar feriados nacionales</button>
-      <button data-action="mark-month-feria">⚖️ Marcar mes como feria judicial</button>
-      <button data-action="mark-range-feria">⚖️ Marcar rango como feria judicial</button>
+      <div data-section="markers" class="menu-section">
+        <div class="menu-section-title">⚖️ Marcadores</div>
+        <button data-action="load-holidays">🇦🇷 Precargar feriados nacionales</button>
+        <button data-action="mark-month-feria">⚖️ Marcar mes como feria judicial</button>
+        <button data-action="mark-range-feria">⚖️ Marcar rango como feria judicial</button>
+      </div>
 
-      <div class="menu-section-title">🎨 Personalización</div>
-      <button data-action="colors-settings">🎨 Colores de personas</button>
-      <button data-action="birthdays-settings">🎂 Cumpleaños</button>
+      <div data-section="custom" class="menu-section">
+        <div class="menu-section-title">🎨 Personalización</div>
+        <button data-action="colors-settings">🎨 Colores de personas</button>
+        <button data-action="birthdays-settings">🎂 Cumpleaños</button>
+      </div>
 
-      <div class="menu-section-title">☁️ Datos y nube</div>
-      <button data-action="sync-settings">☁️ Sincronización en la nube</button>
-      <button data-action="export">📦 Exportar datos (JSON)</button>
-      <button data-action="import">📥 Importar datos (JSON)</button>
-      <button data-action="clear">🗑️ Borrar mes actual</button>
+      <div data-section="data" class="menu-section">
+        <div class="menu-section-title">☁️ Datos y nube</div>
+        <button data-action="sync-settings">☁️ Sincronización en la nube</button>
+        <button data-action="export">📦 Exportar datos (JSON)</button>
+        <button data-action="import">📥 Importar datos (JSON)</button>
+        <button data-action="clear">🗑️ Borrar mes actual</button>
+      </div>
 
       <button data-action="install" id="install-btn" class="hidden">Instalar app</button>
       <button data-action="close">Cerrar</button>
       <div class="menu-version">
-        Versión <span id="app-version">15</span>
+        Versión <span id="app-version">16</span>
         <div class="sync-status-indicator idle" id="sync-status-indicator">⚪ Sin conectar</div>
       </div>
       <input type="file" id="import-file" accept="application/json" class="hidden">
