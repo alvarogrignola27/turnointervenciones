@@ -159,6 +159,13 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v15
+- **🎂 Cumpleaños**: nuevo modal en el menú para definir la fecha de cumpleaños de cada persona. El día que alguien cumple años, su equipo NO recibe turno del generador (se busca otro). Visual: ícono 🎂 en la esquina del día en el calendario.
+- **🔁 Reemplazos**: en el modo edición del día hay un botón "+ Reemplazo" violeta. Te pide a quién reemplaza (alguien del día) y quién lo reemplaza (cualquier persona del roster). El reemplazo aparece debajo de las filas del día en color violeta distintivo ("ALVARO ↪ reemplaza a Cabeza"). En el calendario, los días con reemplazos muestran un ↪ violeta en la esquina.
+- **🗂️ Menú organizado por categorías**: ahora "…Más" tiene 4 secciones (Generación, Marcadores, Personalización, Datos y nube). Antes era una lista plana.
+- **☁️ Sincronización mejorada**: nuevos botones "⬇️ Forzar descarga de la nube" y "⬆️ Forzar subida a la nube" en el modal de sync. Solución para el caso "dice sincronizado pero no aparece nada" (forzás la descarga manualmente).
+- **🔑 Contraseña del generador quitada**: ya no pide contraseña para generar el mes. Si querés volver a tener una traba, decímelo y la pongo de otra forma.
+
 ### v14
 - **⚖️ Feria judicial** (color rojo, distinto al amarillo del feriado):
   - Botón "Marcar como feria judicial" en el panel de cada día (igual que feriado)

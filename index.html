@@ -78,22 +78,30 @@
     </div>
 
     <div id="menu" class="menu hidden">
+      <div class="menu-section-title">🎲 Generación</div>
       <button data-action="generate">🎲 Generar mes</button>
-      <button data-action="export-image">📤 Compartir mes (imagen)</button>
       <button data-action="gen-settings">⚙️ Configurar equipos del generador</button>
-      <button data-action="colors-settings">🎨 Colores de personas</button>
+      <button data-action="export-image">📤 Compartir mes (imagen)</button>
+
+      <div class="menu-section-title">⚖️ Marcadores</div>
       <button data-action="load-holidays">🇦🇷 Precargar feriados nacionales</button>
       <button data-action="mark-month-feria">⚖️ Marcar mes como feria judicial</button>
-      <button data-action="mark-range-feria">⚖️ Marcar rango de días como feria judicial</button>
+      <button data-action="mark-range-feria">⚖️ Marcar rango como feria judicial</button>
+
+      <div class="menu-section-title">🎨 Personalización</div>
+      <button data-action="colors-settings">🎨 Colores de personas</button>
+      <button data-action="birthdays-settings">🎂 Cumpleaños</button>
+
+      <div class="menu-section-title">☁️ Datos y nube</div>
       <button data-action="sync-settings">☁️ Sincronización en la nube</button>
-      <button data-action="reset-gen-password">🔑 Cambiar contraseña del generador</button>
-      <button data-action="export">Exportar datos (JSON)</button>
-      <button data-action="import">Importar datos (JSON)</button>
-      <button data-action="clear">Borrar mes actual</button>
+      <button data-action="export">📦 Exportar datos (JSON)</button>
+      <button data-action="import">📥 Importar datos (JSON)</button>
+      <button data-action="clear">🗑️ Borrar mes actual</button>
+
       <button data-action="install" id="install-btn" class="hidden">Instalar app</button>
       <button data-action="close">Cerrar</button>
       <div class="menu-version">
-        Versión <span id="app-version">14</span>
+        Versión <span id="app-version">15</span>
         <div class="sync-status-indicator idle" id="sync-status-indicator">⚪ Sin conectar</div>
       </div>
       <input type="file" id="import-file" accept="application/json" class="hidden">
@@ -140,6 +148,24 @@
       </div>
     </div>
 
+    <div id="birthdays-modal" class="modal hidden" role="dialog" aria-labelledby="birthdays-modal-title">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2 id="birthdays-modal-title">🎂 Cumpleaños</h2>
+          <button class="modal-close" id="birthdays-modal-close" aria-label="Cerrar">×</button>
+        </div>
+        <p class="modal-subtitle">
+          Definí la fecha de cumpleaños de cada persona. El día de su cumpleaños, su equipo no recibirá turnos.
+        </p>
+        <div id="birthdays-list" class="birthdays-list"></div>
+        <div class="modal-footer">
+          <button id="birthdays-reset" class="modal-btn secondary">Borrar todos</button>
+          <button id="birthdays-close-btn" class="modal-btn primary">Listo</button>
+        </div>
+      </div>
+    </div>
+
     <div id="sync-modal" class="modal hidden" role="dialog" aria-labelledby="sync-modal-title">
       <div class="modal-backdrop"></div>
       <div class="modal-card">
@@ -177,6 +203,10 @@
             <input type="password" id="fb-password" placeholder="••••••" autocomplete="off">
           </label>
           <button id="sync-test-sdk" class="modal-btn secondary" style="margin-top:4px;">🔍 Probar si Firebase cargó</button>
+          <div class="sync-force-row">
+            <button id="sync-force-pull" class="modal-btn secondary">⬇️ Forzar descarga de la nube</button>
+            <button id="sync-force-push" class="modal-btn secondary">⬆️ Forzar subida a la nube</button>
+          </div>
         </div>
         <div class="modal-footer">
           <button id="sync-disconnect" class="modal-btn secondary">Desconectar</button>

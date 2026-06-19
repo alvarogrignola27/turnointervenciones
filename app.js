@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '14';
+const APP_VERSION = '15';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -24,6 +24,8 @@ const FIREBASE_CONFIG_KEY = 'turnos:firebase_config';
 const FIREBASE_LAST_SYNC_KEY = 'turnos:firebase_last_sync';
 const GEN_PASSWORD_KEY = 'turnos:gen_password';
 const GEN_AUTO_ROTATE_KEY = 'turnos:gen_auto_rotate';
+const BIRTHDAYS_KEY = 'turnos:birthdays';
+const REPLACEMENTS_PREFIX = 'turnos:replacements:';
 const MAX_HISTORY_PER_DAY = 10;
 
 // ---------- Estado ----------
@@ -238,6 +240,167 @@ function isSkipDay(y, m, d) {
   return isFeriado(y, m, d) || isFeriaJud(y, m, d);
 }
 
+// ---------- CUMPLEAÑOS (por persona) ----------
+// Storage: { "NombrePersona": "MM-DD", ... }
+let _birthdaysCache = null;
+function loadBirthdays() {
+  if (_birthdaysCache !== null) return _birthdaysCache;
+  try {
+    _birthdaysCache = JSON.parse(localStorage.getItem(BIRTHDAYS_KEY) || '{}');
+  } catch { _birthdaysCache = {}; }
+  return _birthdaysCache;
+}
+function saveBirthdays(b) {
+  _birthdaysCache = b;
+  try {
+    localStorage.setItem(BIRTHDAYS_KEY, JSON.stringify(b));
+    scheduleCloudPush();
+  } catch (e) { console.warn('Save birthdays error', e); }
+}
+function setBirthday(person, mmdd) {
+  const b = loadBirthdays();
+  if (mmdd) b[person] = mmdd;
+  else delete b[person];
+  saveBirthdays(b);
+}
+// Devuelve las personas que cumplen el día y, m, d
+function birthdaysOn(y, m, d) {
+  const b = loadBirthdays();
+  const target = `${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  const list = [];
+  for (const person in b) {
+    if (b[person] === target) list.push(person);
+  }
+  return list;
+}
+// Devuelve los índices de equipos que TIENEN alguien cumpleaños el día y, m, d
+function teamsWithBirthdayOn(teams, y, m, d) {
+  const bd = birthdaysOn(y, m, d);
+  if (bd.length === 0) return [];
+  const idxs = [];
+  teams.forEach((t, i) => {
+    const members = [t.a, t.b, t.c].filter(Boolean);
+    if (members.some(name => bd.includes(name))) idxs.push(i);
+  });
+  return idxs;
+}
+
+// ---------- REEMPLAZOS (por día) ----------
+// Storage: turnos:replacements:YYYY-MM => { "5": [{ replacement: "MARTIN", original: "Cabeza" }, ...] }
+function replacementsKey(y, m) {
+  return `${REPLACEMENTS_PREFIX}${y}-${String(m).padStart(2,'0')}`;
+}
+function loadReplacements(y, m) {
+  try {
+    const raw = localStorage.getItem(replacementsKey(y, m));
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+function saveReplacements(y, m, data) {
+  const key = replacementsKey(y, m);
+  try {
+    if (Object.keys(data).length === 0) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(data));
+    scheduleCloudPush();
+  } catch (e) { console.warn('Save replacements error', e); }
+}
+function getReplacementsForDay(y, m, d) {
+  if (y === state.year && m === state.month) {
+    return (state._replacements && state._replacements[String(d)]) || [];
+  }
+  const r = loadReplacements(y, m);
+  return r[String(d)] || [];
+}
+function addReplacement(day, replacement, original) {
+  if (!state._replacements) state._replacements = {};
+  if (!state._replacements[String(day)]) state._replacements[String(day)] = [];
+  state._replacements[String(day)].push({ replacement, original });
+  saveReplacements(state.year, state.month, state._replacements);
+}
+function removeReplacement(day, idx) {
+  if (!state._replacements || !state._replacements[String(day)]) return;
+  state._replacements[String(day)].splice(idx, 1);
+  if (state._replacements[String(day)].length === 0) delete state._replacements[String(day)];
+  saveReplacements(state.year, state.month, state._replacements);
+}
+
+// Form rápido para agregar un reemplazo (usado en el editor del día)
+function openReplacementForm(day) {
+  // Listar personas del día (para "a quién reemplaza")
+  const slots = state.data[String(day)] || [];
+  const peopleInDay = [];
+  slots.forEach(s => {
+    if (s[0] && !peopleInDay.includes(s[0])) peopleInDay.push(s[0]);
+    if (s[1] && !peopleInDay.includes(s[1])) peopleInDay.push(s[1]);
+  });
+  if (peopleInDay.length === 0) {
+    alert('No hay nadie asignado este día para reemplazar.');
+    return;
+  }
+
+  // Construir un mini-modal inline (no se usa prompt para que se vea piola en mobile)
+  const overlay = document.createElement('div');
+  overlay.className = 'modal';
+  overlay.innerHTML = `
+    <div class="modal-backdrop"></div>
+    <div class="modal-card modal-card-small">
+      <div class="modal-head">
+        <h2>➕ Nuevo reemplazo</h2>
+        <button class="modal-close" type="button">×</button>
+      </div>
+      <div class="rep-form">
+        <label>A quién reemplaza:</label>
+        <select id="rep-original" class="rep-select"></select>
+        <label>Quién lo reemplaza:</label>
+        <select id="rep-replacement" class="rep-select"></select>
+        <div class="modal-footer">
+          <button class="modal-btn secondary" type="button" id="rep-cancel">Cancelar</button>
+          <button class="modal-btn primary" type="button" id="rep-save">Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const origSel = overlay.querySelector('#rep-original');
+  const repSel = overlay.querySelector('#rep-replacement');
+
+  peopleInDay.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p; o.textContent = p;
+    origSel.appendChild(o);
+  });
+
+  const allPeople = [...new Set([...ROSTER, ...OTROS])].sort((a,b) => a.localeCompare(b));
+  allPeople.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p; o.textContent = p;
+    repSel.appendChild(o);
+  });
+
+  function close() { document.body.removeChild(overlay); }
+  overlay.querySelector('.modal-close').addEventListener('click', close);
+  overlay.querySelector('.modal-backdrop').addEventListener('click', close);
+  overlay.querySelector('#rep-cancel').addEventListener('click', close);
+  overlay.querySelector('#rep-save').addEventListener('click', () => {
+    const original = origSel.value;
+    const replacement = repSel.value;
+    if (!original || !replacement) {
+      alert('Tenés que elegir ambos.');
+      return;
+    }
+    if (original === replacement) {
+      alert('No se puede reemplazar a sí mismo.');
+      return;
+    }
+    addReplacement(day, replacement, original);
+    close();
+    rerenderActiveView();
+    renderDetail();
+    showToast(`${replacement} reemplaza a ${original}`);
+  });
+}
+
 // ---------- Exportar mes como imagen + compartir ----------
 async function exportAndShareMonth() {
   if (typeof html2canvas === 'undefined') {
@@ -370,6 +533,7 @@ function reloadCurrentMonth() {
   state.data = loadMonthData(state.year, state.month);
   state._feriados = loadFeriados(state.year, state.month);
   state._feriaJud = loadFeriaJud(state.year, state.month);
+  state._replacements = loadReplacements(state.year, state.month);
 }
 
 // ---------- Inicialización del seed ----------
@@ -581,9 +745,11 @@ function applyRemoteData(data) {
   });
   // Invalidar caches y recargar
   _personColorsCache = null;
+  _birthdaysCache = null;
   state.data = loadMonthData(state.year, state.month);
   state._feriados = loadFeriados(state.year, state.month);
   state._feriaJud = loadFeriaJud(state.year, state.month);
+  state._replacements = loadReplacements(state.year, state.month);
   rerenderActiveView();
   renderFilters();
   if (state.selectedDay !== null) renderDetail();
@@ -620,6 +786,49 @@ async function pushToCloud() {
   } catch (e) {
     console.error('Push to cloud failed:', e);
     setSyncStatus('error', `🔴 ${e.message}`);
+  }
+}
+
+// Forzar descarga desde la nube (ignora timestamp local)
+async function forcePullFromCloud() {
+  if (!_fbUser || !_fbDb) {
+    showToast('Primero conectate a Firebase');
+    return;
+  }
+  if (!confirm('⚠️ Esto va a REEMPLAZAR todos los datos locales con los que están en la nube. ¿Continuar?')) return;
+  setSyncInlineStatus('working', '⬇️ Descargando datos de la nube...');
+  try {
+    const snap = await _fbDb.ref(`users/${_fbUser.uid}/data`).once('value');
+    const data = snap.val();
+    if (!data) {
+      setSyncInlineStatus('warn', '⚠️ No hay datos en la nube para descargar.');
+      return;
+    }
+    applyRemoteData(data);
+    if (data._timestamp) localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(data._timestamp));
+    setSyncInlineStatus('ok', '✅ Datos descargados de la nube y aplicados localmente.');
+    showToast('⬇️ Descarga completada');
+  } catch (e) {
+    console.error('Force pull error:', e);
+    setSyncInlineStatus('error', `🔴 Error descargando: ${e.message}`);
+  }
+}
+
+// Forzar subida a la nube
+async function forcePushToCloud() {
+  if (!_fbUser || !_fbDb) {
+    showToast('Primero conectate a Firebase');
+    return;
+  }
+  if (!confirm('⬆️ Esto va a REEMPLAZAR todos los datos en la nube con los que tenés localmente. ¿Continuar?')) return;
+  setSyncInlineStatus('working', '⬆️ Subiendo datos locales a la nube...');
+  try {
+    await pushToCloud();
+    setSyncInlineStatus('ok', '✅ Datos subidos a la nube correctamente.');
+    showToast('⬆️ Subida completada');
+  } catch (e) {
+    console.error('Force push error:', e);
+    setSyncInlineStatus('error', `🔴 Error subiendo: ${e.message}`);
   }
 }
 
@@ -686,6 +895,97 @@ function resetGenPassword() {
   if (!confirm('¿Borrar la contraseña del generador? Después podrás definir una nueva.')) return;
   saveGenPasswordHash(null);
   showToast('Contraseña borrada. Definí una nueva al generar.');
+}
+
+// ---------- Modal de cumpleaños ----------
+function openBirthdaysSettings() {
+  document.getElementById('birthdays-modal').classList.remove('hidden');
+  renderBirthdaysSettings();
+}
+function closeBirthdaysSettings() {
+  document.getElementById('birthdays-modal').classList.add('hidden');
+}
+function renderBirthdaysSettings() {
+  const list = document.getElementById('birthdays-list');
+  list.innerHTML = '';
+  const allPeople = [...new Set([...ROSTER, ...OTROS])].sort((a,b) => a.localeCompare(b));
+  const b = loadBirthdays();
+  allPeople.forEach(person => {
+    const row = document.createElement('div');
+    row.className = 'birthdays-row';
+
+    const name = document.createElement('div');
+    name.className = 'birthdays-name';
+    name.textContent = person;
+    name.style.background = colorFor(person);
+    name.style.color = textColorFor(person);
+
+    const inputs = document.createElement('div');
+    inputs.className = 'birthdays-inputs';
+
+    const monthSel = document.createElement('select');
+    monthSel.className = 'bd-select';
+    const emptyM = document.createElement('option');
+    emptyM.value = ''; emptyM.textContent = 'Mes';
+    monthSel.appendChild(emptyM);
+    MES_NAMES.forEach((mn, i) => {
+      const o = document.createElement('option');
+      o.value = String(i+1).padStart(2,'0');
+      o.textContent = mn;
+      monthSel.appendChild(o);
+    });
+
+    const daySel = document.createElement('select');
+    daySel.className = 'bd-select';
+    const emptyD = document.createElement('option');
+    emptyD.value = ''; emptyD.textContent = 'Día';
+    daySel.appendChild(emptyD);
+    for (let d = 1; d <= 31; d++) {
+      const o = document.createElement('option');
+      o.value = String(d).padStart(2,'0');
+      o.textContent = d;
+      daySel.appendChild(o);
+    }
+
+    const stored = b[person];
+    if (stored) {
+      const [mm, dd] = stored.split('-');
+      monthSel.value = mm;
+      daySel.value = dd;
+    }
+
+    function save() {
+      const mm = monthSel.value;
+      const dd = daySel.value;
+      if (mm && dd) {
+        setBirthday(person, `${mm}-${dd}`);
+      } else if (!mm && !dd) {
+        setBirthday(person, null);
+      }
+      rerenderActiveView();
+    }
+    monthSel.addEventListener('change', save);
+    daySel.addEventListener('change', save);
+
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'bd-clear';
+    clearBtn.textContent = '×';
+    clearBtn.title = 'Quitar cumpleaños';
+    clearBtn.addEventListener('click', () => {
+      setBirthday(person, null);
+      monthSel.value = '';
+      daySel.value = '';
+      rerenderActiveView();
+    });
+
+    inputs.appendChild(monthSel);
+    inputs.appendChild(daySel);
+    inputs.appendChild(clearBtn);
+
+    row.appendChild(name);
+    row.appendChild(inputs);
+    list.appendChild(row);
+  });
 }
 
 // ---------- Modal de configuración de sincronización ----------
@@ -951,6 +1251,26 @@ function renderMonthView() {
       fer.textContent = 'FJ';
       fer.title = 'Feria judicial';
       el.appendChild(fer);
+    }
+
+    // Marca de cumpleaños
+    const bdList = birthdaysOn(state.year, state.month, day);
+    if (bdList.length > 0) {
+      const bd = document.createElement('span');
+      bd.className = 'bd-mark';
+      bd.textContent = '🎂';
+      bd.title = 'Cumpleaños: ' + bdList.join(', ');
+      el.appendChild(bd);
+    }
+
+    // Marca de reemplazo
+    const reps = getReplacementsForDay(state.year, state.month, day);
+    if (reps.length > 0) {
+      const r = document.createElement('span');
+      r.className = 'replacement-mark';
+      r.textContent = '↪';
+      r.title = reps.map(x => `${x.replacement} reemplaza a ${x.original}`).join('; ');
+      el.appendChild(r);
     }
 
     const slots = state.data[String(day)] || [];
@@ -1552,7 +1872,48 @@ function renderDetail() {
       rerenderActiveView(); renderDetail();
     });
     addRow.appendChild(addBtn);
+
+    const addRepBtn = document.createElement('button');
+    addRepBtn.className = 'add-btn replacement-add-btn';
+    addRepBtn.textContent = '+ Reemplazo';
+    addRepBtn.addEventListener('click', () => {
+      openReplacementForm(day);
+    });
+    addRow.appendChild(addRepBtn);
+
     section.appendChild(addRow);
+
+    // Lista de reemplazos existentes
+    const reps = getReplacementsForDay(state.year, state.month, day);
+    if (reps.length > 0) {
+      const repsTitle = document.createElement('div');
+      repsTitle.className = 'replacements-title';
+      repsTitle.textContent = 'REEMPLAZOS';
+      section.appendChild(repsTitle);
+
+      reps.forEach((rep, idx) => {
+        const repRow = document.createElement('div');
+        repRow.className = 'replacement-row';
+
+        const pill = document.createElement('div');
+        pill.className = 'replacement-pill';
+        pill.innerHTML = `<b>${rep.replacement}</b> <span class="rep-arrow">↪</span> <small>reemplaza a ${rep.original}</small>`;
+
+        const del = document.createElement('button');
+        del.className = 'replacement-delete';
+        del.textContent = '×';
+        del.title = 'Quitar reemplazo';
+        del.addEventListener('click', () => {
+          if (!confirm(`¿Quitar el reemplazo de ${rep.replacement} a ${rep.original}?`)) return;
+          removeReplacement(day, idx);
+          rerenderActiveView(); renderDetail();
+        });
+
+        repRow.appendChild(pill);
+        repRow.appendChild(del);
+        section.appendChild(repRow);
+      });
+    }
 
     // Botón Deshacer
     if (hasHistory(state.year, state.month, day)) {
@@ -2325,9 +2686,6 @@ function generateMonth() {
     return;
   }
 
-  // === CHECK 0: contraseña ===
-  if (!checkGenPassword()) return;
-
   const y = state.year, m = state.month;
 
   // === CHECK 1: el mes anterior tiene que tener datos (continuidad) ===
@@ -2369,6 +2727,21 @@ function generateMonth() {
     );
   }
 
+  // Helper: equipos bloqueados por cumpleaños en alguno de los días dados
+  function teamsBlockedByBirthday(days) {
+    const blocked = new Set();
+    for (const d of days) {
+      if (d === null) continue;
+      const bd = birthdaysOn(y, m, d);
+      if (bd.length === 0) continue;
+      teams.forEach((t, i) => {
+        const members = [t.a, t.b, t.c].filter(Boolean);
+        if (members.some(name => bd.includes(name))) blocked.add(i);
+      });
+    }
+    return blocked;
+  }
+
   function canUse(idx, addDays) {
     const max = effectiveMaxes[idx] != null ? effectiveMaxes[idx] : Infinity;
     return (usage[idx] + addDays) <= max;
@@ -2408,9 +2781,16 @@ function generateMonth() {
   function assignSlot(teamIdx, days) {
     if (teamIdx < 0) return -1;
     const t = teams[teamIdx];
+    const members = [t.a, t.b, t.c].filter(Boolean);
     days.forEach(d => {
       if (d === null) return;
       if (isSkipDay(y, m, d)) return;
+      // Si algún miembro del equipo cumple años ese día, NO asignar
+      const bd = birthdaysOn(y, m, d);
+      if (members.some(name => bd.includes(name))) {
+        unassignedDays.push(d);
+        return;
+      }
       const slots = [[t.a, t.b]];
       if (t.c) slots.push([t.c, null]);
       newData[String(d)] = slots;
@@ -2563,9 +2943,10 @@ function generateMonth() {
     if ((hasSat || hasSun) && !(weekIdx === 0 && preAssignedSlotType === 'satSun')) {
       const realCount = (hasSat && !isSkipDay(y, m, wk[5]) ? 1 : 0) +
                         (hasSun && !isSkipDay(y, m, wk[6]) ? 1 : 0);
-      // HARD: no el mismo equipo que el finde anterior
+      // HARD: no el mismo equipo que el finde anterior + bloqueo por cumpleaños
       const hardExclude = new Set(used);
       if (lastSlotTeam.weekend >= 0) hardExclude.add(lastSlotTeam.weekend);
+      teamsBlockedByBirthday([wk[5], wk[6]]).forEach(i => hardExclude.add(i));
 
       // Buscar siguiente equipo en rotación que cumpla
       let attempts = 0;
@@ -2619,10 +3000,11 @@ function generateMonth() {
     // === Slot Lun-Mar ===
     const hasMon = wk[0] !== null, hasTue = wk[1] !== null;
     if ((hasMon || hasTue) && !(weekIdx === 0 && preAssignedSlotType === 'monTue')) {
-      // HARD: ya usado esta semana + descanso post-viernes + slot consecutivo
+      // HARD: ya usado esta semana + descanso post-viernes + slot consecutivo + cumpleaños
       const hardExclude = new Set(used);
       restExclude.forEach(i => hardExclude.add(i));
       if (lastSlotTeam.monTue >= 0) hardExclude.add(lastSlotTeam.monTue);
+      teamsBlockedByBirthday([wk[0], wk[1]]).forEach(i => hardExclude.add(i));
 
       const idx = assignTwoDaySlot([wk[0], wk[1]], hardExclude, null);
       if (idx >= 0) {
@@ -2640,6 +3022,7 @@ function generateMonth() {
       const hardExclude = new Set(used);
       restExclude.forEach(i => hardExclude.add(i));
       if (lastSlotTeam.wedThu >= 0) hardExclude.add(lastSlotTeam.wedThu);
+      teamsBlockedByBirthday([wk[2], wk[3]]).forEach(i => hardExclude.add(i));
 
       const idx = assignTwoDaySlot([wk[2], wk[3]], hardExclude, null);
       if (idx >= 0) {
@@ -2658,6 +3041,7 @@ function generateMonth() {
       const hardExclude = new Set(used);
       restExclude.forEach(i => hardExclude.add(i));
       if (lastSlotTeam.fri >= 0) hardExclude.add(lastSlotTeam.fri);
+      teamsBlockedByBirthday([wk[4]]).forEach(i => hardExclude.add(i));
 
       thisWeekFriTeam = pickBest(hardExclude, 1, null);
       if (thisWeekFriTeam >= 0) {
@@ -2761,11 +3145,11 @@ function wireUp() {
       else if (a === 'export-image') exportAndShareMonth();
       else if (a === 'gen-settings') openGenSettings();
       else if (a === 'colors-settings') openColorsSettings();
+      else if (a === 'birthdays-settings') openBirthdaysSettings();
       else if (a === 'load-holidays') preloadArgentinaHolidays();
       else if (a === 'mark-month-feria') markWholeMonthAsFeriaJud();
       else if (a === 'mark-range-feria') markRangeAsFeriaJud();
       else if (a === 'sync-settings') openSyncSettings();
-      else if (a === 'reset-gen-password') resetGenPassword();
       else if (a === 'install') triggerInstall();
     });
   });
@@ -2809,6 +3193,18 @@ function wireUp() {
     renderColorsSettings();
     rerenderActiveView();
     showToast('Colores restaurados');
+  });
+
+  // Modal de cumpleaños
+  document.getElementById('birthdays-modal-close').addEventListener('click', closeBirthdaysSettings);
+  document.getElementById('birthdays-close-btn').addEventListener('click', closeBirthdaysSettings);
+  document.querySelector('#birthdays-modal .modal-backdrop').addEventListener('click', closeBirthdaysSettings);
+  document.getElementById('birthdays-reset').addEventListener('click', () => {
+    if (!confirm('¿Borrar todas las fechas de cumpleaños?')) return;
+    saveBirthdays({});
+    renderBirthdaysSettings();
+    rerenderActiveView();
+    showToast('Cumpleaños borrados');
   });
 
   // Modal de sincronización
@@ -2866,6 +3262,8 @@ function wireUp() {
     await disconnectSync();
     setSyncInlineStatus('idle', '⚪ Desconectado');
   });
+  document.getElementById('sync-force-pull').addEventListener('click', forcePullFromCloud);
+  document.getElementById('sync-force-push').addEventListener('click', forcePushToCloud);
   document.getElementById('import-file').addEventListener('change', (e) => {
     if (e.target.files[0]) importData(e.target.files[0]);
     e.target.value = '';
