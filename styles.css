@@ -368,9 +368,20 @@ input, select { font: inherit; }
   font-size: 13px;
   padding: 4px 0;
   color: #311b92;
+  display: flex; align-items: center; gap: 6px;
 }
 .di-rep-item small {
   color: #5e35b1;
+  flex: 1;
+}
+.di-rep-delete {
+  background: #fde0e0; color: #b71c1c;
+  border: none;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 /* ========== Colors modal: scope toggle (global vs solo este mes) ========== */

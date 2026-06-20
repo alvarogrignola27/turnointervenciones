@@ -159,6 +159,9 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v20
+- **🔁 Reemplazos sin redundancia y separados por equipo**: cuando un reemplazo apunta a alguien del Equipo de Intervención aparece como "REEMPLAZOS DEL DÍA" entre Intervención y Apoyo. Cuando apunta a alguien del Apoyo, aparece como "REEMPLAZOS DEL APOYO" debajo del Apoyo. El × para borrar va al lado de cada item. Ya no se duplica abajo del card.
+
 ### v19
 - **🔁 Leyenda de reemplazo entre Intervención y Apoyo**: en el panel del Mes y en la vista Día, los reemplazos del día se ven como un bloque violeta "REEMPLAZOS DEL DÍA (N)" arriba del Equipo de Apoyo, así está visible siempre la leyenda "X reemplaza a Y" sin tener que mirar abajo.
 - **🤝 Equipo de Apoyo también se puede reemplazar**: al elegir "a quién reemplaza" en el form, ahora aparecen tanto los del Equipo de Intervención como los del Equipo de Apoyo.

@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '19';
+const APP_VERSION = '20';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -325,41 +325,14 @@ function removeReplacement(day, idx) {
   saveReplacements(state.year, state.month, state._replacements);
 }
 
-// Construye el bloque visible "+ Agregar reemplazo" + acceso a quitar.
-// La LEYENDA de los reemplazos ahora se muestra arriba (dentro de buildDayInfoBlock,
-// entre Intervención y Apoyo). Acá ponemos sólo botón de agregar + botones de quitar.
+// Bloque visible debajo de la tarjeta del día: SÓLO el botón "+ Agregar reemplazo".
+// La lista de reemplazos existentes se muestra DENTRO de buildDayInfoBlock,
+// entre Intervención y Apoyo (o debajo del Apoyo, según a quién apunte el reemplazo).
 function buildReplacementsBlock(day) {
   const wrap = document.createElement('div');
   wrap.className = 'replacements-block';
 
   const reps = getReplacementsForDay(state.year, state.month, day);
-
-  // Si hay reemplazos, mostrar los botones de quitar individuales (con el detalle también
-  // para poder identificarlos al borrar) en un formato minimalista.
-  if (reps.length > 0) {
-    reps.forEach((rep, idx) => {
-      const repRow = document.createElement('div');
-      repRow.className = 'replacement-row';
-
-      const pill = document.createElement('div');
-      pill.className = 'replacement-pill';
-      pill.innerHTML = `<b>${rep.replacement}</b> <span class="rep-arrow">↪</span> <small>reemplaza a ${rep.original}</small>`;
-
-      const del = document.createElement('button');
-      del.className = 'replacement-delete';
-      del.textContent = '×';
-      del.title = 'Quitar reemplazo';
-      del.addEventListener('click', () => {
-        if (!confirm(`¿Quitar el reemplazo de ${rep.replacement} a ${rep.original}?`)) return;
-        removeReplacement(day, idx);
-        rerenderActiveView(); renderDetail();
-      });
-
-      repRow.appendChild(pill);
-      repRow.appendChild(del);
-      wrap.appendChild(repRow);
-    });
-  }
 
   // Botón "+ Reemplazo" siempre visible
   const addRepBtn = document.createElement('button');
@@ -1920,27 +1893,71 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   sec1.appendChild(team1);
   block.appendChild(sec1);
 
-  // BLOQUE DE REEMPLAZOS — sólo si estamos en el mes actualmente cargado
-  // (sino no podríamos leer/escribir los reemplazos del state)
+  // BLOQUE DE REEMPLAZOS — sólo si estamos en el mes actualmente cargado.
+  // Los reemplazos que apuntan a alguien del equipo de INTERVENCIÓN se muestran
+  // entre Intervención y Apoyo. Los que apuntan al APOYO se muestran después del
+  // bloque de Apoyo (más abajo). Calculamos acá la categorización.
+  let interventionPeople = new Set();
+  let apoyoPeople = new Set();
+  let interventionReps = [];
+  let apoyoReps = [];
   if (y === state.year && m === state.month) {
-    const reps = getReplacementsForDay(y, m, d);
-    // Solo lo mostramos si hay reemplazos o si estamos en vista que permite editar.
-    // Lo mostramos siempre cuando hay reemplazos para que se vea la leyenda.
-    if (reps.length > 0) {
-      const repsSec = document.createElement('div');
-      repsSec.className = 'di-section di-section-replacements';
-      const lblR = document.createElement('div');
-      lblR.className = 'di-label';
-      lblR.textContent = `Reemplazos del día (${reps.length})`;
-      repsSec.appendChild(lblR);
-      reps.forEach((rep, idx) => {
-        const item = document.createElement('div');
-        item.className = 'di-rep-item';
-        item.innerHTML = `<b>${rep.replacement}</b> <span class="rep-arrow">↪</span> <small>reemplaza a ${rep.original}</small>`;
-        repsSec.appendChild(item);
-      });
-      block.appendChild(repsSec);
+    // Personas del slot de intervención
+    if (teamSlot) {
+      if (teamSlot[0]) interventionPeople.add(teamSlot[0]);
+      if (teamSlot[1]) interventionPeople.add(teamSlot[1]);
     }
+    // Personas del apoyo (calculadas antes de tiempo para clasificar)
+    const apoyoPreview = findApoyo(y, m, d, teamSlot);
+    if (apoyoPreview && apoyoPreview.team) {
+      if (apoyoPreview.team[0]) apoyoPeople.add(apoyoPreview.team[0]);
+      if (apoyoPreview.team[1]) apoyoPeople.add(apoyoPreview.team[1]);
+    }
+
+    const allReps = getReplacementsForDay(y, m, d);
+    allReps.forEach((rep, idx) => {
+      // idx es el índice global en el array original
+      const item = { rep, idx };
+      if (apoyoPeople.has(rep.original) && !interventionPeople.has(rep.original)) {
+        apoyoReps.push(item);
+      } else {
+        interventionReps.push(item);
+      }
+    });
+  }
+
+  // Helper: crear sección de reemplazos con título y delete por item
+  function makeRepsSection(repsItems, titleText) {
+    const sec = document.createElement('div');
+    sec.className = 'di-section di-section-replacements';
+    const lblR = document.createElement('div');
+    lblR.className = 'di-label';
+    lblR.textContent = `${titleText} (${repsItems.length})`;
+    sec.appendChild(lblR);
+    repsItems.forEach(({ rep, idx }) => {
+      const item = document.createElement('div');
+      item.className = 'di-rep-item';
+      item.innerHTML = `<b>${rep.replacement}</b> <span class="rep-arrow">↪</span> <small>reemplaza a ${rep.original}</small>`;
+      const del = document.createElement('button');
+      del.className = 'di-rep-delete';
+      del.textContent = '×';
+      del.title = 'Quitar reemplazo';
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!confirm(`¿Quitar el reemplazo de ${rep.replacement} a ${rep.original}?`)) return;
+        removeReplacement(d, idx);
+        rerenderActiveView();
+        renderDetail();
+      });
+      item.appendChild(del);
+      sec.appendChild(item);
+    });
+    return sec;
+  }
+
+  // Reemplazos de intervención: entre el equipo de intervención y el de apoyo
+  if (interventionReps.length > 0) {
+    block.appendChild(makeRepsSection(interventionReps, 'Reemplazos del día'));
   }
 
   // EQUIPO DE APOYO (editable cuando edit mode está activo, igual que intervención)
@@ -2041,6 +2058,11 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     sec2.appendChild(team2);
   }
   block.appendChild(sec2);
+
+  // Reemplazos del APOYO: van debajo del bloque de Apoyo
+  if (apoyoReps.length > 0) {
+    block.appendChild(makeRepsSection(apoyoReps, 'Reemplazos del apoyo'));
+  }
 
   return block;
 }
