@@ -159,6 +159,12 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v34
+- **🧹 Modo edición simplificado**: cuando entrás en modo Editar ya no aparece la sección "FILAS DEL DÍA" abajo (era redundante con el "+" al lado de cada equipo). Solo queda lo necesario: los selects de cada equipo, el "+" para sumar persona, y un botón "Deshacer" si hubo cambios.
+- **❌ Botón × para quitar persona extra**: cuando agregás un 3ro al equipo (o ya viene uno predefinido como Martinez), en modo Editar aparece una × roja al lado de la pill para quitarlo directamente. Funciona igual en intervención y en apoyo.
+- **🎲 "Borrar mes" movido a Generar**: la opción "🗑️ Borrar mes actual" ya no está en Datos. Ahora vive en **🎲 Generar** junto a "🎲 Generar mes", que es donde tiene más sentido.
+- **⌃ Flechita para cerrar el panel del día**: arriba a la derecha del título del día ("Viernes 5") hay un botón ⌃ que cierra el panel completo. Más rápido que tocar el día de nuevo en el calendario.
+
 ### v33
 - **🐛 Bug HOY arreglado**: antes el botón HOY tenía la clase `.vt` y disparaba el cambio de vista a `undefined`, dejando la pantalla en blanco. Ahora HOY es un botón independiente con su propio handler.
 - **📐 HOY ancho completo abajo del view-toggle**: el layout ahora es Mes / Semana / Día arriba y **📅 HOY** ancho completo abajo cubriendo los 3 tabs. Más fácil de tocar.

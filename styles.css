@@ -217,6 +217,52 @@ input, select { font: inherit; }
 }
 .di-add-person:hover { background: #f0f5ff; }
 .di-add-person:active { transform: scale(0.96); }
+
+/* Wrapper de la 3ra pill (para incluir el × de borrar al lado) */
+.di-team-pill-third-wrap {
+  flex-basis: 100%;
+  margin-top: 4px;
+  display: flex; gap: 4px; align-items: stretch;
+}
+.di-team-pill-third-wrap .di-team-pill-third {
+  flex: 1;
+  margin-top: 0;
+}
+.di-pill-delete {
+  background: #fde0e0; color: #b71c1c;
+  border: none;
+  width: 32px;
+  border-radius: 8px;
+  font-size: 18px; font-weight: 700; line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.di-pill-delete:active { transform: scale(0.95); }
+
+/* Cabecera del detail-card con título y flechita de cerrar */
+.detail-header-row {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin-bottom: 8px;
+}
+.detail-title-wrap {
+  flex: 1; min-width: 0;
+}
+.detail-title-wrap h3 { margin: 0; }
+.detail-title-wrap .date-sub { margin: 2px 0 0; }
+.detail-close-btn {
+  background: #f2f2f7; color: #6c6c70;
+  border: none; border-radius: 50%;
+  width: 32px; height: 32px;
+  font-size: 16px; font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  line-height: 1;
+  transform: rotate(0);
+}
+.detail-close-btn:hover { background: #e5e5ea; color: #1c1c1e; }
+.detail-close-btn:active { transform: scale(0.95); }
 .dv-section-gestion {
   background: #fff8e0;
   border-radius: 10px;

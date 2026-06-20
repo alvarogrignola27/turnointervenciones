@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '33';
+const APP_VERSION = '34';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -2283,6 +2283,10 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     // TERCER MIEMBRO (equipos de 3 personas)
     if (thirdMember || thirdMemberConfigName) {
       const thirdName = thirdMember ? thirdMember.name : thirdMemberConfigName;
+      // En modo edición wrappeo la pill con un container para incluir el × de borrar
+      const thirdWrap = document.createElement('div');
+      thirdWrap.className = 'di-team-pill-third-wrap';
+
       const thirdPill = document.createElement(editable ? 'select' : 'div');
       thirdPill.className = 'di-team-pill di-team-pill-third';
       thirdPill.style.background = colorFor(thirdName);
@@ -2322,7 +2326,30 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
       } else {
         thirdPill.textContent = thirdName;
       }
-      team1.appendChild(thirdPill);
+      thirdWrap.appendChild(thirdPill);
+
+      // Botón × para borrar al 3er miembro (solo en modo edición y si está en slots)
+      if (editable && state.editingDay && thirdMember && thirdMember.slotIdx !== null) {
+        const delBtn = document.createElement('button');
+        delBtn.className = 'di-pill-delete';
+        delBtn.textContent = '×';
+        delBtn.title = `Quitar a ${thirdName} del equipo de intervención`;
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!confirm(`¿Quitar a ${thirdName} del equipo de intervención?`)) return;
+          snapshotDayBeforeEdit(d);
+          state.data[String(d)].splice(thirdMember.slotIdx, 1);
+          cleanupDay(d);
+          saveMonthData(state.year, state.month, state.data);
+          rerenderActiveView();
+          if (state.view === 'month') renderDetail();
+          else if (state.view === 'day') renderDayView();
+          showToast(`✓ ${thirdName} quitado del equipo`);
+        });
+        thirdWrap.appendChild(delBtn);
+      }
+
+      team1.appendChild(thirdWrap);
     }
   } else {
     const ph = document.createElement('div');
@@ -2506,6 +2533,8 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     if (apoyo.members && apoyo.members.c) {
       const thirdName = apoyo.members.c;
       const thirdSlotIdx = apoyo.members.thirdSlotIdx;
+      const thirdWrap = document.createElement('div');
+      thirdWrap.className = 'di-team-pill-third-wrap';
       if (editable) {
         const sel = document.createElement('select');
         sel.className = 'di-team-pill di-select-pill di-team-pill-third';
@@ -2552,15 +2581,50 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
           rerenderActiveView();
           renderDetail();
         });
-        team2.appendChild(sel);
+        thirdWrap.appendChild(sel);
+
+        // × para borrar al 3er miembro del apoyo (modo edición)
+        if (state.editingDay && thirdSlotIdx !== null) {
+          const delBtn = document.createElement('button');
+          delBtn.className = 'di-pill-delete';
+          delBtn.textContent = '×';
+          delBtn.title = `Quitar a ${thirdName} del equipo de apoyo`;
+          delBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!confirm(`¿Quitar a ${thirdName} del equipo de apoyo?`)) return;
+            const isCurMonth = (apY === state.year && apM === state.month);
+            let data;
+            if (isCurMonth) {
+              snapshotDayBeforeEdit(apD);
+              data = state.data;
+            } else {
+              data = loadMonthData(apY, apM);
+            }
+            if (data[String(apD)] && data[String(apD)][thirdSlotIdx]) {
+              data[String(apD)].splice(thirdSlotIdx, 1);
+            }
+            if (isCurMonth) {
+              state.data = data;
+              saveMonthData(state.year, state.month, state.data);
+            } else {
+              saveMonthData(apY, apM, data);
+            }
+            rerenderActiveView();
+            if (state.view === 'month') renderDetail();
+            else if (state.view === 'day') renderDayView();
+            showToast(`✓ ${thirdName} quitado del apoyo`);
+          });
+          thirdWrap.appendChild(delBtn);
+        }
       } else {
         const pill = document.createElement('div');
         pill.className = 'di-team-pill di-team-pill-third';
         pill.textContent = thirdName;
         pill.style.background = colorFor(thirdName);
         pill.style.color = textColorFor(thirdName);
-        team2.appendChild(pill);
+        thirdWrap.appendChild(pill);
       }
+      team2.appendChild(thirdWrap);
     }
 
     sec2.appendChild(team2);
@@ -2624,14 +2688,37 @@ function renderDetail() {
   const card = document.createElement('div');
   card.className = 'detail-card';
 
+  // Cabecera con título + flechita para cerrar el panel
+  const headerRow = document.createElement('div');
+  headerRow.className = 'detail-header-row';
+
+  const titleWrap = document.createElement('div');
+  titleWrap.className = 'detail-title-wrap';
   const title = document.createElement('h3');
   title.textContent = `${dayName} ${day}`;
-  card.appendChild(title);
-
+  titleWrap.appendChild(title);
   const sub = document.createElement('p');
   sub.className = 'date-sub';
   sub.textContent = `${MES_NAMES[state.month - 1]} ${state.year}`;
-  card.appendChild(sub);
+  titleWrap.appendChild(sub);
+  headerRow.appendChild(titleWrap);
+
+  // Flechita ⌃ para cerrar el panel del día
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'detail-close-btn';
+  closeBtn.innerHTML = '⌃';
+  closeBtn.title = 'Cerrar panel del día';
+  closeBtn.setAttribute('aria-label', 'Cerrar panel del día');
+  closeBtn.addEventListener('click', () => {
+    state.selectedDay = null;
+    state.editingDay = false;
+    state._manageOpen = false;
+    renderMonthView();
+    renderDetail();
+  });
+  headerRow.appendChild(closeBtn);
+
+  card.appendChild(headerRow);
 
   // Bloque "Equipo de intervención + Apoyo" (sólo lectura)
   card.appendChild(buildDayInfoBlock(state.year, state.month, day, { useStateData: true }));
@@ -2639,124 +2726,13 @@ function renderDetail() {
   // Panel "Gestionar día" (mismo helper que la vista Día — comparten experiencia)
   card.appendChild(buildManagePanel(day));
 
-  if (state.editingDay) {
-    const section = document.createElement('div');
-    section.className = 'detail-section';
-    const label = document.createElement('div');
-    label.className = 'detail-section-label';
-    label.textContent = 'Filas del día';
-    section.appendChild(label);
-
-    slots.forEach((slot, idx) => {
-      const row = document.createElement('div');
-      row.className = 'slot-row';
-
-      const hasA = !!slot[0], hasB = !!slot[1];
-      const onlyOne = (hasA && !hasB) || (!hasA && hasB);
-
-      if (onlyOne) {
-        // Pill ancho completo con el único nombre, + botón "+" para agregar compañero
-        const name = hasA ? slot[0] : slot[1];
-        const sideIdx = hasA ? 0 : 1;
-        const sel = createNameSelect(name, (val) => {
-          snapshotDayBeforeEdit(day);
-          state.data[String(day)][idx][sideIdx] = val || null;
-          cleanupDay(day);
-          saveMonthData(state.year, state.month, state.data);
-          rerenderActiveView(); renderDetail();
-        });
-        sel.style.background = colorFor(name);
-        sel.style.color = textColorFor(name);
-        sel.style.fontWeight = '600';
-        sel.classList.add('slot-row-wide');
-        row.appendChild(sel);
-
-        // Botón "+ compañero"
-        const addPartner = document.createElement('button');
-        addPartner.className = 'slot-add-partner';
-        addPartner.innerHTML = '+';
-        addPartner.title = 'Agregar compañero';
-        addPartner.addEventListener('click', () => {
-          snapshotDayBeforeEdit(day);
-          // Setear el otro lado al primer nombre del roster (que sea distinto)
-          const other = ROSTER.find(n => n !== name) || ROSTER[0];
-          state.data[String(day)][idx][1 - sideIdx] = other;
-          saveMonthData(state.year, state.month, state.data);
-          rerenderActiveView(); renderDetail();
-        });
-        row.appendChild(addPartner);
-      } else {
-        // Modo estándar: 2 selects lado a lado
-        const selA = createNameSelect(slot[0], (val) => {
-          snapshotDayBeforeEdit(day);
-          state.data[String(day)][idx][0] = val || null;
-          cleanupDay(day);
-          saveMonthData(state.year, state.month, state.data);
-          rerenderActiveView(); renderDetail();
-        });
-        if (slot[0]) {
-          selA.style.background = colorFor(slot[0]);
-          selA.style.color = textColorFor(slot[0]);
-          selA.style.fontWeight = '600';
-        }
-
-        const selB = createNameSelect(slot[1], (val) => {
-          snapshotDayBeforeEdit(day);
-          state.data[String(day)][idx][1] = val || null;
-          cleanupDay(day);
-          saveMonthData(state.year, state.month, state.data);
-          rerenderActiveView(); renderDetail();
-        });
-        if (slot[1]) {
-          selB.style.background = colorFor(slot[1]);
-          selB.style.color = textColorFor(slot[1]);
-          selB.style.fontWeight = '600';
-        }
-        row.appendChild(selA);
-        row.appendChild(selB);
-      }
-
-      const del = document.createElement('button');
-      del.className = 'del';
-      del.innerHTML = '×';
-      del.setAttribute('aria-label', 'Eliminar fila');
-      del.addEventListener('click', () => {
-        snapshotDayBeforeEdit(day);
-        state.data[String(day)].splice(idx, 1);
-        cleanupDay(day);
-        saveMonthData(state.year, state.month, state.data);
-        rerenderActiveView(); renderDetail();
-      });
-
-      row.appendChild(del);
-      section.appendChild(row);
-    });
-
-    const addRow = document.createElement('div');
-    addRow.className = 'add-row';
-    const addBtn = document.createElement('button');
-    addBtn.className = 'add-btn primary';
-    addBtn.textContent = '+ Agregar fila';
-    addBtn.addEventListener('click', () => {
-      snapshotDayBeforeEdit(day);
-      if (!state.data[String(day)]) state.data[String(day)] = [];
-      state.data[String(day)].push([null, null]);
-      saveMonthData(state.year, state.month, state.data);
-      rerenderActiveView(); renderDetail();
-    });
-    addRow.appendChild(addBtn);
-    section.appendChild(addRow);
-
-    // Botón Deshacer
-    if (hasHistory(state.year, state.month, day)) {
-      const undoBtn = document.createElement('button');
-      undoBtn.className = 'undo-btn';
-      undoBtn.innerHTML = '↶ Deshacer último cambio';
-      undoBtn.addEventListener('click', () => undoDay(day));
-      section.appendChild(undoBtn);
-    }
-
-    card.appendChild(section);
+  // Botón Deshacer (solo visible en modo edición y si hay historia)
+  if (state.editingDay && hasHistory(state.year, state.month, day)) {
+    const undoBtn = document.createElement('button');
+    undoBtn.className = 'undo-btn';
+    undoBtn.innerHTML = '↶ Deshacer último cambio';
+    undoBtn.addEventListener('click', () => undoDay(day));
+    card.appendChild(undoBtn);
   }
 
   det.innerHTML = '';
