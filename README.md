@@ -159,6 +159,9 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v35
+- **🔄 Rotación de findes mejorada (no repetir antes de 6 sábados)**: antes la lógica solo bloqueaba al equipo del finde **anterior** y se reseteaba mes a mes — eso provocaba que, por ejemplo, Capdevila+Gomez hiciera el 15/Ago y volviera el 12/Sep (solo 3 findes después). Ahora hay un historial cross-month de los últimos findes y al menos deben pasar **6 sábados** antes que un equipo vuelva a hacer finde. Con 7 equipos, eso significa rotación pareja perfecta. Verificado con generación de 5 meses seguidos (Ago–Dic 2026): todos los equipos respetan el gap, salvo un caso forzado por cumpleaños (4-oct = Gómez) que entra al fallback. Si tenés meses ya generados antes de v35 conviene regenerarlos para que arranque la nueva rotación.
+
 ### v34
 - **🧹 Modo edición simplificado**: cuando entrás en modo Editar ya no aparece la sección "FILAS DEL DÍA" abajo (era redundante con el "+" al lado de cada equipo). Solo queda lo necesario: los selects de cada equipo, el "+" para sumar persona, y un botón "Deshacer" si hubo cambios.
 - **❌ Botón × para quitar persona extra**: cuando agregás un 3ro al equipo (o ya viene uno predefinido como Martinez), en modo Editar aparece una × roja al lado de la pill para quitarlo directamente. Funciona igual en intervención y en apoyo.

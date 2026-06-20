@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '34';
+const APP_VERSION = '35';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -18,6 +18,10 @@ const FERIADO_PREFIX = 'turnos:feriado:';
 const FERIA_JUD_PREFIX = 'turnos:feria_jud:';
 const GEN_CONFIG_KEY = 'turnos:gen_config';
 const WEEKEND_ROT_KEY = 'turnos:gen_weekend_idx';
+// Historial de los últimos N findes (lista de team indices) para que un equipo no
+// vuelva a hacer finde hasta que pasen al menos 6 findes desde el último.
+const WEEKEND_RECENT_KEY = 'turnos:gen_weekend_recent';
+const WEEKEND_RECENT_MIN_GAP = 6;
 const TEAM_HISTORY_KEY = 'turnos:gen_team_history';
 const PERSON_COLORS_KEY = 'turnos:person_colors';
 const PERSON_COLORS_MONTH_PREFIX = 'turnos:person_colors_month:';
@@ -3426,6 +3430,20 @@ function saveWeekendRotation(idx) {
   localStorage.setItem(WEEKEND_ROT_KEY, String(idx));
   scheduleCloudPush();
 }
+// Historial de los team indices de los últimos N findes (el último al final).
+// Cross-month: se persiste y se lee al generar cada mes, así no se resetea.
+function loadRecentWeekends() {
+  try {
+    const v = JSON.parse(localStorage.getItem(WEEKEND_RECENT_KEY) || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch { return []; }
+}
+function saveRecentWeekends(arr) {
+  // Mantengo solo los últimos N (un poco más que MIN_GAP por seguridad)
+  const trimmed = arr.slice(-(WEEKEND_RECENT_MIN_GAP + 2));
+  localStorage.setItem(WEEKEND_RECENT_KEY, JSON.stringify(trimmed));
+  scheduleCloudPush();
+}
 
 // ---------- Historial cross-month de equipos (para balanceo) ----------
 // Cada equipo identificado por su "key" (nombres ordenados alfabéticamente).
@@ -3610,6 +3628,8 @@ function generateMonth() {
   const newData = {};
   const usage = teams.map(() => 0);
   let weekendIdx = loadWeekendRotation();
+  // Historial cross-month de findes (últimos N team indices que hicieron finde)
+  const recentWeekends = loadRecentWeekends();
   const unassignedDays = [];
 
   // Cargar historial cross-month (balance entre meses)
@@ -3842,16 +3862,18 @@ function generateMonth() {
       used.add(preAssignedTeamIdx);
     }
 
-    // === Slot Sat-Sun: rotación global + evitar mismo equipo que finde anterior ===
+    // === Slot Sat-Sun: rotación global + evitar últimos 6 findes ===
     const hasSat = wk[5] !== null;
     const hasSun = wk[6] !== null;
     let thisWeekendTeam = -1;
     if ((hasSat || hasSun) && !(weekIdx === 0 && preAssignedSlotType === 'satSun')) {
       const realCount = (hasSat && !isSkipDay(y, m, wk[5]) ? 1 : 0) +
                         (hasSun && !isSkipDay(y, m, wk[6]) ? 1 : 0);
-      // HARD: no el mismo equipo que el finde anterior + bloqueo por cumpleaños
+      // HARD: no los últimos 6 findes + bloqueo por cumpleaños
+      // (eran solo el finde anterior; ahora son hasta 6 atrás para que no se repita
+      // tan rápido y la rotación sea pareja entre los 7 equipos)
       const hardExclude = new Set(used);
-      if (lastSlotTeam.weekend >= 0) hardExclude.add(lastSlotTeam.weekend);
+      recentWeekends.slice(-WEEKEND_RECENT_MIN_GAP).forEach(i => hardExclude.add(i));
       teamsBlockedByBirthday([wk[5], wk[6]]).forEach(i => hardExclude.add(i));
 
       // Buscar siguiente equipo en rotación que cumpla
@@ -3865,7 +3887,23 @@ function generateMonth() {
         weekendIdx++;
         attempts++;
       }
-      // Fallback: ignorar restricción de "no mismo que anterior" si quedó un solo equipo
+      // Fallback 1: relajar a últimos 3 findes (no los 6) si quedan pocos equipos
+      if (thisWeekendTeam < 0) {
+        const softExclude = new Set(used);
+        recentWeekends.slice(-3).forEach(i => softExclude.add(i));
+        teamsBlockedByBirthday([wk[5], wk[6]]).forEach(i => softExclude.add(i));
+        attempts = 0;
+        while (attempts < teams.length * 2) {
+          const candidate = weekendIdx % teams.length;
+          if (canUse(candidate, realCount) && !softExclude.has(candidate)) {
+            thisWeekendTeam = candidate;
+            break;
+          }
+          weekendIdx++;
+          attempts++;
+        }
+      }
+      // Fallback 2: ignorar restricción de findes recientes si no queda otra
       if (thisWeekendTeam < 0) {
         attempts = 0;
         while (attempts < teams.length * 2) {
@@ -3890,6 +3928,7 @@ function generateMonth() {
       if (thisWeekendTeam >= 0) {
         used.add(thisWeekendTeam);
         lastSlotTeam.weekend = thisWeekendTeam;
+        recentWeekends.push(thisWeekendTeam);
         weekendIdx++;
       }
     } else if (weekIdx === 0 && preAssignedSlotType === 'satSun') {
@@ -3969,6 +4008,7 @@ function generateMonth() {
   state.data = newData;
   saveMonthData(y, m, newData);
   saveWeekendRotation(weekendIdx);
+  saveRecentWeekends(recentWeekends);
 
   // Actualizar historial cross-month
   teams.forEach((t, idx) => {
