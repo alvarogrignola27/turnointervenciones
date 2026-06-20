@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '24';
+const APP_VERSION = '25';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -364,6 +364,15 @@ function openReplacementForm(day) {
     [apoyo.team[0], apoyo.team[1]].forEach(n => {
       if (n && !peopleInDay.includes(n)) peopleInDay.push(n);
     });
+    // 3er miembro del apoyo si es equipo de 3
+    if (apoyo.members && apoyo.members.c && !peopleInDay.includes(apoyo.members.c)) {
+      peopleInDay.push(apoyo.members.c);
+    }
+  }
+  // 3er miembro del equipo de Intervención del día (si lo hay)
+  const todayMembers = findTeamMembers(slots);
+  if (todayMembers && todayMembers.c && !peopleInDay.includes(todayMembers.c)) {
+    peopleInDay.push(todayMembers.c);
   }
 
   if (peopleInDay.length === 0) {
@@ -1477,7 +1486,41 @@ function findTeamSlot(slots) {
   return null;
 }
 
-// Busca el "equipo de apoyo" = el primer equipo distinto en los próximos días
+// Devuelve los miembros del equipo presente en `slots`, incluyendo el 3ro si existe.
+// Retorna: { a, b, c | null, mainSlotIdx, thirdSlotIdx | null }
+function findTeamMembers(slots) {
+  if (!slots) return null;
+  const tRes = findTeamSlot(slots);
+  if (!tRes) return null;
+  const a = tRes.slot[0], b = tRes.slot[1];
+  let c = null, thirdSlotIdx = null;
+  try {
+    const cfg = loadGenConfig();
+    const team = cfg.teams.find(t =>
+      (t.a === a && t.b === b) || (t.a === b && t.b === a)
+    );
+    if (team && team.c) {
+      // Buscar el slot que contenga al tercero (cualquier posición)
+      for (let i = 0; i < slots.length; i++) {
+        if (i === tRes.idx) continue;
+        const s = slots[i];
+        if (!s) continue;
+        if (s[0] === team.c || s[1] === team.c) {
+          c = team.c;
+          thirdSlotIdx = i;
+          break;
+        }
+      }
+      // Si la config dice que el equipo es de 3 pero el slot no se encuentra,
+      // igual incluimos el tercero (caso bug de datos legacy)
+      if (!c) c = team.c;
+    }
+  } catch {}
+  return { a, b, c, mainSlotIdx: tRes.idx, thirdSlotIdx };
+}
+
+// Busca el "equipo de apoyo" = el primer equipo distinto en los próximos días.
+// Devuelve { team: [a, b], members: { a, b, c }, date }
 function findApoyo(y, m, d, currentTeam, maxDays = 14) {
   let dt = new Date(y, m - 1, d);
   for (let i = 0; i < maxDays; i++) {
@@ -1486,7 +1529,8 @@ function findApoyo(y, m, d, currentTeam, maxDays = 14) {
     const slots = getDayDataAny(yy, mm, dd);
     const tRes = findTeamSlot(slots);
     if (tRes && !teamsEqual(tRes.slot, currentTeam)) {
-      return { team: tRes.slot, date: new Date(yy, mm - 1, dd) };
+      const members = findTeamMembers(slots);
+      return { team: tRes.slot, members, date: new Date(yy, mm - 1, dd) };
     }
   }
   return null;
@@ -1958,27 +2002,16 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
 
   // Buscar 3er miembro si el equipo es de 3 personas (config tiene .c)
   // Los equipos de 3 se guardan como [[a, b], [c, null]] en slots[]
-  let thirdMember = null;        // { name, slotIdx, sideIdx } o null
-  let thirdMemberConfigName = null;  // nombre esperado del 3er (de la config), por si no está en slots
-  if (teamSlot && slots) {
-    try {
-      const cfg = loadGenConfig();
-      const team = cfg.teams.find(t =>
-        (t.a === teamSlot[0] && t.b === teamSlot[1]) ||
-        (t.a === teamSlot[1] && t.b === teamSlot[0])
-      );
-      if (team && team.c) {
-        thirdMemberConfigName = team.c;
-        // Buscar el slot que contenga al tercero (cualquier posición)
-        for (let i = 0; i < slots.length; i++) {
-          if (teamRes && i === teamRes.idx) continue;
-          const s = slots[i];
-          if (!s) continue;
-          if (s[0] === team.c) { thirdMember = { name: team.c, slotIdx: i, sideIdx: 0 }; break; }
-          if (s[1] === team.c) { thirdMember = { name: team.c, slotIdx: i, sideIdx: 1 }; break; }
-        }
-      }
-    } catch {}
+  const members = findTeamMembers(slots);
+  let thirdMember = null;
+  let thirdMemberConfigName = null;
+  if (members && members.c) {
+    thirdMemberConfigName = members.c;
+    if (members.thirdSlotIdx !== null && slots && slots[members.thirdSlotIdx]) {
+      const s = slots[members.thirdSlotIdx];
+      const sideIdx = s[0] === members.c ? 0 : 1;
+      thirdMember = { name: members.c, slotIdx: members.thirdSlotIdx, sideIdx };
+    }
   }
 
   const block = document.createElement('div');
@@ -2120,6 +2153,10 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     if (apoyoPreview && apoyoPreview.team) {
       if (apoyoPreview.team[0]) apoyoPeople.add(apoyoPreview.team[0]);
       if (apoyoPreview.team[1]) apoyoPeople.add(apoyoPreview.team[1]);
+      // 3er miembro del apoyo si lo tiene
+      if (apoyoPreview.members && apoyoPreview.members.c) {
+        apoyoPeople.add(apoyoPreview.members.c);
+      }
     }
 
     const allReps = getReplacementsForDay(y, m, d);
@@ -2250,6 +2287,68 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
         team2.appendChild(pill);
       }
     });
+
+    // 3er miembro del equipo de APOYO (si es de 3 personas)
+    if (apoyo.members && apoyo.members.c) {
+      const thirdName = apoyo.members.c;
+      const thirdSlotIdx = apoyo.members.thirdSlotIdx;
+      if (editable) {
+        const sel = document.createElement('select');
+        sel.className = 'di-team-pill di-select-pill di-team-pill-third';
+        sel.style.background = colorFor(thirdName);
+        sel.style.color = textColorFor(thirdName);
+        const empty = document.createElement('option');
+        empty.value = ''; empty.textContent = '—';
+        sel.appendChild(empty);
+        ROSTER.forEach(name => {
+          const o = document.createElement('option');
+          o.value = name; o.textContent = name;
+          if (name === thirdName) o.selected = true;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change', (e) => {
+          const newName = e.target.value || null;
+          const isCurMonth = (apY === state.year && apM === state.month);
+          let data;
+          if (isCurMonth) {
+            snapshotDayBeforeEdit(apD);
+            data = state.data;
+          } else {
+            data = loadMonthData(apY, apM);
+          }
+          if (!data[String(apD)]) data[String(apD)] = [];
+          if (thirdSlotIdx !== null && data[String(apD)][thirdSlotIdx]) {
+            if (newName === null) {
+              data[String(apD)].splice(thirdSlotIdx, 1);
+            } else {
+              // Reemplazar manteniendo la posición existente
+              const s = data[String(apD)][thirdSlotIdx];
+              const sIdx = (s[0] === thirdName) ? 0 : 1;
+              data[String(apD)][thirdSlotIdx][sIdx] = newName;
+            }
+          } else if (newName) {
+            data[String(apD)].push([newName, null]);
+          }
+          if (isCurMonth) {
+            state.data = data;
+            saveMonthData(state.year, state.month, state.data);
+          } else {
+            saveMonthData(apY, apM, data);
+          }
+          rerenderActiveView();
+          renderDetail();
+        });
+        team2.appendChild(sel);
+      } else {
+        const pill = document.createElement('div');
+        pill.className = 'di-team-pill di-team-pill-third';
+        pill.textContent = thirdName;
+        pill.style.background = colorFor(thirdName);
+        pill.style.color = textColorFor(thirdName);
+        team2.appendChild(pill);
+      }
+    }
+
     sec2.appendChild(team2);
     const note = document.createElement('div');
     note.className = 'di-note';
