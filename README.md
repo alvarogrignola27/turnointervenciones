@@ -159,6 +159,12 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v33
+- **🐛 Bug HOY arreglado**: antes el botón HOY tenía la clase `.vt` y disparaba el cambio de vista a `undefined`, dejando la pantalla en blanco. Ahora HOY es un botón independiente con su propio handler.
+- **📐 HOY ancho completo abajo del view-toggle**: el layout ahora es Mes / Semana / Día arriba y **📅 HOY** ancho completo abajo cubriendo los 3 tabs. Más fácil de tocar.
+- **✎ Botón Editar arriba a la derecha del tile**: la edición sale del panel "Gestionar día" y va arriba a la derecha del bloque de equipos como un botón rápido. Al tocarlo cambia a "✓ Listo".
+- **➕ Botón "+" al lado de cada equipo en modo edición**: cuando entrás en modo edición, aparecen botones "+" punteados a la derecha de Equipo de Intervención y Equipo de Apoyo. Permiten agregar otra persona al equipo (modal con todo el roster + otros). Útil para agregar un 3er o 4to miembro al toque.
+
 ### v32
 - **📐 Layout del header refinado**:
   - **Desktop**: el botón HOY va al final, después de Día → orden **Mes / Semana / Día / 📅 HOY**.

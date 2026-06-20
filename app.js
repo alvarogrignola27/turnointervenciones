@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '32';
+const APP_VERSION = '33';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -406,35 +406,6 @@ function buildManagePanel(day) {
     });
     panel.appendChild(fjBtn);
 
-    // Sección "Edición avanzada"
-    const lblEdit = document.createElement('div');
-    lblEdit.className = 'manage-section-label';
-    lblEdit.textContent = '✎ Edición avanzada';
-    panel.appendChild(lblEdit);
-
-    // En la vista Día, "editar filas" abre el panel del Mes (que tiene el editor completo)
-    const editToggle = document.createElement('button');
-    editToggle.className = 'manage-item' + (state.editingDay ? ' active editing-active' : '');
-    if (state.view === 'day') {
-      editToggle.innerHTML = '✎ Editar filas del día (abre vista Mes)';
-      editToggle.addEventListener('click', () => {
-        state.selectedDay = day;
-        state.editingDay = true;
-        state._manageOpen = true;
-        switchView('month');
-        setTimeout(() => {
-          document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }, 50);
-      });
-    } else {
-      editToggle.innerHTML = state.editingDay ? '✓ Cerrar edición de filas' : '✎ Editar filas del día';
-      editToggle.addEventListener('click', () => {
-        state.editingDay = !state.editingDay;
-        renderDetail();
-      });
-    }
-    panel.appendChild(editToggle);
-
     wrap.appendChild(panel);
   }
 
@@ -456,6 +427,71 @@ function buildReplacementsBlock(day) {
   wrap.appendChild(addRepBtn);
 
   return wrap;
+}
+
+// Form rápido para agregar una persona al equipo de intervención o apoyo
+function openAddPersonForm(day, kind, apoyoInfo) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal';
+  const title = kind === 'apoyo' ? 'Agregar al equipo de apoyo' : 'Agregar al equipo de intervención';
+  const targetDay = kind === 'apoyo' && apoyoInfo ? apoyoInfo.d : day;
+  const targetY = kind === 'apoyo' && apoyoInfo ? apoyoInfo.y : state.year;
+  const targetM = kind === 'apoyo' && apoyoInfo ? apoyoInfo.m : state.month;
+  // Personas elegibles: roster completo + otros
+  const opts = ROSTER.concat(OTROS).map(n =>
+    `<option value="${n}">${n}</option>`
+  ).join('');
+  overlay.innerHTML = `
+    <div class="modal-backdrop"></div>
+    <div class="modal-card modal-card-small">
+      <div class="modal-head">
+        <h2>➕ ${title}</h2>
+        <button class="modal-close" data-act="cancel">×</button>
+      </div>
+      <div class="modal-body" style="padding:14px 16px;">
+        <label style="font-size:13px;color:#6c6c70;">Persona a agregar</label>
+        <select id="add-person-select" class="rep-select" style="margin-top:8px;">${opts}</select>
+        <div style="font-size:11px;color:#8e8e93;margin-top:10px;">
+          Se agregará como una nueva fila en el día ${targetDay}.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn secondary" data-act="cancel">Cancelar</button>
+        <button class="modal-btn primary" data-act="save">Agregar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('.modal-backdrop').addEventListener('click', close);
+  overlay.querySelectorAll('[data-act="cancel"]').forEach(b => b.addEventListener('click', close));
+  overlay.querySelector('[data-act="save"]').addEventListener('click', () => {
+    const name = overlay.querySelector('#add-person-select').value;
+    if (!name) { close(); return; }
+
+    // Decidir qué mes/datos modificar (puede ser otro mes si es apoyo de fin de mes)
+    let data;
+    const isCurMonth = (targetY === state.year && targetM === state.month);
+    if (isCurMonth) {
+      snapshotDayBeforeEdit(targetDay);
+      data = state.data;
+    } else {
+      data = loadMonthData(targetY, targetM);
+    }
+    if (!data[String(targetDay)]) data[String(targetDay)] = [];
+    data[String(targetDay)].push([name, null]);
+    if (isCurMonth) {
+      state.data = data;
+      saveMonthData(state.year, state.month, state.data);
+    } else {
+      saveMonthData(targetY, targetM, data);
+    }
+    rerenderActiveView();
+    if (state.view === 'month') renderDetail();
+    else if (state.view === 'day') renderDayView();
+    showToast(`✓ ${name} agregado al día ${targetDay}`);
+    close();
+  });
 }
 
 // Form rápido para agregar un reemplazo (usado en el editor del día)
@@ -2165,6 +2201,24 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   const block = document.createElement('div');
   block.className = 'di-block';
 
+  // Botón "✎ Editar" arriba a la derecha (solo si estamos en el mes en curso)
+  if (editable) {
+    const editBar = document.createElement('div');
+    editBar.className = 'di-edit-bar';
+    const editBtn = document.createElement('button');
+    editBtn.className = 'di-edit-btn' + (state.editingDay ? ' active' : '');
+    editBtn.innerHTML = state.editingDay ? '✓ Listo' : '✎ Editar';
+    editBtn.title = 'Habilitar/cerrar edición de personas';
+    editBtn.addEventListener('click', () => {
+      state.editingDay = !state.editingDay;
+      if (state.view === 'month') renderDetail();
+      else if (state.view === 'day') renderDayView();
+      else rerenderActiveView();
+    });
+    editBar.appendChild(editBtn);
+    block.appendChild(editBar);
+  }
+
   // EQUIPO DE INTERVENCIÓN
   const sec1 = document.createElement('div');
   sec1.className = 'di-section';
@@ -2276,6 +2330,18 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     ph.style.flex = '1';
     ph.textContent = 'Sin equipo asignado';
     team1.appendChild(ph);
+  }
+  // Botón "+" para agregar otra persona al equipo de intervención (modo edición)
+  if (editable && state.editingDay) {
+    const addBtn = document.createElement('button');
+    addBtn.className = 'di-add-person';
+    addBtn.title = 'Agregar otra persona al equipo de intervención';
+    addBtn.textContent = '+';
+    addBtn.addEventListener('click', () => {
+      // Abrir un select inline para elegir la persona a agregar
+      openAddPersonForm(d, 'intervention');
+    });
+    team1.appendChild(addBtn);
   }
   sec1.appendChild(team1);
   block.appendChild(sec1);
@@ -2511,6 +2577,21 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     ph.textContent = 'No definido aún';
     team2.appendChild(ph);
     sec2.appendChild(team2);
+  }
+  // Botón "+" para agregar persona al equipo de Apoyo (modo edición, solo en mes actual)
+  if (editable && state.editingDay && apoyo) {
+    const addBtn = document.createElement('button');
+    addBtn.className = 'di-add-person';
+    addBtn.title = 'Agregar otra persona al equipo de apoyo';
+    addBtn.textContent = '+';
+    addBtn.addEventListener('click', () => {
+      // Para el apoyo, el slot que editamos es el del día apoyo.date
+      const apY = apoyo.date.getFullYear();
+      const apM = apoyo.date.getMonth() + 1;
+      const apD = apoyo.date.getDate();
+      openAddPersonForm(d, 'apoyo', { y: apY, m: apM, d: apD });
+    });
+    team2.appendChild(addBtn);
   }
   block.appendChild(sec2);
 
