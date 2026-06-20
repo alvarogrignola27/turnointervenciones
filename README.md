@@ -159,6 +159,9 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v30
+- **🛠️ 3er miembro del equipo detectado SIEMPRE (sin depender de la config del generador)**: agregué un fallback en `findTeamMembers` que si la config no aclara el 3ro, lo encuentra por sí solo buscando en los slots cualquier persona del ROSTER sola (que no sea ALVARO ni MARTIN — esos son gestión). Así si alguien edita la config del generador y se "olvida" del 3ro, la vista Día/Mes igual lo muestra como parte del equipo y no como OTROS. Verificado con config corrupta: Martes 30 con Sallas+Ibañez+Martinez muestra los 3 juntos aunque la config solo diga {Sallas, Ibañez}.
+
 ### v29
 - **🎯 Vista Día simplificada con "Gestionar día" unificado**: la vista Día ahora tiene la misma estructura que el panel del Mes — Equipo de Intervención + Apoyo arriba y **⚙️ Gestionar día** abajo. El panel desplegable es el mismo de ambos lados: cambios de feriado, feria judicial, reemplazos y filas funcionan idénticamente desde cualquier vista. Si tocás "Editar filas" desde la vista Día, te lleva a la vista Mes con el editor abierto.
 

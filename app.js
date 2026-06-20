@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '29';
+const APP_VERSION = '30';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -1607,13 +1607,14 @@ function findTeamMembers(slots) {
   if (!tRes) return null;
   const a = tRes.slot[0], b = tRes.slot[1];
   let c = null, thirdSlotIdx = null;
+
+  // Estrategia 1: leer de la config (si el equipo del día coincide con uno definido)
   try {
     const cfg = loadGenConfig();
     const team = cfg.teams.find(t =>
       (t.a === a && t.b === b) || (t.a === b && t.b === a)
     );
     if (team && team.c) {
-      // Buscar el slot que contenga al tercero (cualquier posición)
       for (let i = 0; i < slots.length; i++) {
         if (i === tRes.idx) continue;
         const s = slots[i];
@@ -1624,11 +1625,30 @@ function findTeamMembers(slots) {
           break;
         }
       }
-      // Si la config dice que el equipo es de 3 pero el slot no se encuentra,
-      // igual incluimos el tercero (caso bug de datos legacy)
+      // La config dice que hay 3ro pero no está en los slots: igual lo incluimos
       if (!c) c = team.c;
     }
   } catch {}
+
+  // Estrategia 2 (FALLBACK robusto): si la config no aclara, busco un slot
+  // que tenga una persona DEL ROSTER sola (no ALVARO ni MARTIN, porque son
+  // los de gestión de materiales). Ese es probablemente el 3ro del equipo.
+  if (!c) {
+    for (let i = 0; i < slots.length; i++) {
+      if (i === tRes.idx) continue;
+      const s = slots[i];
+      if (!s) continue;
+      const single = (s[0] && !s[1]) ? s[0] : (s[1] && !s[0]) ? s[1] : null;
+      if (single &&
+          ROSTER.indexOf(single) >= 0 &&
+          GESTION_MATERIALES.indexOf(single) === -1) {
+        c = single;
+        thirdSlotIdx = i;
+        break;
+      }
+    }
+  }
+
   return { a, b, c, mainSlotIdx: tRes.idx, thirdSlotIdx };
 }
 
@@ -1982,28 +2002,13 @@ function renderDayView() {
   const teamRes = findTeamSlot(slots);
   const teamSlot = teamRes ? teamRes.slot : null;
 
-  // Detectar el slot del 3er miembro si el equipo es de 3 personas
-  // (así no lo mostramos como "OTROS" ya que está dentro del equipo de intervención)
+  // Detectar el slot del 3er miembro usando findTeamMembers (mismo helper que
+  // usa buildDayInfoBlock) — así si la config no lo detecta, el fallback por
+  // ROSTER lo encuentra igual y NO termina como "OTROS".
   let thirdMemberSlotIdx = -1;
-  if (teamSlot && slots) {
-    try {
-      const cfg = loadGenConfig();
-      const team = cfg.teams.find(t =>
-        (t.a === teamSlot[0] && t.b === teamSlot[1]) ||
-        (t.a === teamSlot[1] && t.b === teamSlot[0])
-      );
-      if (team && team.c) {
-        for (let i = 0; i < slots.length; i++) {
-          if (teamRes && i === teamRes.idx) continue;
-          const s = slots[i];
-          if (!s) continue;
-          if (s[0] === team.c || s[1] === team.c) {
-            thirdMemberSlotIdx = i;
-            break;
-          }
-        }
-      }
-    } catch {}
+  const _teamMembers = findTeamMembers(slots);
+  if (_teamMembers && _teamMembers.thirdSlotIdx !== null) {
+    thirdMemberSlotIdx = _teamMembers.thirdSlotIdx;
   }
 
   if (slots && slots.length > 0) {
