@@ -159,6 +159,13 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v28
+- **🖥️ Vista mes en PC**: nombres enteros (no abreviados) en los tiles del calendario. En mobile siguen abreviados para no ocupar tanto.
+- **📦 Gestión de materiales en los tiles del calendario**: cuando un slot tiene a ALVARO o MARTIN solos, ahora se ve como "📦 G. MAT. ALVARO" (o MARTIN) en vez de mostrar solo el nombre. Se ve igual en Mes y en Semana.
+- **↪ + Agregar reemplazo dentro de Gestionar día**: para no sobrecargar el panel del día, moví el botón "+ Agregar reemplazo" dentro de "Gestionar día" → sección "Reemplazos". En el botón de Gestionar día aparece el badge "↪N" si hay reemplazos.
+- **🔃 Gestionar día se cierra al cambiar de día**: si tenés el panel desplegado y tocás otro día del calendario, se cierra automáticamente.
+- **📅 Semana muestra equipo de 3**: la vista Semana ya mostraba el 3er miembro como pill aparte (Martinez abajo de Sallas+Ibañez). Verificado.
+
 ### v27
 - **🎂 Cumpleaños precargados**: la app ya viene con los 19 cumpleaños del equipo cargados de fábrica. Cuando la abrís por primera vez (sin datos guardados), aparecen automáticamente. Si los modificás o sincronizás con Firebase, los cambios persisten. Si los borrás y querés volver a tenerlos, hay un botón nuevo **"🎂 Cargar precargados"** en el modal de Cumpleaños.
 

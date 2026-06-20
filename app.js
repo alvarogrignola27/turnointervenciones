@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '27';
+const APP_VERSION = '28';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -628,6 +628,8 @@ function initSeed() {
 // ---------- Helpers visuales ----------
 function abbrev(name) {
   if (!name) return '';
+  // En pantallas anchas (desktop) mostramos el nombre completo
+  if (typeof window !== 'undefined' && window.innerWidth >= 768) return name;
   if (name.length <= 4) return name;
   if (name.includes(' ')) {
     return name.split(' ').map(s => s[0]).join('').slice(0, 4);
@@ -1659,20 +1661,38 @@ function renderMonthView() {
     visibleSlots.forEach((slot, slotIdx) => {
       const row = document.createElement('div');
       row.className = 'slot';
-      // Tiles del mes NO son editables: en mobile son muy chicos y
-      // se termina seleccionando un agente sin querer al elegir el día.
-      // Editar el día se hace tocando el tile → panel desplegable.
-      const pills = renderSlotPills(slot, {
-        editable: false,
-        slotIdx,
-        className: 'pill',
-        abbrev: true,
-      });
-      pills.forEach(p => row.appendChild(p));
+      // Detectar si este slot es Gestión de materiales (solo ALVARO o MARTIN)
+      const names = [slot[0], slot[1]].filter(Boolean);
+      const isGestion = names.length > 0 && names.every(n => GESTION_MATERIALES.includes(n));
+      if (isGestion) {
+        // Pill especial "GESTIÓN DE MATERIALES" con el color de la persona
+        const personName = names[0];
+        const pill = document.createElement('span');
+        pill.className = 'pill pill-wide pill-gestion';
+        pill.style.background = colorFor(personName);
+        pill.style.color = textColorFor(personName);
+        // En desktop muestra "GESTIÓN DE MATERIALES — ALVARO", en mobile abreviado
+        pill.innerHTML = `<span class="pill-gestion-tag">📦 G. MAT.</span> <span class="pill-gestion-name">${personName}</span>`;
+        pill.title = `Gestión de materiales — ${personName}`;
+        row.appendChild(pill);
+      } else {
+        // Tiles del mes NO son editables: en mobile son muy chicos y
+        // se termina seleccionando un agente sin querer al elegir el día.
+        // Editar el día se hace tocando el tile → panel desplegable.
+        const pills = renderSlotPills(slot, {
+          editable: false,
+          slotIdx,
+          className: 'pill',
+          abbrev: true,
+        });
+        pills.forEach(p => row.appendChild(p));
+      }
       el.appendChild(row);
     });
 
     el.addEventListener('click', () => {
+      // Si cambiamos a otro día, cerrar el panel "Gestionar día"
+      if (state.selectedDay !== day) state._manageOpen = false;
       state.selectedDay = state.selectedDay === day ? null : day;
       renderMonthView();
       renderDetail();
@@ -1771,14 +1791,28 @@ function renderWeekView() {
       slots.forEach((slot, slotIdx) => {
         const row = document.createElement('div');
         row.className = 'wk-slot';
-        const pills = renderSlotPills(slot, {
-          editable: isCurrentMonth,
-          slotIdx,
-          className: 'wk-pill',
-          abbrev: false,
-          onChange: (sIdx, sideIdx, newName) => updateSlotName(d, sIdx, sideIdx, newName),
-        });
-        pills.forEach(p => row.appendChild(p));
+        // Detectar Gestión de materiales (ALVARO o MARTIN solos)
+        const names = [slot[0], slot[1]].filter(Boolean);
+        const isGestion = names.length > 0 && names.every(n => GESTION_MATERIALES.includes(n));
+        if (isGestion) {
+          const personName = names[0];
+          const pill = document.createElement('span');
+          pill.className = 'wk-pill pill-wide pill-gestion';
+          pill.style.background = colorFor(personName);
+          pill.style.color = textColorFor(personName);
+          pill.innerHTML = `<span class="pill-gestion-tag">📦 G. MAT.</span> <span class="pill-gestion-name">${personName}</span>`;
+          pill.title = `Gestión de materiales — ${personName}`;
+          row.appendChild(pill);
+        } else {
+          const pills = renderSlotPills(slot, {
+            editable: isCurrentMonth,
+            slotIdx,
+            className: 'wk-pill',
+            abbrev: false,
+            onChange: (sIdx, sideIdx, newName) => updateSlotName(d, sIdx, sideIdx, newName),
+          });
+          pills.forEach(p => row.appendChild(p));
+        }
         slotsEl.appendChild(row);
       });
     }
@@ -2414,15 +2448,13 @@ function renderDetail() {
   // Bloque "Equipo de intervención + Apoyo" (sólo lectura)
   card.appendChild(buildDayInfoBlock(state.year, state.month, day, { useStateData: true }));
 
-  // Bloque de reemplazos (siempre visible — botón rápido para agregar)
-  card.appendChild(buildReplacementsBlock(day));
-
   // Estado de marcadores
   const isFer = isFeriado(state.year, state.month, day);
   const isFj = isFeriaJud(state.year, state.month, day);
 
   // Botón único "⚙️ Gestionar día" que despliega las acciones categorizadas.
-  // Reemplaza los 3 botones separados de antes (feriado / feria jud / editar).
+  // Reemplaza los 3 botones separados de antes (feriado / feria jud / editar) +
+  // ahora también incluye "+ Agregar reemplazo" adentro para no sobrecargar el panel.
   const manageWrap = document.createElement('div');
   manageWrap.className = 'manage-wrap';
 
@@ -2433,6 +2465,8 @@ function renderDetail() {
   if (isFer) stateBadges += ' <span class="manage-badge feriado">★</span>';
   if (isFj)  stateBadges += ' <span class="manage-badge feria-jud">🔴</span>';
   if (state.editingDay) stateBadges += ' <span class="manage-badge editing">✎</span>';
+  const reps = getReplacementsForDay(state.year, state.month, day);
+  if (reps.length > 0) stateBadges += ` <span class="manage-badge rep">↪${reps.length}</span>`;
   manageBtn.innerHTML = `⚙️ Gestionar día${stateBadges} <span class="manage-arrow">${state._manageOpen ? '▴' : '▾'}</span>`;
   manageBtn.addEventListener('click', () => {
     state._manageOpen = !state._manageOpen;
@@ -2443,6 +2477,13 @@ function renderDetail() {
   if (state._manageOpen) {
     const panel = document.createElement('div');
     panel.className = 'manage-panel';
+
+    // Sección "Reemplazos"
+    const lblReps = document.createElement('div');
+    lblReps.className = 'manage-section-label';
+    lblReps.textContent = `↪ Reemplazos${reps.length > 0 ? ` (${reps.length})` : ''}`;
+    panel.appendChild(lblReps);
+    panel.appendChild(buildReplacementsBlock(day));
 
     // Sección "Marcadores"
     const lblMark = document.createElement('div');

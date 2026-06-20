@@ -923,6 +923,39 @@ input, select { font: inherit; }
   width: 100%;
 }
 
+/* Pill especial "Gestión de materiales" (slot con ALVARO o MARTIN solos) */
+.pill.pill-gestion {
+  display: flex; align-items: center; justify-content: center;
+  gap: 4px;
+  font-weight: 700;
+}
+.pill.pill-gestion .pill-gestion-tag {
+  font-size: 7.5px;
+  opacity: 0.85;
+}
+.pill.pill-gestion .pill-gestion-name {
+  font-size: 9px;
+}
+
+/* En desktop (pantalla ancha) los tiles del calendario muestran nombres enteros */
+@media (min-width: 768px) {
+  .pill {
+    font-size: 11px;
+    padding: 4px 3px;
+    border-radius: 5px;
+  }
+  .pill.pill-gestion .pill-gestion-tag { font-size: 9px; }
+  .pill.pill-gestion .pill-gestion-name { font-size: 11px; }
+}
+@media (min-width: 1024px) {
+  .pill {
+    font-size: 12px;
+    padding: 5px 4px;
+  }
+  .pill.pill-gestion .pill-gestion-tag { font-size: 10px; }
+  .pill.pill-gestion .pill-gestion-name { font-size: 12px; }
+}
+
 /* Pill editable (es un <select> estilizado como pill) */
 .pill.pill-edit,
 .wk-pill.pill-edit,
