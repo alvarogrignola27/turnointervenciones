@@ -2,7 +2,7 @@
 // Estrategia: network-first para HTML/JS (para que las nuevas versiones lleguen
 // rápido), cache-first para assets estáticos. Firebase nunca se cachea.
 
-const CACHE_NAME = 'turnos-v28';
+const CACHE_NAME = 'turnos-v29';
 const ASSETS = [
   './',
   './index.html',

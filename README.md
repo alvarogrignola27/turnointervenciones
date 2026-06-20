@@ -159,6 +159,9 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v29
+- **🎯 Vista Día simplificada con "Gestionar día" unificado**: la vista Día ahora tiene la misma estructura que el panel del Mes — Equipo de Intervención + Apoyo arriba y **⚙️ Gestionar día** abajo. El panel desplegable es el mismo de ambos lados: cambios de feriado, feria judicial, reemplazos y filas funcionan idénticamente desde cualquier vista. Si tocás "Editar filas" desde la vista Día, te lleva a la vista Mes con el editor abierto.
+
 ### v28
 - **🖥️ Vista mes en PC**: nombres enteros (no abreviados) en los tiles del calendario. En mobile siguen abreviados para no ocupar tanto.
 - **📦 Gestión de materiales en los tiles del calendario**: cuando un slot tiene a ALVARO o MARTIN solos, ahora se ve como "📦 G. MAT. ALVARO" (o MARTIN) en vez de mostrar solo el nombre. Se ve igual en Mes y en Semana.

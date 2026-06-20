@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '28';
+const APP_VERSION = '29';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -338,6 +338,110 @@ function removeReplacement(day, idx) {
 // Bloque visible debajo de la tarjeta del día: SÓLO el botón "+ Agregar reemplazo".
 // La lista de reemplazos existentes se muestra DENTRO de buildDayInfoBlock,
 // entre Intervención y Apoyo (o debajo del Apoyo, según a quién apunte el reemplazo).
+// Construye el botón "⚙️ Gestionar día" + panel desplegable.
+// Se usa tanto en el panel del Mes (renderDetail) como en la vista Día (renderDayView)
+// para que la experiencia sea idéntica desde ambas vistas.
+// Requiere que state.year/state.month/state.data ya estén alineados con el día.
+function buildManagePanel(day) {
+  const wrap = document.createElement('div');
+  wrap.className = 'manage-wrap';
+
+  const isFer = isFeriado(state.year, state.month, day);
+  const isFj = isFeriaJud(state.year, state.month, day);
+  const reps = getReplacementsForDay(state.year, state.month, day);
+
+  const btn = document.createElement('button');
+  btn.className = 'manage-btn' + (state._manageOpen ? ' open' : '');
+  let badges = '';
+  if (isFer) badges += ' <span class="manage-badge feriado">★</span>';
+  if (isFj)  badges += ' <span class="manage-badge feria-jud">🔴</span>';
+  if (state.editingDay) badges += ' <span class="manage-badge editing">✎</span>';
+  if (reps.length > 0) badges += ` <span class="manage-badge rep">↪${reps.length}</span>`;
+  btn.innerHTML = `⚙️ Gestionar día${badges} <span class="manage-arrow">${state._manageOpen ? '▴' : '▾'}</span>`;
+  btn.addEventListener('click', () => {
+    state._manageOpen = !state._manageOpen;
+    // Re-renderizar la vista activa para reflejar el cambio
+    if (state.view === 'month') renderDetail();
+    else if (state.view === 'day') renderDayView();
+    else rerenderActiveView();
+  });
+  wrap.appendChild(btn);
+
+  if (state._manageOpen) {
+    const panel = document.createElement('div');
+    panel.className = 'manage-panel';
+
+    // Sección "Reemplazos"
+    const lblReps = document.createElement('div');
+    lblReps.className = 'manage-section-label';
+    lblReps.textContent = `↪ Reemplazos${reps.length > 0 ? ` (${reps.length})` : ''}`;
+    panel.appendChild(lblReps);
+    panel.appendChild(buildReplacementsBlock(day));
+
+    // Sección "Marcadores"
+    const lblMark = document.createElement('div');
+    lblMark.className = 'manage-section-label';
+    lblMark.textContent = '⚖️ Marcadores';
+    panel.appendChild(lblMark);
+
+    const feriBtn = document.createElement('button');
+    feriBtn.className = 'manage-item' + (isFer ? ' active feriado-active' : '');
+    feriBtn.innerHTML = isFer ? '★ Quitar feriado' : '☆ Marcar como feriado';
+    feriBtn.addEventListener('click', () => {
+      toggleFeriado(day);
+      rerenderActiveView();
+      if (state.view === 'month') renderDetail();
+      else if (state.view === 'day') renderDayView();
+    });
+    panel.appendChild(feriBtn);
+
+    const fjBtn = document.createElement('button');
+    fjBtn.className = 'manage-item' + (isFj ? ' active feria-jud-active' : '');
+    fjBtn.innerHTML = isFj ? '🔴 Quitar feria judicial' : '⭕ Marcar como feria judicial';
+    fjBtn.addEventListener('click', () => {
+      toggleFeriaJud(day);
+      rerenderActiveView();
+      if (state.view === 'month') renderDetail();
+      else if (state.view === 'day') renderDayView();
+    });
+    panel.appendChild(fjBtn);
+
+    // Sección "Edición avanzada"
+    const lblEdit = document.createElement('div');
+    lblEdit.className = 'manage-section-label';
+    lblEdit.textContent = '✎ Edición avanzada';
+    panel.appendChild(lblEdit);
+
+    // En la vista Día, "editar filas" abre el panel del Mes (que tiene el editor completo)
+    const editToggle = document.createElement('button');
+    editToggle.className = 'manage-item' + (state.editingDay ? ' active editing-active' : '');
+    if (state.view === 'day') {
+      editToggle.innerHTML = '✎ Editar filas del día (abre vista Mes)';
+      editToggle.addEventListener('click', () => {
+        state.selectedDay = day;
+        state.editingDay = true;
+        state._manageOpen = true;
+        switchView('month');
+        setTimeout(() => {
+          document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 50);
+      });
+    } else {
+      editToggle.innerHTML = state.editingDay ? '✓ Cerrar edición de filas' : '✎ Editar filas del día';
+      editToggle.addEventListener('click', () => {
+        state.editingDay = !state.editingDay;
+        renderDetail();
+      });
+    }
+    panel.appendChild(editToggle);
+
+    wrap.appendChild(panel);
+  }
+
+  return wrap;
+}
+
+// Construye el botón "⚙️ Gestionar día" + panel desplegable — versión LEGACY (mantenida).
 function buildReplacementsBlock(day) {
   const wrap = document.createElement('div');
   wrap.className = 'replacements-block';
@@ -1871,16 +1975,10 @@ function renderDayView() {
   }
   card.appendChild(header);
 
-  // Bloque "Equipo de intervención + Apoyo" (mismo helper que en panel de edición)
+  // Bloque "Equipo de intervención + Apoyo" (mismo helper que en panel del Mes)
   card.appendChild(buildDayInfoBlock(y, m, d));
 
-  // Bloque de reemplazos (siempre visible en vista Día)
-  // Sólo si estamos en el mes actual cargado en state, sino no podemos editarlo
-  if (y === state.year && m === state.month) {
-    card.appendChild(buildReplacementsBlock(d));
-  }
-
-  // Otras filas (oficios, abogados, etc.)
+  // Otras filas (Gestión de Materiales, oficios, etc.)
   const teamRes = findTeamSlot(slots);
   const teamSlot = teamRes ? teamRes.slot : null;
 
@@ -2011,23 +2109,27 @@ function renderDayView() {
     }
   }
 
-  // Botón editar
-  const editBtn = document.createElement('button');
-  editBtn.className = 'dv-edit-btn';
-  editBtn.textContent = '✎ Editar este día';
-  editBtn.addEventListener('click', () => {
-    if (state.year !== y || state.month !== m) {
+  // Panel "⚙️ Gestionar día" — mismo helper que se usa en el panel del Mes,
+  // así desde acá podemos modificar feriado, feria judicial, reemplazos y filas.
+  if (y === state.year && m === state.month) {
+    card.appendChild(buildManagePanel(d));
+  } else {
+    // Si estamos viendo un día de otro mes, ofrecemos cambiar al mes para editar
+    const note = document.createElement('button');
+    note.className = 'dv-edit-btn';
+    note.textContent = '✎ Editar este día (cambiar de mes)';
+    note.addEventListener('click', () => {
       state.year = y; state.month = m;
       state.data = loadMonthData(y, m);
-    }
-    state.selectedDay = d;
-    state.view = 'month';
-    switchView('month');
-    setTimeout(() => {
-      document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 50);
-  });
-  card.appendChild(editBtn);
+      state.selectedDay = d;
+      state.view = 'month';
+      switchView('month');
+      setTimeout(() => {
+        document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 50);
+    });
+    card.appendChild(note);
+  }
   root.appendChild(card);
 }
 
@@ -2448,88 +2550,8 @@ function renderDetail() {
   // Bloque "Equipo de intervención + Apoyo" (sólo lectura)
   card.appendChild(buildDayInfoBlock(state.year, state.month, day, { useStateData: true }));
 
-  // Estado de marcadores
-  const isFer = isFeriado(state.year, state.month, day);
-  const isFj = isFeriaJud(state.year, state.month, day);
-
-  // Botón único "⚙️ Gestionar día" que despliega las acciones categorizadas.
-  // Reemplaza los 3 botones separados de antes (feriado / feria jud / editar) +
-  // ahora también incluye "+ Agregar reemplazo" adentro para no sobrecargar el panel.
-  const manageWrap = document.createElement('div');
-  manageWrap.className = 'manage-wrap';
-
-  const manageBtn = document.createElement('button');
-  manageBtn.className = 'manage-btn' + (state._manageOpen ? ' open' : '');
-  // Resumen del estado actual a la derecha del título
-  let stateBadges = '';
-  if (isFer) stateBadges += ' <span class="manage-badge feriado">★</span>';
-  if (isFj)  stateBadges += ' <span class="manage-badge feria-jud">🔴</span>';
-  if (state.editingDay) stateBadges += ' <span class="manage-badge editing">✎</span>';
-  const reps = getReplacementsForDay(state.year, state.month, day);
-  if (reps.length > 0) stateBadges += ` <span class="manage-badge rep">↪${reps.length}</span>`;
-  manageBtn.innerHTML = `⚙️ Gestionar día${stateBadges} <span class="manage-arrow">${state._manageOpen ? '▴' : '▾'}</span>`;
-  manageBtn.addEventListener('click', () => {
-    state._manageOpen = !state._manageOpen;
-    renderDetail();
-  });
-  manageWrap.appendChild(manageBtn);
-
-  if (state._manageOpen) {
-    const panel = document.createElement('div');
-    panel.className = 'manage-panel';
-
-    // Sección "Reemplazos"
-    const lblReps = document.createElement('div');
-    lblReps.className = 'manage-section-label';
-    lblReps.textContent = `↪ Reemplazos${reps.length > 0 ? ` (${reps.length})` : ''}`;
-    panel.appendChild(lblReps);
-    panel.appendChild(buildReplacementsBlock(day));
-
-    // Sección "Marcadores"
-    const lblMark = document.createElement('div');
-    lblMark.className = 'manage-section-label';
-    lblMark.textContent = '⚖️ Marcadores';
-    panel.appendChild(lblMark);
-
-    const feriBtn = document.createElement('button');
-    feriBtn.className = 'manage-item' + (isFer ? ' active feriado-active' : '');
-    feriBtn.innerHTML = isFer ? '★ Quitar feriado' : '☆ Marcar como feriado';
-    feriBtn.addEventListener('click', () => {
-      toggleFeriado(day);
-      rerenderActiveView();
-      renderDetail();
-    });
-    panel.appendChild(feriBtn);
-
-    const fjBtn = document.createElement('button');
-    fjBtn.className = 'manage-item' + (isFj ? ' active feria-jud-active' : '');
-    fjBtn.innerHTML = isFj ? '🔴 Quitar feria judicial' : '⭕ Marcar como feria judicial';
-    fjBtn.addEventListener('click', () => {
-      toggleFeriaJud(day);
-      rerenderActiveView();
-      renderDetail();
-    });
-    panel.appendChild(fjBtn);
-
-    // Sección "Edición avanzada"
-    const lblEdit = document.createElement('div');
-    lblEdit.className = 'manage-section-label';
-    lblEdit.textContent = '✎ Edición avanzada';
-    panel.appendChild(lblEdit);
-
-    const editToggle = document.createElement('button');
-    editToggle.className = 'manage-item' + (state.editingDay ? ' active editing-active' : '');
-    editToggle.innerHTML = state.editingDay ? '✓ Cerrar edición de filas' : '✎ Editar filas del día';
-    editToggle.addEventListener('click', () => {
-      state.editingDay = !state.editingDay;
-      renderDetail();
-    });
-    panel.appendChild(editToggle);
-
-    manageWrap.appendChild(panel);
-  }
-
-  card.appendChild(manageWrap);
+  // Panel "Gestionar día" (mismo helper que la vista Día — comparten experiencia)
+  card.appendChild(buildManagePanel(day));
 
   if (state.editingDay) {
     const section = document.createElement('div');
