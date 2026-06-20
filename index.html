@@ -29,15 +29,15 @@
           <span class="caret">▾</span>
         </button>
         <button id="next" class="nav-btn" aria-label="Siguiente">›</button>
-        <button id="hoy-btn" class="hoy-btn" aria-label="Ir a hoy">
-          <span class="hoy-icon">📅</span>
-          <span class="hoy-text">HOY</span>
-        </button>
       </div>
       <div class="view-toggle" role="tablist" aria-label="Vista">
         <button data-view="month" class="vt active" role="tab">Mes</button>
         <button data-view="week" class="vt" role="tab">Semana</button>
         <button data-view="day" class="vt" role="tab">Día</button>
+        <button id="hoy-btn" class="vt vt-hoy" aria-label="Ir a hoy">
+          <span class="hoy-icon">📅</span>
+          <span class="hoy-text">HOY</span>
+        </button>
       </div>
     </header>
 
@@ -118,7 +118,7 @@
       <button data-action="install" id="install-btn" class="hidden">Instalar app</button>
       <button data-action="close">Cerrar</button>
       <div class="menu-version">
-        Versión <span id="app-version">31</span>
+        Versión <span id="app-version">32</span>
         <div class="sync-status-indicator idle" id="sync-status-indicator">⚪ Sin conectar</div>
       </div>
       <input type="file" id="import-file" accept="application/json" class="hidden">

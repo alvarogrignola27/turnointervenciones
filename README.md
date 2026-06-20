@@ -159,6 +159,12 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v32
+- **📐 Layout del header refinado**:
+  - **Desktop**: el botón HOY va al final, después de Día → orden **Mes / Semana / Día / 📅 HOY**.
+  - **Mobile**: HOY también va integrado al final del view-toggle (📅 con número del día actual). El bloque entero se alinea a la derecha y no ocupa el ancho completo.
+- **📏 Contenido no se tapa con los botones de abajo**: aumenté el padding bottom de la app y le puse fondo sólido + sombrita a la barra de los 4 botones (Generar/Marcar/Personalizar/Datos). El contenido del calendario queda visible arriba de la barra sin tapársele.
+
 ### v31
 - **📅 Botón HOY visible en el header**: nuevo botón **"📅 HOY"** arriba a la derecha del título (en mobile solo el ícono con el número del día actual). Al tocarlo te lleva al día de hoy en cualquier vista, abre el panel del día y hace scroll al detalle. Toast informativo ("📅 Hoy: Sábado 20" o "Ya estás en hoy" si no cambiaste de día). Antes había un botón "Hoy" escondido adentro del picker — ahora está siempre a mano.
 
