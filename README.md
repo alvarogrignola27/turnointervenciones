@@ -159,6 +159,9 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v21
+- **🔄 Buscar actualización de la app**: nuevo botón en Datos y nube. Al tocar limpia el cache del service worker, fuerza al SW a aplicar la versión nueva y recarga la página. Ya no hace falta cerrar y reabrir la PWA manualmente cada vez que subo una versión nueva. Los datos locales (turnos, colores, cumpleaños, reemplazos) se mantienen intactos.
+
 ### v20
 - **🔁 Reemplazos sin redundancia y separados por equipo**: cuando un reemplazo apunta a alguien del Equipo de Intervención aparece como "REEMPLAZOS DEL DÍA" entre Intervención y Apoyo. Cuando apunta a alguien del Apoyo, aparece como "REEMPLAZOS DEL APOYO" debajo del Apoyo. El × para borrar va al lado de cada item. Ya no se duplica abajo del card.
 

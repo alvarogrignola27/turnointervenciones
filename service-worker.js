@@ -2,7 +2,7 @@
 // Estrategia: network-first para HTML/JS (para que las nuevas versiones lleguen
 // rápido), cache-first para assets estáticos. Firebase nunca se cachea.
 
-const CACHE_NAME = 'turnos-v20';
+const CACHE_NAME = 'turnos-v21';
 const ASSETS = [
   './',
   './index.html',
@@ -20,6 +20,13 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
   self.skipWaiting();
+});
+
+// Permitir que la app pida al SW que se active de inmediato
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('activate', (event) => {

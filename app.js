@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '20';
+const APP_VERSION = '21';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -996,6 +996,46 @@ function resetGenPassword() {
   if (!confirm('¿Borrar la contraseña del generador? Después podrás definir una nueva.')) return;
   saveGenPasswordHash(null);
   showToast('Contraseña borrada. Definí una nueva al generar.');
+}
+
+// ---------- Buscar y aplicar actualización de la app ----------
+// Sin esto, hay que cerrar y reabrir la PWA cada vez que se sube una nueva versión.
+async function checkForUpdate() {
+  if (!confirm('Buscar nueva versión de la app?\n\nLa página se va a recargar (tus datos locales se mantienen).')) return;
+
+  showToast('🔄 Buscando actualización...');
+
+  try {
+    // 1. Borrar TODAS las caches del service worker
+    if ('caches' in window) {
+      const names = await caches.keys();
+      await Promise.all(names.map(n => caches.delete(n)));
+    }
+
+    // 2. Forzar al service worker a actualizarse y aplicar de inmediato
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const reg of regs) {
+        try {
+          await reg.update();
+          // Si hay un SW esperando, decirle que se active ya
+          if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        } catch (e) { /* silenciar */ }
+      }
+    }
+
+    // 3. Recargar la página sin usar cache del navegador
+    showToast('✅ Recargando con la última versión...');
+    setTimeout(() => {
+      // Cache-busting: agregar un query param efímero para forzar bypass del cache HTTP
+      const u = new URL(window.location.href);
+      u.searchParams.set('_v', Date.now());
+      window.location.replace(u.toString());
+    }, 500);
+  } catch (e) {
+    console.error('Update error:', e);
+    showToast('🔴 Error buscando actualización');
+  }
 }
 
 // ---------- Modal de Estadísticas ----------
@@ -3573,6 +3613,7 @@ function wireUp() {
       else if (a === 'mark-month-feria') markWholeMonthAsFeriaJud();
       else if (a === 'mark-range-feria') markRangeAsFeriaJud();
       else if (a === 'sync-settings') openSyncSettings();
+      else if (a === 'check-update') checkForUpdate();
       else if (a === 'install') triggerInstall();
     });
   });
