@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '30';
+const APP_VERSION = '31';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -2799,15 +2799,30 @@ function navNext() {
   }
 }
 function goToday() {
-  state.year = today.getFullYear();
-  state.month = today.getMonth() + 1;
-  state.day = today.getDate();
-  state.selectedDay = state.view === 'month' ? today.getDate() : null;
+  const now = new Date();  // siempre actual, no cacheado al inicio
+  const wasToday = (state.year === now.getFullYear() &&
+                    state.month === now.getMonth() + 1 &&
+                    state.day === now.getDate());
+
+  state.year = now.getFullYear();
+  state.month = now.getMonth() + 1;
+  state.day = now.getDate();
+  state.selectedDay = state.view === 'month' ? state.day : null;
+  state._manageOpen = false;  // cerrar panel "Gestionar día" si estaba abierto
   reloadCurrentMonth();
   rerenderActiveView();
   if (state.view === 'month') renderDetail();
   renderFilters();
   document.getElementById('picker').classList.add('hidden');
+
+  // Scroll al detalle si estamos en vista Mes (para ver de un toque quién está hoy)
+  if (state.view === 'month') {
+    setTimeout(() => {
+      const det = document.getElementById('detail');
+      if (det) det.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
+  }
+  showToast(wasToday ? '📅 Ya estás en hoy' : '📅 Hoy: ' + DAY_NAMES[now.getDay()] + ' ' + now.getDate());
 }
 function jumpTo(y, m) {
   state.year = y; state.month = m;
@@ -3946,6 +3961,7 @@ function wireUp() {
     renderPicker();
   });
   document.getElementById('today-btn').addEventListener('click', goToday);
+  document.getElementById('hoy-btn').addEventListener('click', goToday);
 
   // View toggle
   document.querySelectorAll('.vt').forEach(b => {

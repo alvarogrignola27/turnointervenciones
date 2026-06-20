@@ -159,6 +159,9 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v31
+- **📅 Botón HOY visible en el header**: nuevo botón **"📅 HOY"** arriba a la derecha del título (en mobile solo el ícono con el número del día actual). Al tocarlo te lleva al día de hoy en cualquier vista, abre el panel del día y hace scroll al detalle. Toast informativo ("📅 Hoy: Sábado 20" o "Ya estás en hoy" si no cambiaste de día). Antes había un botón "Hoy" escondido adentro del picker — ahora está siempre a mano.
+
 ### v30
 - **🛠️ 3er miembro del equipo detectado SIEMPRE (sin depender de la config del generador)**: agregué un fallback en `findTeamMembers` que si la config no aclara el 3ro, lo encuentra por sí solo buscando en los slots cualquier persona del ROSTER sola (que no sea ALVARO ni MARTIN — esos son gestión). Así si alguien edita la config del generador y se "olvida" del 3ro, la vista Día/Mes igual lo muestra como parte del equipo y no como OTROS. Verificado con config corrupta: Martes 30 con Sallas+Ibañez+Martinez muestra los 3 juntos aunque la config solo diga {Sallas, Ibañez}.
 

@@ -28,7 +28,11 @@ input, select { font: inherit; }
   flex-wrap: wrap;
 }
 .hdr-left {
-  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0;
+}
+/* En desktop, hdr-left no ocupa todo el ancho — comparte con view-toggle */
+@media (min-width: 601px) {
+  .hdr-left { flex: 1 1 auto; }
 }
 .nav-btn {
   width: 40px; height: 40px;
@@ -56,6 +60,28 @@ input, select { font: inherit; }
   display: flex; background: #fff; border-radius: 12px;
   padding: 3px; gap: 2px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+/* Botón HOY (en el header, al lado de las flechas) */
+.hoy-btn {
+  display: flex; align-items: center; gap: 4px;
+  height: 40px; padding: 0 10px;
+  background: #1f3a68; color: #fff;
+  border: none; border-radius: 12px;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.4px;
+  box-shadow: 0 1px 3px rgba(31, 58, 104, 0.3);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.hoy-btn:active { transform: scale(0.96); }
+.hoy-btn .hoy-icon { font-size: 14px; line-height: 1; }
+.hoy-btn .hoy-text { line-height: 1; }
+/* En mobile, solo el icono para no apretar el header */
+@media (max-width: 600px) {
+  .hoy-btn { padding: 0; width: 40px; justify-content: center; }
+  .hoy-btn .hoy-icon { font-size: 18px; }
+  .hoy-btn .hoy-text { display: none; }
 }
 .vt {
   border: none; background: transparent; color: #6c6c70;
