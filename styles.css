@@ -158,6 +158,74 @@ input, select { font: inherit; }
 .dv-section-gestion .dv-section-label {
   color: #8a5a00;
 }
+
+/* ========== Panel "Gestionar día" (despliega acciones agrupadas) ========== */
+.manage-wrap { margin-top: 12px; }
+.manage-btn {
+  width: 100%; padding: 12px 14px;
+  background: #f2f2f7;
+  border: 1px solid #d1d1d6;
+  border-radius: 10px;
+  font-size: 14px; font-weight: 600;
+  color: #1c1c1e;
+  text-align: left;
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer;
+}
+.manage-btn.open {
+  background: #e8eef7;
+  border-color: #b4cce8;
+  border-radius: 10px 10px 0 0;
+}
+.manage-btn .manage-arrow {
+  margin-left: auto;
+  font-size: 11px;
+  color: #6c6c70;
+}
+.manage-badge {
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+.manage-badge.feriado { background: #fef3c7; color: #92400e; }
+.manage-badge.feria-jud { background: #fee2e2; color: #991b1b; font-size: 9px; padding: 4px 4px;}
+.manage-badge.editing { background: #dbeafe; color: #1e40af; }
+
+.manage-panel {
+  border: 1px solid #b4cce8;
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  padding: 8px 10px 12px;
+  background: #f7fafd;
+}
+.manage-section-label {
+  font-size: 11px; font-weight: 700;
+  color: #6c6c70; letter-spacing: 0.6px;
+  text-transform: uppercase;
+  margin: 10px 0 6px;
+}
+.manage-section-label:first-child { margin-top: 4px; }
+.manage-item {
+  width: 100%; padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #e5e5ea;
+  border-radius: 8px;
+  font-size: 13px; font-weight: 500;
+  color: #1c1c1e;
+  text-align: left;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+.manage-item.active.feriado-active {
+  background: #fef3c7; border-color: #f7c976; color: #92400e; font-weight: 600;
+}
+.manage-item.active.feria-jud-active {
+  background: #fee2e2; border-color: #fca5a5; color: #991b1b; font-weight: 600;
+}
+.manage-item.active.editing-active {
+  background: #dbeafe; border-color: #93c5fd; color: #1e40af; font-weight: 600;
+}
 .di-team-pill.empty {
   background: #ececee; color: #c7c7cc; font-weight: 500;
   font-style: italic;

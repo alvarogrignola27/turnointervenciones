@@ -159,6 +159,12 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v27
+- **🎂 Cumpleaños precargados**: la app ya viene con los 19 cumpleaños del equipo cargados de fábrica. Cuando la abrís por primera vez (sin datos guardados), aparecen automáticamente. Si los modificás o sincronizás con Firebase, los cambios persisten. Si los borrás y querés volver a tenerlos, hay un botón nuevo **"🎂 Cargar precargados"** en el modal de Cumpleaños.
+
+### v26
+- **⚙️ Panel "Gestionar día"**: en el detalle del día reemplacé los 3 botones grandes ("Marcar feriado", "Marcar feria judicial", "Editar filas") por un único botón **"⚙️ Gestionar día"** que despliega un panel con todas las acciones agrupadas por categoría (Marcadores / Edición avanzada). Cuando el día tiene algún marcador activo, se ve como badge al lado del título.
+
 ### v25
 - **🩹 Equipos de 3 personas EN TODAS LAS VISTAS, intervención Y apoyo**: hice un helper único `findTeamMembers` que detecta los 3 miembros de cualquier equipo de 3. Ahora se muestra el tercero correctamente tanto en el **Equipo de Intervención** como en el **Equipo de Apoyo** (cuando es de 3), en panel del mes y en vista Día. También los reemplazos saben quién pertenece a cada equipo (los 3, incluido el tercero del apoyo).
 

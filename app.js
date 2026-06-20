@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '25';
+const APP_VERSION = '27';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -247,8 +247,18 @@ let _birthdaysCache = null;
 function loadBirthdays() {
   if (_birthdaysCache !== null) return _birthdaysCache;
   try {
-    _birthdaysCache = JSON.parse(localStorage.getItem(BIRTHDAYS_KEY) || '{}');
-  } catch { _birthdaysCache = {}; }
+    const raw = localStorage.getItem(BIRTHDAYS_KEY);
+    if (raw === null) {
+      // Primera vez: cargamos los defaults y los persistimos (así se sincronizan
+      // con Firebase). Si después el user quiere borrarlos, los reseteamos en {}.
+      _birthdaysCache = { ...DEFAULT_BIRTHDAYS };
+      try {
+        localStorage.setItem(BIRTHDAYS_KEY, JSON.stringify(_birthdaysCache));
+      } catch {}
+    } else {
+      _birthdaysCache = JSON.parse(raw || '{}');
+    }
+  } catch { _birthdaysCache = { ...DEFAULT_BIRTHDAYS }; }
   return _birthdaysCache;
 }
 function saveBirthdays(b) {
@@ -1010,37 +1020,34 @@ function resetGenPassword() {
 // ---------- Buscar y aplicar actualización de la app ----------
 // Sin esto, hay que cerrar y reabrir la PWA cada vez que se sube una nueva versión.
 async function checkForUpdate() {
-  if (!confirm('Buscar nueva versión de la app?\n\nLa página se va a recargar (tus datos locales se mantienen).')) return;
+  const msg = 'Buscar nueva versión de la app?\n\n' +
+    '✅ TUS DATOS LOCALES NO SE PIERDEN (turnos, colores, cumpleaños, reemplazos, sincronización con la nube).\n\n' +
+    'Solo se recargan los archivos de la app.';
+  if (!confirm(msg)) return;
 
-  showToast('🔄 Buscando actualización...');
+  showToast('🔄 Limpiando cache y recargando...');
 
   try {
-    // 1. Borrar TODAS las caches del service worker
-    if ('caches' in window) {
-      const names = await caches.keys();
-      await Promise.all(names.map(n => caches.delete(n)));
-    }
-
-    // 2. Forzar al service worker a actualizarse y aplicar de inmediato
+    // 1. Desregistrar TODOS los service workers (el SW viejo no sirve más caché viejo)
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
       for (const reg of regs) {
-        try {
-          await reg.update();
-          // Si hay un SW esperando, decirle que se active ya
-          if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-        } catch (e) { /* silenciar */ }
+        try { await reg.unregister(); } catch (e) { /* ignorar */ }
       }
     }
 
-    // 3. Recargar la página sin usar cache del navegador
-    showToast('✅ Recargando con la última versión...');
+    // 2. Borrar TODAS las caches del Cache Storage
+    if ('caches' in window) {
+      const names = await caches.keys();
+      await Promise.all(names.map(n => caches.delete(n).catch(() => {})));
+    }
+
+    // 3. Recargar bypaseando el HTTP cache (con query param efímero)
     setTimeout(() => {
-      // Cache-busting: agregar un query param efímero para forzar bypass del cache HTTP
       const u = new URL(window.location.href);
       u.searchParams.set('_v', Date.now());
       window.location.replace(u.toString());
-    }, 500);
+    }, 400);
   } catch (e) {
     console.error('Update error:', e);
     showToast('🔴 Error buscando actualización');
@@ -2407,42 +2414,81 @@ function renderDetail() {
   // Bloque "Equipo de intervención + Apoyo" (sólo lectura)
   card.appendChild(buildDayInfoBlock(state.year, state.month, day, { useStateData: true }));
 
-  // Botón Marcar/Quitar feriado
-  const feriBtn = document.createElement('button');
-  const isFer = isFeriado(state.year, state.month, day);
-  feriBtn.className = 'feriado-btn' + (isFer ? ' active' : '');
-  feriBtn.innerHTML = isFer ? '★ Quitar feriado' : '☆ Marcar como feriado';
-  feriBtn.addEventListener('click', () => {
-    toggleFeriado(day);
-    rerenderActiveView();
-    renderDetail();
-  });
-  card.appendChild(feriBtn);
-
-  // Botón Marcar/Quitar feria judicial
-  const fjBtn = document.createElement('button');
-  const isFj = isFeriaJud(state.year, state.month, day);
-  fjBtn.className = 'feriado-btn feria-jud-btn' + (isFj ? ' active' : '');
-  fjBtn.innerHTML = isFj ? '🔴 Quitar feria judicial' : '⭕ Marcar como feria judicial';
-  fjBtn.addEventListener('click', () => {
-    toggleFeriaJud(day);
-    rerenderActiveView();
-    renderDetail();
-  });
-  card.appendChild(fjBtn);
-
-  // Bloque de reemplazos (siempre visible, no requiere modo edición)
+  // Bloque de reemplazos (siempre visible — botón rápido para agregar)
   card.appendChild(buildReplacementsBlock(day));
 
-  // Toggle de edición avanzada
-  const editToggle = document.createElement('button');
-  editToggle.className = 'edit-toggle';
-  editToggle.innerHTML = state.editingDay ? '✓ Cerrar edición' : '✎ Editar filas del día';
-  editToggle.addEventListener('click', () => {
-    state.editingDay = !state.editingDay;
+  // Estado de marcadores
+  const isFer = isFeriado(state.year, state.month, day);
+  const isFj = isFeriaJud(state.year, state.month, day);
+
+  // Botón único "⚙️ Gestionar día" que despliega las acciones categorizadas.
+  // Reemplaza los 3 botones separados de antes (feriado / feria jud / editar).
+  const manageWrap = document.createElement('div');
+  manageWrap.className = 'manage-wrap';
+
+  const manageBtn = document.createElement('button');
+  manageBtn.className = 'manage-btn' + (state._manageOpen ? ' open' : '');
+  // Resumen del estado actual a la derecha del título
+  let stateBadges = '';
+  if (isFer) stateBadges += ' <span class="manage-badge feriado">★</span>';
+  if (isFj)  stateBadges += ' <span class="manage-badge feria-jud">🔴</span>';
+  if (state.editingDay) stateBadges += ' <span class="manage-badge editing">✎</span>';
+  manageBtn.innerHTML = `⚙️ Gestionar día${stateBadges} <span class="manage-arrow">${state._manageOpen ? '▴' : '▾'}</span>`;
+  manageBtn.addEventListener('click', () => {
+    state._manageOpen = !state._manageOpen;
     renderDetail();
   });
-  card.appendChild(editToggle);
+  manageWrap.appendChild(manageBtn);
+
+  if (state._manageOpen) {
+    const panel = document.createElement('div');
+    panel.className = 'manage-panel';
+
+    // Sección "Marcadores"
+    const lblMark = document.createElement('div');
+    lblMark.className = 'manage-section-label';
+    lblMark.textContent = '⚖️ Marcadores';
+    panel.appendChild(lblMark);
+
+    const feriBtn = document.createElement('button');
+    feriBtn.className = 'manage-item' + (isFer ? ' active feriado-active' : '');
+    feriBtn.innerHTML = isFer ? '★ Quitar feriado' : '☆ Marcar como feriado';
+    feriBtn.addEventListener('click', () => {
+      toggleFeriado(day);
+      rerenderActiveView();
+      renderDetail();
+    });
+    panel.appendChild(feriBtn);
+
+    const fjBtn = document.createElement('button');
+    fjBtn.className = 'manage-item' + (isFj ? ' active feria-jud-active' : '');
+    fjBtn.innerHTML = isFj ? '🔴 Quitar feria judicial' : '⭕ Marcar como feria judicial';
+    fjBtn.addEventListener('click', () => {
+      toggleFeriaJud(day);
+      rerenderActiveView();
+      renderDetail();
+    });
+    panel.appendChild(fjBtn);
+
+    // Sección "Edición avanzada"
+    const lblEdit = document.createElement('div');
+    lblEdit.className = 'manage-section-label';
+    lblEdit.textContent = '✎ Edición avanzada';
+    panel.appendChild(lblEdit);
+
+    const editToggle = document.createElement('button');
+    editToggle.className = 'manage-item' + (state.editingDay ? ' active editing-active' : '');
+    editToggle.innerHTML = state.editingDay ? '✓ Cerrar edición de filas' : '✎ Editar filas del día';
+    editToggle.addEventListener('click', () => {
+      state.editingDay = !state.editingDay;
+      renderDetail();
+    });
+    panel.appendChild(editToggle);
+
+    manageWrap.appendChild(panel);
+  }
+
+  card.appendChild(manageWrap);
 
   if (state.editingDay) {
     const section = document.createElement('div');
@@ -3936,6 +3982,13 @@ function wireUp() {
     renderBirthdaysSettings();
     rerenderActiveView();
     showToast('Cumpleaños borrados');
+  });
+  document.getElementById('birthdays-restore').addEventListener('click', () => {
+    if (!confirm('¿Cargar la lista de cumpleaños precargados? Pisa los actuales.')) return;
+    saveBirthdays({ ...DEFAULT_BIRTHDAYS });
+    renderBirthdaysSettings();
+    rerenderActiveView();
+    showToast('Cumpleaños precargados restaurados');
   });
 
   // Modal de estadísticas

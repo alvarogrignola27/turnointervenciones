@@ -23,6 +23,31 @@ const OTROS = [
 // "GESTIÓN DE MATERIALES" en vez de "OTROS"; el dropdown sólo ofrece estos nombres.
 const GESTION_MATERIALES = ['ALVARO', 'MARTIN'];
 
+// Cumpleaños precargados (formato: nombre del roster/otros -> "MM-DD").
+// Se usan como default la primera vez que abre la app. Cuando el user los
+// modifica o sincroniza con Firebase, los cambios pisan a estos defaults.
+const DEFAULT_BIRTHDAYS = {
+  'Martinez': '01-04',         // Juan G. Martínez — 4 ene
+  'Campi': '02-08',            // Francisco Campi — 8 feb
+  'Milisenda': '02-14',        // Conrado Milisenda — 14 feb
+  'JUAN PABLO GODOY': '02-18', // Juan Pablo Godoy — 18 feb
+  'Sallas': '03-13',           // Marcelo Sallas — 13 mar
+  'MARTIN': '03-15',           // Martín Villanueva — 15 mar
+  'Ibañez': '04-16',           // Carlos Ibáñez — 16 abr
+  'Echague': '04-21',          // Darío Echagüe — 21 abr
+  'Laporta': '05-19',          // Luciano Laporta — 19 may
+  'Frias': '06-08',            // Miguel Frías — 8 jun
+  'Cabeza': '08-28',           // Hugo Cabezas — 28 ago
+  'Gomez': '10-04',            // Nicolás Gómez — 4 oct
+  'ALVARO': '10-23',           // Álvaro Grignola — 23 oct
+  'Montilla': '10-27',         // Pablo Montilla — 27 oct
+  'JUAN DIAZ LOZA': '11-01',   // Juan Díaz Loza — 1 nov
+  'Hidalgo': '12-04',          // Javier Hidalgo — 4 dic
+  'Celina': '12-05',           // Celina Frías — 5 dic
+  'Capdevila': '12-18',        // Silvio Capdevila — 18 dic
+  'Diaz': '12-29'              // Leonel Díaz — 29 dic
+};
+
 // Alias mantenidos por compatibilidad con código legacy
 const ABOGADOS = ['JUAN DIAZ LOZA', 'JUAN PABLO GODOY', 'MARTIN VILLANUEVA', 'ALVARO GRIGNOLA'];
 const OFICIOS = ['MARTIN', 'ALVARO'];
