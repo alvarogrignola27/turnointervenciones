@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '22';
+const APP_VERSION = '23';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -1798,12 +1798,38 @@ function renderDayView() {
   // Otras filas (oficios, abogados, etc.)
   const teamRes = findTeamSlot(slots);
   const teamSlot = teamRes ? teamRes.slot : null;
+
+  // Detectar el slot del 3er miembro si el equipo es de 3 personas
+  // (así no lo mostramos como "OTROS" ya que está dentro del equipo de intervención)
+  let thirdMemberSlotIdx = -1;
+  if (teamSlot && slots) {
+    try {
+      const cfg = loadGenConfig();
+      const team = cfg.teams.find(t =>
+        (t.a === teamSlot[0] && t.b === teamSlot[1]) ||
+        (t.a === teamSlot[1] && t.b === teamSlot[0])
+      );
+      if (team && team.c) {
+        for (let i = 0; i < slots.length; i++) {
+          if (teamRes && i === teamRes.idx) continue;
+          const s = slots[i];
+          if ((s[0] === team.c && !s[1]) || (s[1] === team.c && !s[0])) {
+            thirdMemberSlotIdx = i;
+            break;
+          }
+        }
+      }
+    } catch {}
+  }
+
   if (slots && slots.length > 0) {
     const isCurrentMonth = (y === state.year && m === state.month);
-    // Buscar índices originales de los slots "otros"
+    // Buscar índices originales de los slots "otros" (excluyendo equipo principal y 3er miembro)
     const otherIndices = [];
     slots.forEach((s, i) => {
-      if (!teamSlot || !teamsEqual(s, teamSlot)) otherIndices.push(i);
+      if (teamSlot && teamsEqual(s, teamSlot)) return;
+      if (i === thirdMemberSlotIdx) return;
+      otherIndices.push(i);
     });
     if (otherIndices.length > 0) {
       const otherSec = document.createElement('div');
