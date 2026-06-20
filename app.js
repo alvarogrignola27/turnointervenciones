@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '21';
+const APP_VERSION = '22';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -1860,6 +1860,30 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   // Editable solo si los datos son del mes en curso
   const editable = !!opts.useStateData;
 
+  // Buscar 3er miembro si el equipo es de 3 personas (config tiene .c)
+  // Los equipos de 3 se guardan como [[a, b], [c, null]] en slots[]
+  let thirdMember = null;        // { name, slotIdx, sideIdx } o null
+  let thirdMemberConfigName = null;  // nombre esperado del 3er (de la config), por si no está en slots
+  if (teamSlot && slots) {
+    try {
+      const cfg = loadGenConfig();
+      const team = cfg.teams.find(t =>
+        (t.a === teamSlot[0] && t.b === teamSlot[1]) ||
+        (t.a === teamSlot[1] && t.b === teamSlot[0])
+      );
+      if (team && team.c) {
+        thirdMemberConfigName = team.c;
+        // Buscar en slots un slot que tenga al tercero (puede ser [c, null] o [null, c])
+        for (let i = 0; i < slots.length; i++) {
+          if (teamRes && i === teamRes.idx) continue;
+          const s = slots[i];
+          if (s[0] === team.c && !s[1]) { thirdMember = { name: team.c, slotIdx: i, sideIdx: 0 }; break; }
+          if (s[1] === team.c && !s[0]) { thirdMember = { name: team.c, slotIdx: i, sideIdx: 1 }; break; }
+        }
+      }
+    } catch {}
+  }
+
   const block = document.createElement('div');
   block.className = 'di-block';
 
@@ -1923,6 +1947,51 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
         team1.appendChild(pill);
       }
     });
+
+    // TERCER MIEMBRO (equipos de 3 personas)
+    if (thirdMember || thirdMemberConfigName) {
+      const thirdName = thirdMember ? thirdMember.name : thirdMemberConfigName;
+      const thirdPill = document.createElement(editable ? 'select' : 'div');
+      thirdPill.className = 'di-team-pill di-team-pill-third';
+      thirdPill.style.background = colorFor(thirdName);
+      thirdPill.style.color = textColorFor(thirdName);
+      if (editable) {
+        thirdPill.classList.add('di-team-pill-select');
+        const empty = document.createElement('option');
+        empty.value = ''; empty.textContent = '—';
+        thirdPill.appendChild(empty);
+        ROSTER.forEach(name => {
+          const o = document.createElement('option');
+          o.value = name; o.textContent = name;
+          if (name === thirdName) o.selected = true;
+          thirdPill.appendChild(o);
+        });
+        thirdPill.addEventListener('change', (e) => {
+          const newName = e.target.value || null;
+          snapshotDayBeforeEdit(d);
+          if (!state.data[String(d)]) state.data[String(d)] = [];
+          if (thirdMember && thirdMember.slotIdx !== null) {
+            // Actualizar el slot existente
+            if (newName === null) {
+              // Borrar el slot del tercero
+              state.data[String(d)].splice(thirdMember.slotIdx, 1);
+            } else {
+              state.data[String(d)][thirdMember.slotIdx][thirdMember.sideIdx] = newName;
+            }
+          } else if (newName) {
+            // Agregar un slot nuevo con el tercero
+            state.data[String(d)].push([newName, null]);
+          }
+          cleanupDay(d);
+          saveMonthData(state.year, state.month, state.data);
+          rerenderActiveView();
+          if (state.view === 'month' && state.selectedDay !== null) renderDetail();
+        });
+      } else {
+        thirdPill.textContent = thirdName;
+      }
+      team1.appendChild(thirdPill);
+    }
   } else {
     const ph = document.createElement('div');
     ph.className = 'di-team-pill empty';
@@ -1947,6 +2016,8 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
       if (teamSlot[0]) interventionPeople.add(teamSlot[0]);
       if (teamSlot[1]) interventionPeople.add(teamSlot[1]);
     }
+    // Si el equipo tiene un tercer miembro, también lo agregamos
+    if (thirdMemberConfigName) interventionPeople.add(thirdMemberConfigName);
     // Personas del apoyo (calculadas antes de tiempo para clasificar)
     const apoyoPreview = findApoyo(y, m, d, teamSlot);
     if (apoyoPreview && apoyoPreview.team) {

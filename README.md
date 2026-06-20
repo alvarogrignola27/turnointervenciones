@@ -159,6 +159,9 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v22
+- **🩹 Equipos de 3 personas en el panel del día**: cuando el equipo de intervención es de 3 (como Sallas+Ibañez+Martinez), el tercero ahora aparece abajo en una pill ancho completo, no se pierde. Se ve tanto en el panel del Mes como en la vista Día. En modo edición también se puede cambiar como select.
+
 ### v21
 - **🔄 Buscar actualización de la app**: nuevo botón en Datos y nube. Al tocar limpia el cache del service worker, fuerza al SW a aplicar la versión nueva y recarga la página. Ya no hace falta cerrar y reabrir la PWA manualmente cada vez que subo una versión nueva. Los datos locales (turnos, colores, cumpleaños, reemplazos) se mantienen intactos.
 
