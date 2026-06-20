@@ -18,6 +18,11 @@ const OTROS = [
   'ALVARO'
 ];
 
+// Personas habilitadas para hacer "Gestión de materiales" (sábados y domingos)
+// La idea: cuando aparece un slot con una de estas personas, se muestra como
+// "GESTIÓN DE MATERIALES" en vez de "OTROS"; el dropdown sólo ofrece estos nombres.
+const GESTION_MATERIALES = ['ALVARO', 'MARTIN'];
+
 // Alias mantenidos por compatibilidad con código legacy
 const ABOGADOS = ['JUAN DIAZ LOZA', 'JUAN PABLO GODOY', 'MARTIN VILLANUEVA', 'ALVARO GRIGNOLA'];
 const OFICIOS = ['MARTIN', 'ALVARO'];

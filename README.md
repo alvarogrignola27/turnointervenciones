@@ -159,6 +159,10 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v24
+- **🩹 Fix del 3er miembro más robusto**: la detección ahora encuentra al tercero del equipo de 3 sin importar exactamente cómo esté formateado el slot en los datos. Antes había casos en que se escapaba como "OTROS".
+- **📦 Sección "Gestión de materiales"**: en la vista Día, los slots con ALVARO o MARTIN se muestran en un bloque dorado distintivo llamado "Gestión de materiales" (en vez de "Otros"). El dropdown está restringido a ALVARO y MARTIN solamente, así no podés asignar a otro por error.
+
 ### v23
 - **🩹 Vista Día: el 3er miembro del equipo ya no aparece como "Otros"**: en la vista Día, cuando el equipo es de 3 personas (ej: Sallas+Ibañez+Martinez), el tercero (Martinez) se reconoce como parte del Equipo de Intervención y aparece adentro, ancho completo, debajo de los otros 2. Antes salía como "OTROS" abajo, separado, lo que daba confuso.
 

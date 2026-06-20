@@ -148,6 +148,16 @@ input, select { font: inherit; }
   flex-basis: 100%;
   margin-top: 4px;
 }
+.dv-section-gestion {
+  background: #fff8e0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 8px;
+  border-left: 4px solid #f0a000;
+}
+.dv-section-gestion .dv-section-label {
+  color: #8a5a00;
+}
 .di-team-pill.empty {
   background: #ececee; color: #c7c7cc; font-weight: 500;
   font-style: italic;

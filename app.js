@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '23';
+const APP_VERSION = '24';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -1813,7 +1813,8 @@ function renderDayView() {
         for (let i = 0; i < slots.length; i++) {
           if (teamRes && i === teamRes.idx) continue;
           const s = slots[i];
-          if ((s[0] === team.c && !s[1]) || (s[1] === team.c && !s[0])) {
+          if (!s) continue;
+          if (s[0] === team.c || s[1] === team.c) {
             thirdMemberSlotIdx = i;
             break;
           }
@@ -1824,13 +1825,82 @@ function renderDayView() {
 
   if (slots && slots.length > 0) {
     const isCurrentMonth = (y === state.year && m === state.month);
-    // Buscar índices originales de los slots "otros" (excluyendo equipo principal y 3er miembro)
+    // Categorizar slots restantes en: gestion-materiales / otros
+    const gestionIndices = [];
     const otherIndices = [];
     slots.forEach((s, i) => {
       if (teamSlot && teamsEqual(s, teamSlot)) return;
       if (i === thirdMemberSlotIdx) return;
-      otherIndices.push(i);
+      // Si el slot tiene a alguien de gestión de materiales (ALVARO o MARTIN), va a esa sección
+      const namesInSlot = [s[0], s[1]].filter(Boolean);
+      const hasGestion = namesInSlot.some(n => GESTION_MATERIALES.includes(n));
+      const onlyGestionOrEmpty = namesInSlot.every(n => GESTION_MATERIALES.includes(n));
+      if (hasGestion && onlyGestionOrEmpty) {
+        gestionIndices.push(i);
+      } else {
+        otherIndices.push(i);
+      }
     });
+
+    // Sección GESTIÓN DE MATERIALES
+    if (gestionIndices.length > 0) {
+      const gSec = document.createElement('div');
+      gSec.className = 'dv-section dv-section-gestion';
+      const lbl = document.createElement('div');
+      lbl.className = 'dv-section-label';
+      lbl.textContent = '📦 Gestión de materiales';
+      gSec.appendChild(lbl);
+      gestionIndices.forEach(slotIdx => {
+        const slot = slots[slotIdx];
+        const row = document.createElement('div');
+        row.className = 'dv-row';
+        // Para gestión usamos un pill personalizado con dropdown restringido a ALVARO/MARTIN
+        [0, 1].forEach(sideIdx => {
+          const name = slot[sideIdx];
+          // Sólo mostramos el lado que tiene nombre (los slots de gestión suelen ser de 1 persona)
+          if (!name && sideIdx === 1) return;
+          if (isCurrentMonth) {
+            const sel = document.createElement('select');
+            sel.className = 'di-team-pill di-team-pill-select dv-row-pill';
+            if (name) {
+              sel.style.background = colorFor(name);
+              sel.style.color = textColorFor(name);
+            } else {
+              sel.classList.add('empty');
+            }
+            const empty = document.createElement('option');
+            empty.value = ''; empty.textContent = '—';
+            sel.appendChild(empty);
+            GESTION_MATERIALES.forEach(opt => {
+              const o = document.createElement('option');
+              o.value = opt; o.textContent = opt;
+              if (opt === name) o.selected = true;
+              sel.appendChild(o);
+            });
+            sel.addEventListener('change', (e) => {
+              updateSlotName(d, slotIdx, sideIdx, e.target.value || null);
+            });
+            row.appendChild(sel);
+          } else {
+            const pill = document.createElement('div');
+            pill.className = 'di-team-pill dv-row-pill';
+            if (name) {
+              pill.textContent = name;
+              pill.style.background = colorFor(name);
+              pill.style.color = textColorFor(name);
+            } else {
+              pill.classList.add('empty');
+              pill.textContent = '—';
+            }
+            row.appendChild(pill);
+          }
+        });
+        gSec.appendChild(row);
+      });
+      card.appendChild(gSec);
+    }
+
+    // Sección OTROS (oficios, etc.)
     if (otherIndices.length > 0) {
       const otherSec = document.createElement('div');
       otherSec.className = 'dv-section';
@@ -1899,12 +1969,13 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
       );
       if (team && team.c) {
         thirdMemberConfigName = team.c;
-        // Buscar en slots un slot que tenga al tercero (puede ser [c, null] o [null, c])
+        // Buscar el slot que contenga al tercero (cualquier posición)
         for (let i = 0; i < slots.length; i++) {
           if (teamRes && i === teamRes.idx) continue;
           const s = slots[i];
-          if (s[0] === team.c && !s[1]) { thirdMember = { name: team.c, slotIdx: i, sideIdx: 0 }; break; }
-          if (s[1] === team.c && !s[0]) { thirdMember = { name: team.c, slotIdx: i, sideIdx: 1 }; break; }
+          if (!s) continue;
+          if (s[0] === team.c) { thirdMember = { name: team.c, slotIdx: i, sideIdx: 0 }; break; }
+          if (s[1] === team.c) { thirdMember = { name: team.c, slotIdx: i, sideIdx: 1 }; break; }
         }
       }
     } catch {}
