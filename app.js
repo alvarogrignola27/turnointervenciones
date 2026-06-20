@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '18';
+const APP_VERSION = '19';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -325,21 +325,18 @@ function removeReplacement(day, idx) {
   saveReplacements(state.year, state.month, state._replacements);
 }
 
-// Construye el bloque visible "Reemplazos" — lista de reemplazos + botón "+ Reemplazo"
-// Se usa en el panel del mes Y en la vista Día. Se ve siempre, no solo en modo edición.
+// Construye el bloque visible "+ Agregar reemplazo" + acceso a quitar.
+// La LEYENDA de los reemplazos ahora se muestra arriba (dentro de buildDayInfoBlock,
+// entre Intervención y Apoyo). Acá ponemos sólo botón de agregar + botones de quitar.
 function buildReplacementsBlock(day) {
   const wrap = document.createElement('div');
   wrap.className = 'replacements-block';
 
   const reps = getReplacementsForDay(state.year, state.month, day);
 
-  // Solo título "REEMPLAZOS" si hay alguno
+  // Si hay reemplazos, mostrar los botones de quitar individuales (con el detalle también
+  // para poder identificarlos al borrar) en un formato minimalista.
   if (reps.length > 0) {
-    const t = document.createElement('div');
-    t.className = 'replacements-title';
-    t.textContent = `REEMPLAZOS (${reps.length})`;
-    wrap.appendChild(t);
-
     reps.forEach((rep, idx) => {
       const repRow = document.createElement('div');
       repRow.className = 'replacement-row';
@@ -364,7 +361,7 @@ function buildReplacementsBlock(day) {
     });
   }
 
-  // Botón "+ Reemplazo" siempre visible (sin necesidad de entrar a editar)
+  // Botón "+ Reemplazo" siempre visible
   const addRepBtn = document.createElement('button');
   addRepBtn.className = 'add-btn replacement-add-btn full-width-btn';
   addRepBtn.textContent = reps.length > 0 ? '+ Agregar otro reemplazo' : '+ Agregar reemplazo';
@@ -379,10 +376,23 @@ function openReplacementForm(day) {
   // Listar personas del día (para "a quién reemplaza")
   const slots = state.data[String(day)] || [];
   const peopleInDay = [];
+
+  // Personas del equipo de intervención (slots del día)
   slots.forEach(s => {
     if (s[0] && !peopleInDay.includes(s[0])) peopleInDay.push(s[0]);
     if (s[1] && !peopleInDay.includes(s[1])) peopleInDay.push(s[1]);
   });
+
+  // Personas del equipo de APOYO (el que entra después)
+  const teamRes = findTeamSlot(slots);
+  const teamSlot = teamRes ? teamRes.slot : null;
+  const apoyo = findApoyo(state.year, state.month, day, teamSlot);
+  if (apoyo) {
+    [apoyo.team[0], apoyo.team[1]].forEach(n => {
+      if (n && !peopleInDay.includes(n)) peopleInDay.push(n);
+    });
+  }
+
   if (peopleInDay.length === 0) {
     alert('No hay nadie asignado este día para reemplazar.');
     return;
@@ -489,6 +499,28 @@ async function exportAndShareMonth() {
     el.classList.remove('filtered-out', 'filter-match');
   });
   wrap.appendChild(clone);
+
+  // Lista de reemplazos del mes (si los hay)
+  const allReps = state._replacements || {};
+  const repDays = Object.keys(allReps).map(Number).filter(d => allReps[String(d)] && allReps[String(d)].length > 0).sort((a,b) => a-b);
+  if (repDays.length > 0) {
+    const repsSection = document.createElement('div');
+    repsSection.style.cssText = 'margin-top:16px;padding:12px;background:#f7f4fc;border-left:4px solid #5e35b1;border-radius:8px;';
+    const repsTitle = document.createElement('div');
+    repsTitle.style.cssText = 'font-weight:700;font-size:14px;color:#311b92;margin-bottom:8px;';
+    repsTitle.textContent = '↪ Reemplazos del mes';
+    repsSection.appendChild(repsTitle);
+    repDays.forEach(d => {
+      const reps = allReps[String(d)];
+      reps.forEach(rep => {
+        const line = document.createElement('div');
+        line.style.cssText = 'font-size:13px;color:#311b92;padding:3px 0;';
+        line.innerHTML = `<b>Día ${d}</b> — <b>${rep.replacement}</b> reemplaza a ${rep.original}`;
+        repsSection.appendChild(line);
+      });
+    });
+    wrap.appendChild(repsSection);
+  }
 
   // Footer
   const footer = document.createElement('div');
@@ -991,6 +1023,195 @@ function resetGenPassword() {
   if (!confirm('¿Borrar la contraseña del generador? Después podrás definir una nueva.')) return;
   saveGenPasswordHash(null);
   showToast('Contraseña borrada. Definí una nueva al generar.');
+}
+
+// ---------- Modal de Estadísticas ----------
+let _statsScope = 'month'; // 'month' | 'total'
+
+function openStatsSettings() {
+  document.getElementById('stats-modal').classList.remove('hidden');
+  renderStats();
+}
+function closeStatsSettings() {
+  document.getElementById('stats-modal').classList.add('hidden');
+}
+// Cuenta días por persona en el mes actual (de state.data)
+function countDaysByPersonInCurrentMonth() {
+  const counts = {};
+  const daysInMonth = new Date(state.year, state.month, 0).getDate();
+  for (let d = 1; d <= daysInMonth; d++) {
+    const slot = state.data[String(d)];
+    if (!slot || slot.length === 0) continue;
+    slot.forEach(s => {
+      [s[0], s[1]].forEach(name => {
+        if (!name) return;
+        counts[name] = (counts[name] || 0) + 1;
+      });
+    });
+  }
+  return counts;
+}
+// Cuenta días por equipo en el mes actual
+function countDaysByTeamInCurrentMonth() {
+  const cfg = loadGenConfig();
+  const teams = cfg.teams || [];
+  const counts = teams.map(() => 0);
+  const daysInMonth = new Date(state.year, state.month, 0).getDate();
+  for (let d = 1; d <= daysInMonth; d++) {
+    const slot = state.data[String(d)];
+    if (!slot || slot.length === 0) continue;
+    const main = slot[0];
+    if (!main) continue;
+    const idx = teams.findIndex(t =>
+      (t.a === main[0] && t.b === main[1]) ||
+      (t.a === main[1] && t.b === main[0])
+    );
+    if (idx >= 0) counts[idx]++;
+  }
+  return { teams, counts };
+}
+function renderStats() {
+  const content = document.getElementById('stats-content');
+  content.innerHTML = '';
+
+  // Estado del toggle
+  document.querySelectorAll('#stats-modal .scope-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.statsScope === _statsScope);
+  });
+
+  if (_statsScope === 'month') {
+    const monthName = `${MES_NAMES[state.month-1]} ${state.year}`;
+    const intro = document.createElement('div');
+    intro.className = 'stats-intro';
+    intro.textContent = `Días asignados durante ${monthName}`;
+    content.appendChild(intro);
+
+    // Por equipo
+    const { teams, counts } = countDaysByTeamInCurrentMonth();
+    const teamSection = document.createElement('div');
+    teamSection.className = 'stats-section';
+    const teamTitle = document.createElement('h3');
+    teamTitle.textContent = '🤝 Por equipo (intervención)';
+    teamSection.appendChild(teamTitle);
+    const maxCount = Math.max(1, ...counts);
+    teams.forEach((t, idx) => {
+      const teamName = [t.a, t.b, t.c].filter(Boolean).join(' + ');
+      const row = document.createElement('div');
+      row.className = 'stats-row';
+      const label = document.createElement('div');
+      label.className = 'stats-label';
+      label.textContent = teamName;
+      label.style.background = colorFor(t.a);
+      label.style.color = textColorFor(t.a);
+      const barWrap = document.createElement('div');
+      barWrap.className = 'stats-bar-wrap';
+      const bar = document.createElement('div');
+      bar.className = 'stats-bar';
+      bar.style.width = `${(counts[idx] / maxCount) * 100}%`;
+      bar.style.background = colorFor(t.a);
+      barWrap.appendChild(bar);
+      const num = document.createElement('div');
+      num.className = 'stats-num';
+      num.textContent = `${counts[idx]} días`;
+      row.appendChild(label);
+      row.appendChild(barWrap);
+      row.appendChild(num);
+      teamSection.appendChild(row);
+    });
+    content.appendChild(teamSection);
+
+    // Por persona
+    const personCounts = countDaysByPersonInCurrentMonth();
+    const personSection = document.createElement('div');
+    personSection.className = 'stats-section';
+    const personTitle = document.createElement('h3');
+    personTitle.textContent = '👤 Por persona';
+    personSection.appendChild(personTitle);
+
+    const sortedPeople = Object.keys(personCounts).sort((a, b) => personCounts[b] - personCounts[a]);
+    const maxP = Math.max(1, ...Object.values(personCounts));
+    sortedPeople.forEach(name => {
+      const row = document.createElement('div');
+      row.className = 'stats-row';
+      const label = document.createElement('div');
+      label.className = 'stats-label';
+      label.textContent = name;
+      label.style.background = colorFor(name);
+      label.style.color = textColorFor(name);
+      const barWrap = document.createElement('div');
+      barWrap.className = 'stats-bar-wrap';
+      const bar = document.createElement('div');
+      bar.className = 'stats-bar';
+      bar.style.width = `${(personCounts[name] / maxP) * 100}%`;
+      bar.style.background = colorFor(name);
+      barWrap.appendChild(bar);
+      const num = document.createElement('div');
+      num.className = 'stats-num';
+      num.textContent = `${personCounts[name]} d`;
+      row.appendChild(label);
+      row.appendChild(barWrap);
+      row.appendChild(num);
+      personSection.appendChild(row);
+    });
+    content.appendChild(personSection);
+
+  } else {
+    // Histórico total — usa teamHistory acumulado
+    const intro = document.createElement('div');
+    intro.className = 'stats-intro';
+    intro.textContent = `Días acumulados desde que se empezó a generar (todos los meses)`;
+    content.appendChild(intro);
+
+    const hist = loadTeamHistory();
+    const cfg = loadGenConfig();
+    const teams = cfg.teams || [];
+    const histSection = document.createElement('div');
+    histSection.className = 'stats-section';
+    const histTitle = document.createElement('h3');
+    histTitle.textContent = '🤝 Por equipo (acumulado)';
+    histSection.appendChild(histTitle);
+
+    const entries = teams.map(t => ({
+      team: t,
+      days: hist[teamKey(t)]?.totalDays || 0
+    })).sort((a, b) => b.days - a.days);
+
+    const maxC = Math.max(1, ...entries.map(e => e.days));
+    entries.forEach(e => {
+      const teamName = [e.team.a, e.team.b, e.team.c].filter(Boolean).join(' + ');
+      const row = document.createElement('div');
+      row.className = 'stats-row';
+      const label = document.createElement('div');
+      label.className = 'stats-label';
+      label.textContent = teamName;
+      label.style.background = colorFor(e.team.a);
+      label.style.color = textColorFor(e.team.a);
+      const barWrap = document.createElement('div');
+      barWrap.className = 'stats-bar-wrap';
+      const bar = document.createElement('div');
+      bar.className = 'stats-bar';
+      bar.style.width = `${(e.days / maxC) * 100}%`;
+      bar.style.background = colorFor(e.team.a);
+      barWrap.appendChild(bar);
+      const num = document.createElement('div');
+      num.className = 'stats-num';
+      num.textContent = `${e.days} d`;
+      row.appendChild(label);
+      row.appendChild(barWrap);
+      row.appendChild(num);
+      histSection.appendChild(row);
+    });
+    content.appendChild(histSection);
+
+    // Diferencia máx-mín como métrica de balance
+    if (entries.length > 1) {
+      const diff = entries[0].days - entries[entries.length-1].days;
+      const balanceNote = document.createElement('div');
+      balanceNote.className = 'stats-balance-note';
+      balanceNote.innerHTML = `<b>Balance:</b> diferencia máx-mín = ${diff} días. ${diff <= 1 ? '✅ Excelente equilibrio.' : diff <= 3 ? '👍 Buen equilibrio.' : '⚠️ Equilibrio mejorable: activá la rotación automática.'}`;
+      content.appendChild(balanceNote);
+    }
+  }
 }
 
 // ---------- Modal de cumpleaños ----------
@@ -1698,6 +1919,29 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   }
   sec1.appendChild(team1);
   block.appendChild(sec1);
+
+  // BLOQUE DE REEMPLAZOS — sólo si estamos en el mes actualmente cargado
+  // (sino no podríamos leer/escribir los reemplazos del state)
+  if (y === state.year && m === state.month) {
+    const reps = getReplacementsForDay(y, m, d);
+    // Solo lo mostramos si hay reemplazos o si estamos en vista que permite editar.
+    // Lo mostramos siempre cuando hay reemplazos para que se vea la leyenda.
+    if (reps.length > 0) {
+      const repsSec = document.createElement('div');
+      repsSec.className = 'di-section di-section-replacements';
+      const lblR = document.createElement('div');
+      lblR.className = 'di-label';
+      lblR.textContent = `Reemplazos del día (${reps.length})`;
+      repsSec.appendChild(lblR);
+      reps.forEach((rep, idx) => {
+        const item = document.createElement('div');
+        item.className = 'di-rep-item';
+        item.innerHTML = `<b>${rep.replacement}</b> <span class="rep-arrow">↪</span> <small>reemplaza a ${rep.original}</small>`;
+        repsSec.appendChild(item);
+      });
+      block.appendChild(repsSec);
+    }
+  }
 
   // EQUIPO DE APOYO (editable cuando edit mode está activo, igual que intervención)
   const sec2 = document.createElement('div');
@@ -3299,6 +3543,7 @@ function wireUp() {
       else if (a === 'clear') clearCurrentMonth();
       else if (a === 'generate') generateMonth();
       else if (a === 'export-image') exportAndShareMonth();
+      else if (a === 'stats') openStatsSettings();
       else if (a === 'gen-settings') openGenSettings();
       else if (a === 'colors-settings') openColorsSettings();
       else if (a === 'birthdays-settings') openBirthdaysSettings();
@@ -3361,6 +3606,17 @@ function wireUp() {
     renderBirthdaysSettings();
     rerenderActiveView();
     showToast('Cumpleaños borrados');
+  });
+
+  // Modal de estadísticas
+  document.getElementById('stats-modal-close').addEventListener('click', closeStatsSettings);
+  document.getElementById('stats-close-btn').addEventListener('click', closeStatsSettings);
+  document.querySelector('#stats-modal .modal-backdrop').addEventListener('click', closeStatsSettings);
+  document.querySelectorAll('#stats-modal .scope-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _statsScope = btn.dataset.statsScope;
+      renderStats();
+    });
   });
 
   // Modal de sincronización

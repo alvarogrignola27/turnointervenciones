@@ -86,6 +86,7 @@
         <button data-action="generate">🎲 Generar mes</button>
         <button data-action="gen-settings">⚙️ Configurar equipos del generador</button>
         <button data-action="export-image">📤 Compartir mes (imagen)</button>
+        <button data-action="stats">📊 Estadísticas</button>
       </div>
 
       <div data-section="markers" class="menu-section">
@@ -112,7 +113,7 @@
       <button data-action="install" id="install-btn" class="hidden">Instalar app</button>
       <button data-action="close">Cerrar</button>
       <div class="menu-version">
-        Versión <span id="app-version">18</span>
+        Versión <span id="app-version">19</span>
         <div class="sync-status-indicator idle" id="sync-status-indicator">⚪ Sin conectar</div>
       </div>
       <input type="file" id="import-file" accept="application/json" class="hidden">
@@ -173,6 +174,24 @@
         <div class="modal-footer">
           <button id="birthdays-reset" class="modal-btn secondary">Borrar todos</button>
           <button id="birthdays-close-btn" class="modal-btn primary">Listo</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="stats-modal" class="modal hidden" role="dialog" aria-labelledby="stats-modal-title">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2 id="stats-modal-title">📊 Estadísticas</h2>
+          <button class="modal-close" id="stats-modal-close" aria-label="Cerrar">×</button>
+        </div>
+        <div class="stats-scope-toggle">
+          <button class="scope-btn active" data-stats-scope="month">📅 Este mes</button>
+          <button class="scope-btn" data-stats-scope="total">📚 Histórico total</button>
+        </div>
+        <div id="stats-content" class="stats-content"></div>
+        <div class="modal-footer">
+          <button id="stats-close-btn" class="modal-btn primary">Listo</button>
         </div>
       </div>
     </div>

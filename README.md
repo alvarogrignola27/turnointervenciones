@@ -159,6 +159,14 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v19
+- **🔁 Leyenda de reemplazo entre Intervención y Apoyo**: en el panel del Mes y en la vista Día, los reemplazos del día se ven como un bloque violeta "REEMPLAZOS DEL DÍA (N)" arriba del Equipo de Apoyo, así está visible siempre la leyenda "X reemplaza a Y" sin tener que mirar abajo.
+- **🤝 Equipo de Apoyo también se puede reemplazar**: al elegir "a quién reemplaza" en el form, ahora aparecen tanto los del Equipo de Intervención como los del Equipo de Apoyo.
+- **📤 Reemplazos en la imagen exportada**: el mes compartido por WhatsApp ahora trae al final una lista con todos los reemplazos del mes ("Día 5 — Gomez reemplaza a Capdevila").
+- **📊 Estadísticas**: nuevo botón en Generación que abre un modal con:
+  - "Este mes" → días por equipo y por persona (barras de colores)
+  - "Histórico total" → días acumulados por equipo desde que se empezó a generar, ordenados, con indicador de balance.
+
 ### v18
 - **🎨 Colores específicos por mes** (override): en el modal de Colores ahora hay un toggle "🌐 Todos los meses / 📅 Solo [Mes Año]". Si cambiás un color en modo "Solo este mes", queda aplicado únicamente para ese mes — el resto sigue con el color general. Útil cuando cambia la composición de un equipo de un mes a otro. Los personajes con override muestran un 📅 al lado y la fila queda con fondo lila claro.
 - Botón "🗑️ Borrar todos los colores especiales de [Mes Año]" en el modal para limpiar overrides de golpe.

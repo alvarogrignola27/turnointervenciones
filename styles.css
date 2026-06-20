@@ -352,6 +352,27 @@ input, select { font: inherit; }
   font-size: 13px;
 }
 
+/* Bloque de reemplazos DENTRO del buildDayInfoBlock (entre Intervención y Apoyo) */
+.di-section-replacements {
+  background: #f7f4fc;
+  border-left: 3px solid #5e35b1;
+  padding: 8px 10px;
+  margin: 8px 0;
+  border-radius: 8px;
+}
+.di-section-replacements .di-label {
+  color: #5e35b1;
+  margin-bottom: 6px;
+}
+.di-rep-item {
+  font-size: 13px;
+  padding: 4px 0;
+  color: #311b92;
+}
+.di-rep-item small {
+  color: #5e35b1;
+}
+
 /* ========== Colors modal: scope toggle (global vs solo este mes) ========== */
 .colors-scope-header {
   margin-bottom: 12px;
@@ -403,6 +424,77 @@ input, select { font: inherit; }
   top: 2px; right: 4px;
   font-size: 10px;
   pointer-events: none;
+}
+
+/* ========== Estadísticas ========== */
+.stats-scope-toggle {
+  display: flex;
+  gap: 4px;
+  background: #f2f2f7;
+  padding: 4px;
+  border-radius: 10px;
+  margin: 0 16px 8px;
+}
+.stats-content {
+  padding: 0 16px 8px;
+  max-height: 65vh;
+  overflow-y: auto;
+}
+.stats-intro {
+  font-size: 12px;
+  color: #6c6c70;
+  margin-bottom: 12px;
+}
+.stats-section {
+  margin-bottom: 18px;
+}
+.stats-section h3 {
+  font-size: 13px;
+  margin: 8px 0 8px;
+  color: #1c1c1e;
+}
+.stats-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 56px;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.stats-label {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stats-bar-wrap {
+  background: #f0f0f4;
+  border-radius: 6px;
+  height: 16px;
+  overflow: hidden;
+}
+.stats-bar {
+  height: 100%;
+  border-radius: 6px;
+  min-width: 4px;
+  transition: width 0.3s;
+}
+.stats-num {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1c1c1e;
+  text-align: right;
+}
+.stats-balance-note {
+  margin-top: 8px;
+  padding: 10px;
+  background: #eef5ff;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #1c1c1e;
+  line-height: 1.5;
 }
 
 /* ========== Modal (Generator settings) ========== */
