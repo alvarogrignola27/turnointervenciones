@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '16';
+const APP_VERSION = '18';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -20,6 +20,7 @@ const GEN_CONFIG_KEY = 'turnos:gen_config';
 const WEEKEND_ROT_KEY = 'turnos:gen_weekend_idx';
 const TEAM_HISTORY_KEY = 'turnos:gen_team_history';
 const PERSON_COLORS_KEY = 'turnos:person_colors';
+const PERSON_COLORS_MONTH_PREFIX = 'turnos:person_colors_month:';
 const FIREBASE_CONFIG_KEY = 'turnos:firebase_config';
 const FIREBASE_LAST_SYNC_KEY = 'turnos:firebase_last_sync';
 const GEN_PASSWORD_KEY = 'turnos:gen_password';
@@ -324,6 +325,55 @@ function removeReplacement(day, idx) {
   saveReplacements(state.year, state.month, state._replacements);
 }
 
+// Construye el bloque visible "Reemplazos" — lista de reemplazos + botón "+ Reemplazo"
+// Se usa en el panel del mes Y en la vista Día. Se ve siempre, no solo en modo edición.
+function buildReplacementsBlock(day) {
+  const wrap = document.createElement('div');
+  wrap.className = 'replacements-block';
+
+  const reps = getReplacementsForDay(state.year, state.month, day);
+
+  // Solo título "REEMPLAZOS" si hay alguno
+  if (reps.length > 0) {
+    const t = document.createElement('div');
+    t.className = 'replacements-title';
+    t.textContent = `REEMPLAZOS (${reps.length})`;
+    wrap.appendChild(t);
+
+    reps.forEach((rep, idx) => {
+      const repRow = document.createElement('div');
+      repRow.className = 'replacement-row';
+
+      const pill = document.createElement('div');
+      pill.className = 'replacement-pill';
+      pill.innerHTML = `<b>${rep.replacement}</b> <span class="rep-arrow">↪</span> <small>reemplaza a ${rep.original}</small>`;
+
+      const del = document.createElement('button');
+      del.className = 'replacement-delete';
+      del.textContent = '×';
+      del.title = 'Quitar reemplazo';
+      del.addEventListener('click', () => {
+        if (!confirm(`¿Quitar el reemplazo de ${rep.replacement} a ${rep.original}?`)) return;
+        removeReplacement(day, idx);
+        rerenderActiveView(); renderDetail();
+      });
+
+      repRow.appendChild(pill);
+      repRow.appendChild(del);
+      wrap.appendChild(repRow);
+    });
+  }
+
+  // Botón "+ Reemplazo" siempre visible (sin necesidad de entrar a editar)
+  const addRepBtn = document.createElement('button');
+  addRepBtn.className = 'add-btn replacement-add-btn full-width-btn';
+  addRepBtn.textContent = reps.length > 0 ? '+ Agregar otro reemplazo' : '+ Agregar reemplazo';
+  addRepBtn.addEventListener('click', () => openReplacementForm(day));
+  wrap.appendChild(addRepBtn);
+
+  return wrap;
+}
+
 // Form rápido para agregar un reemplazo (usado en el editor del día)
 function openReplacementForm(day) {
   // Listar personas del día (para "a quién reemplaza")
@@ -562,6 +612,9 @@ function abbrev(name) {
 }
 function colorFor(name) {
   if (!name) return '#E5E5EA';
+  // Prioridad: override del mes actual → custom global → default → fallback
+  const monthOverrides = loadPersonColorsMonth(state.year, state.month);
+  if (monthOverrides[name]) return monthOverrides[name];
   const custom = loadPersonColors();
   return custom[name] || COLORS[name] || '#E5E5EA';
 }
@@ -578,7 +631,7 @@ function textColorFor(name) {
   return '#1c1c1e';
 }
 
-// ---------- Colores custom por persona ----------
+// ---------- Colores custom por persona (globales) ----------
 let _personColorsCache = null;
 function loadPersonColors() {
   if (_personColorsCache !== null) return _personColorsCache;
@@ -594,6 +647,33 @@ function savePersonColors(colors) {
     scheduleCloudPush();
   } catch (e) { console.warn('Save colors error', e); }
 }
+
+// ---------- Colores específicos por mes (override) ----------
+let _personColorsMonthCache = {};  // { "YYYY-MM": {name: color, ...} }
+function monthColorsKey(y, m) {
+  return `${PERSON_COLORS_MONTH_PREFIX}${y}-${String(m).padStart(2,'0')}`;
+}
+function loadPersonColorsMonth(y, m) {
+  const k = `${y}-${String(m).padStart(2,'0')}`;
+  if (_personColorsMonthCache[k] !== undefined) return _personColorsMonthCache[k];
+  try {
+    _personColorsMonthCache[k] = JSON.parse(localStorage.getItem(monthColorsKey(y, m)) || '{}');
+  } catch { _personColorsMonthCache[k] = {}; }
+  return _personColorsMonthCache[k];
+}
+function savePersonColorsMonth(y, m, colors) {
+  const k = `${y}-${String(m).padStart(2,'0')}`;
+  _personColorsMonthCache[k] = colors;
+  try {
+    if (Object.keys(colors).length === 0) localStorage.removeItem(monthColorsKey(y, m));
+    else localStorage.setItem(monthColorsKey(y, m), JSON.stringify(colors));
+    scheduleCloudPush();
+  } catch (e) { console.warn('Save month colors error', e); }
+}
+function clearPersonColorsMonth(y, m) {
+  savePersonColorsMonth(y, m, {});
+}
+
 // ---------- Sincronización en la nube (Firebase) ----------
 let _fbApp = null;
 let _fbAuth = null;
@@ -607,10 +687,25 @@ function resetPersonColors() {
   localStorage.removeItem(PERSON_COLORS_KEY);
 }
 
+// Config Firebase precargada (para no tener que copiar 4 campos cada vez en PC nueva)
+const DEFAULT_FIREBASE_CONFIG = {
+  firebase: {
+    apiKey: "AIzaSyAwxoFkT0ZrBbtPTJhcOnEHs8X_T5W9UwY",
+    authDomain: "turnos-intervenciones.firebaseapp.com",
+    databaseURL: "https://turnos-intervenciones-default-rtdb.firebaseio.com",
+    projectId: "turnos-intervenciones"
+  },
+  email: '',
+  password: ''
+};
+
 function loadFirebaseConfig() {
   try {
-    return JSON.parse(localStorage.getItem(FIREBASE_CONFIG_KEY) || 'null');
-  } catch { return null; }
+    const stored = JSON.parse(localStorage.getItem(FIREBASE_CONFIG_KEY) || 'null');
+    if (stored) return stored;
+  } catch {}
+  // Si no hay nada guardado, devolver los defaults (sin email/password)
+  return JSON.parse(JSON.stringify(DEFAULT_FIREBASE_CONFIG));
 }
 function saveFirebaseConfig(cfg) {
   if (cfg === null) {
@@ -745,6 +840,7 @@ function applyRemoteData(data) {
   });
   // Invalidar caches y recargar
   _personColorsCache = null;
+  _personColorsMonthCache = {};
   _birthdaysCache = null;
   state.data = loadMonthData(state.year, state.month);
   state._feriados = loadFeriados(state.year, state.month);
@@ -1459,6 +1555,12 @@ function renderDayView() {
   // Bloque "Equipo de intervención + Apoyo" (mismo helper que en panel de edición)
   card.appendChild(buildDayInfoBlock(y, m, d));
 
+  // Bloque de reemplazos (siempre visible en vista Día)
+  // Sólo si estamos en el mes actual cargado en state, sino no podemos editarlo
+  if (y === state.year && m === state.month) {
+    card.appendChild(buildReplacementsBlock(d));
+  }
+
   // Otras filas (oficios, abogados, etc.)
   const teamRes = findTeamSlot(slots);
   const teamSlot = teamRes ? teamRes.slot : null;
@@ -1756,6 +1858,9 @@ function renderDetail() {
   });
   card.appendChild(fjBtn);
 
+  // Bloque de reemplazos (siempre visible, no requiere modo edición)
+  card.appendChild(buildReplacementsBlock(day));
+
   // Toggle de edición avanzada
   const editToggle = document.createElement('button');
   editToggle.className = 'edit-toggle';
@@ -1872,48 +1977,7 @@ function renderDetail() {
       rerenderActiveView(); renderDetail();
     });
     addRow.appendChild(addBtn);
-
-    const addRepBtn = document.createElement('button');
-    addRepBtn.className = 'add-btn replacement-add-btn';
-    addRepBtn.textContent = '+ Reemplazo';
-    addRepBtn.addEventListener('click', () => {
-      openReplacementForm(day);
-    });
-    addRow.appendChild(addRepBtn);
-
     section.appendChild(addRow);
-
-    // Lista de reemplazos existentes
-    const reps = getReplacementsForDay(state.year, state.month, day);
-    if (reps.length > 0) {
-      const repsTitle = document.createElement('div');
-      repsTitle.className = 'replacements-title';
-      repsTitle.textContent = 'REEMPLAZOS';
-      section.appendChild(repsTitle);
-
-      reps.forEach((rep, idx) => {
-        const repRow = document.createElement('div');
-        repRow.className = 'replacement-row';
-
-        const pill = document.createElement('div');
-        pill.className = 'replacement-pill';
-        pill.innerHTML = `<b>${rep.replacement}</b> <span class="rep-arrow">↪</span> <small>reemplaza a ${rep.original}</small>`;
-
-        const del = document.createElement('button');
-        del.className = 'replacement-delete';
-        del.textContent = '×';
-        del.title = 'Quitar reemplazo';
-        del.addEventListener('click', () => {
-          if (!confirm(`¿Quitar el reemplazo de ${rep.replacement} a ${rep.original}?`)) return;
-          removeReplacement(day, idx);
-          rerenderActiveView(); renderDetail();
-        });
-
-        repRow.appendChild(pill);
-        repRow.appendChild(del);
-        section.appendChild(repRow);
-      });
-    }
 
     // Botón Deshacer
     if (hasHistory(state.year, state.month, day)) {
@@ -2431,12 +2495,56 @@ function openColorsSettings() {
 function closeColorsSettings() {
   document.getElementById('colors-modal').classList.add('hidden');
 }
+// Estado del modal: si está editando colores "solo este mes" o "globales"
+let _colorsScope = 'global';  // 'global' | 'month'
+
 function renderColorsSettings() {
   const list = document.getElementById('colors-list');
   list.innerHTML = '';
-  const colors = loadPersonColors();
 
-  // Agrupar por categoría
+  const globalColors = loadPersonColors();
+  const monthColors = loadPersonColorsMonth(state.year, state.month);
+  const isMonthMode = _colorsScope === 'month';
+  const activeColors = isMonthMode ? monthColors : globalColors;
+
+  // Header con toggle global/mensual
+  const scopeHeader = document.createElement('div');
+  scopeHeader.className = 'colors-scope-header';
+  const monthLabel = `${MES_NAMES[state.month-1]} ${state.year}`;
+  scopeHeader.innerHTML = `
+    <div class="colors-scope-toggle">
+      <button class="scope-btn ${!isMonthMode ? 'active' : ''}" data-scope="global">🌐 Todos los meses</button>
+      <button class="scope-btn ${isMonthMode ? 'active' : ''}" data-scope="month">📅 Solo ${monthLabel}</button>
+    </div>
+    <div class="colors-scope-note">
+      ${isMonthMode
+        ? `Los cambios afectan SOLO a <b>${monthLabel}</b>. Para volver al color general, usá la ↺ al lado del nombre.`
+        : `Los cambios afectan a TODOS los meses (excepto los que tengan override mensual).`}
+    </div>
+  `;
+  list.appendChild(scopeHeader);
+  scopeHeader.querySelectorAll('.scope-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _colorsScope = btn.dataset.scope;
+      renderColorsSettings();
+    });
+  });
+
+  // Cuando es modo mes y hay overrides, mostrar botón "borrar todos los overrides del mes"
+  if (isMonthMode && Object.keys(monthColors).length > 0) {
+    const clearMonthBtn = document.createElement('button');
+    clearMonthBtn.className = 'colors-clear-month-btn';
+    clearMonthBtn.textContent = `🗑️ Borrar todos los colores especiales de ${monthLabel}`;
+    clearMonthBtn.addEventListener('click', () => {
+      if (!confirm(`¿Borrar TODOS los colores especiales de ${monthLabel}? Volverán a usar los colores generales.`)) return;
+      clearPersonColorsMonth(state.year, state.month);
+      rerenderActiveView();
+      renderColorsSettings();
+      showToast('Colores del mes borrados');
+    });
+    list.appendChild(clearMonthBtn);
+  }
+
   const groups = [
     { label: 'Equipo (15 personas)', items: ROSTER },
     { label: 'Otros', items: OTROS }
@@ -2452,36 +2560,75 @@ function renderColorsSettings() {
       const row = document.createElement('div');
       row.className = 'colors-row';
 
-      // Pill preview con el color actual
+      // En modo mes, marcar visualmente si esta persona tiene override mensual
+      const hasMonthOverride = !!monthColors[name];
+      if (isMonthMode && hasMonthOverride) row.classList.add('has-month-override');
+
+      // Color actual: si modo mes, mostramos el override mensual (si hay), sino el efectivo
+      // Si modo global, mostramos el global (sin tener en cuenta override mensual)
+      let currentColor;
+      if (isMonthMode) {
+        currentColor = monthColors[name] || globalColors[name] || COLORS[name] || '#E5E5EA';
+      } else {
+        currentColor = globalColors[name] || COLORS[name] || '#E5E5EA';
+      }
+
       const preview = document.createElement('div');
       preview.className = 'colors-preview';
-      const currentColor = colors[name] || COLORS[name] || '#E5E5EA';
       preview.style.background = currentColor;
-      preview.style.color = textColorFor(name);
+      preview.style.color = (function(){
+        if (WHITE_TEXT.has(name)) return '#FFFFFF';
+        const c = currentColor;
+        if (c.startsWith('#')) {
+          const r = parseInt(c.slice(1, 3), 16);
+          const g2 = parseInt(c.slice(3, 5), 16);
+          const b = parseInt(c.slice(5, 7), 16);
+          const lum = (0.299 * r + 0.587 * g2 + 0.114 * b);
+          return lum < 130 ? '#FFFFFF' : '#1c1c1e';
+        }
+        return '#1c1c1e';
+      })();
       preview.textContent = name;
+      if (isMonthMode && hasMonthOverride) {
+        const tag = document.createElement('span');
+        tag.className = 'month-override-tag';
+        tag.textContent = '📅';
+        tag.title = 'Color especial de este mes';
+        preview.appendChild(tag);
+      }
 
-      // Input de color nativo (label para que el preview lo dispare)
       const input = document.createElement('input');
       input.type = 'color';
       input.value = currentColor;
       input.className = 'colors-input';
       input.addEventListener('change', (e) => {
-        const c = loadPersonColors();
-        c[name] = e.target.value;
-        savePersonColors(c);
+        if (isMonthMode) {
+          const mc = loadPersonColorsMonth(state.year, state.month);
+          mc[name] = e.target.value;
+          savePersonColorsMonth(state.year, state.month, mc);
+        } else {
+          const c = loadPersonColors();
+          c[name] = e.target.value;
+          savePersonColors(c);
+        }
         rerenderActiveView();
         renderColorsSettings();
       });
 
-      // Reset individual
       const resetBtn = document.createElement('button');
       resetBtn.className = 'colors-reset-one';
       resetBtn.textContent = '↺';
-      resetBtn.title = 'Volver al color default';
+      resetBtn.title = isMonthMode ? 'Quitar el color especial de este mes' : 'Volver al color default';
       resetBtn.addEventListener('click', () => {
-        const c = loadPersonColors();
-        delete c[name];
-        savePersonColors(c);
+        if (isMonthMode) {
+          const mc = loadPersonColorsMonth(state.year, state.month);
+          delete mc[name];
+          savePersonColorsMonth(state.year, state.month, mc);
+        } else {
+          const c = loadPersonColors();
+          delete c[name];
+          savePersonColors(c);
+        }
         rerenderActiveView();
         renderColorsSettings();
       });

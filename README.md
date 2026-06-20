@@ -159,6 +159,14 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v18
+- **🎨 Colores específicos por mes** (override): en el modal de Colores ahora hay un toggle "🌐 Todos los meses / 📅 Solo [Mes Año]". Si cambiás un color en modo "Solo este mes", queda aplicado únicamente para ese mes — el resto sigue con el color general. Útil cuando cambia la composición de un equipo de un mes a otro. Los personajes con override muestran un 📅 al lado y la fila queda con fondo lila claro.
+- Botón "🗑️ Borrar todos los colores especiales de [Mes Año]" en el modal para limpiar overrides de golpe.
+
+### v17
+- **🔁 Reemplazos visibles siempre** (no solo en modo edición). Bloque violeta con la lista de reemplazos + botón "+ Agregar reemplazo" arriba del "Editar filas del día". Se ve igual en el panel del Mes y en la vista Día.
+- **🔥 Firebase precargado**: los 4 campos (API Key, Auth Domain, Database URL, Project ID) vienen llenos por defecto. En una PC nueva solo tenés que poner email + password y conectar.
+
 ### v16
 - **🎲 ⚖️ 🎨 ☁️ 4 botones de categoría en lugar del "…Más"**: ahora abajo a la pantalla hay 4 botones chicos (Generar, Marcar, Personalizar, Datos). Cada uno abre solo su mini-lista corta — no más lista enorme.
 

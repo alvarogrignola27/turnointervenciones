@@ -331,6 +331,79 @@ input, select { font: inherit; }
   border: 1px solid #d0d0d4; border-radius: 8px;
   background: #fff;
 }
+.replacements-block {
+  margin: 12px 0;
+  padding: 10px;
+  background: #f7f4fc;
+  border-radius: 10px;
+  border: 1px solid #d7c5f0;
+}
+.replacements-block .replacements-title {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+.replacements-block .replacement-row {
+  margin-bottom: 6px;
+}
+.replacements-block .replacement-add-btn.full-width-btn {
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px;
+  font-size: 13px;
+}
+
+/* ========== Colors modal: scope toggle (global vs solo este mes) ========== */
+.colors-scope-header {
+  margin-bottom: 12px;
+  padding: 0 16px;
+}
+.colors-scope-toggle {
+  display: flex;
+  gap: 4px;
+  background: #f2f2f7;
+  padding: 4px;
+  border-radius: 10px;
+}
+.scope-btn {
+  flex: 1; padding: 8px 6px;
+  font-size: 12px; font-weight: 600;
+  background: transparent; border: none;
+  color: #6c6c70;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.scope-btn.active {
+  background: #fff; color: #1c1c1e;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.colors-scope-note {
+  font-size: 11px; color: #6c6c70;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+.colors-clear-month-btn {
+  width: calc(100% - 32px);
+  margin: 0 16px 12px;
+  background: #fde0e0; color: #b71c1c;
+  border: 1px solid #e69090;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer;
+}
+.colors-row.has-month-override {
+  background: #f0e9fc;
+  border-radius: 8px;
+}
+.colors-preview {
+  position: relative;
+}
+.month-override-tag {
+  position: absolute;
+  top: 2px; right: 4px;
+  font-size: 10px;
+  pointer-events: none;
+}
 
 /* ========== Modal (Generator settings) ========== */
 .modal { position: fixed; inset: 0; z-index: 200; }
