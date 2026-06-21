@@ -159,6 +159,12 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v36
+- **🔄 Sync Firebase bidireccional real-time (incluye borrados)**: el listener de Firebase ya existía pero tenía un bug — cuando borrabas un mes en PC, mobile recibía el snapshot pero solo APLICABA las claves recibidas (no detectaba las que faltaban). Ahora `applyRemoteData` también elimina del localStorage local cualquier clave `turnos:*` que ya no esté en el snapshot remoto. Así, borrar un mes en PC se refleja al instante en mobile y viceversa. Toast informativo cuando se aplican borrados ("🔄 N cambios sincronizados (incluye borrados)").
+- **🗑️ Borrar mes con limpieza completa**: ahora también elimina marcadores de feriado/feria judicial, reemplazos y overrides de colores del mes. Push inmediato a la nube.
+- **⚖️ Enero y julio (feria judicial) excluidos del generador**: si intentás generar enero o julio, aparece un cartel explicando que son meses de feria judicial y los equipos rotan distinto. No se genera nada automático. Los meses siguientes (febrero y agosto) saltan el check de continuidad para que puedas generar normalmente.
+- **🔁 Rotación de slot semanal por equipo**: agregado tracking del último slot semanal que hizo cada equipo (Lun-Mar / Mié-Jue / Vie). Al volver a tocar, el algoritmo PREFIERE darle un slot distinto al que tuvo antes. Ej: si Frias hizo Mié-Jue, la próxima vez le toca Lun-Mar o Vie. Es preferencia soft (no hard) — si no hay alternativa, igual se respeta la rotación principal. Verificado con generación de Ago-Oct 2026: ningún equipo repite el mismo slot semanal dos veces consecutivas.
+
 ### v35
 - **🔄 Rotación de findes mejorada (no repetir antes de 6 sábados)**: antes la lógica solo bloqueaba al equipo del finde **anterior** y se reseteaba mes a mes — eso provocaba que, por ejemplo, Capdevila+Gomez hiciera el 15/Ago y volviera el 12/Sep (solo 3 findes después). Ahora hay un historial cross-month de los últimos findes y al menos deben pasar **6 sábados** antes que un equipo vuelva a hacer finde. Con 7 equipos, eso significa rotación pareja perfecta. Verificado con generación de 5 meses seguidos (Ago–Dic 2026): todos los equipos respetan el gap, salvo un caso forzado por cumpleaños (4-oct = Gómez) que entra al fallback. Si tenés meses ya generados antes de v35 conviene regenerarlos para que arranque la nueva rotación.
 

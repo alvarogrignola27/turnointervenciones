@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '35';
+const APP_VERSION = '36';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -995,7 +995,34 @@ function setupRemoteListener() {
 
 function applyRemoteData(data) {
   _suppressNextPush = true;
-  // Aplica todas las claves turnos:* del remoto al localStorage
+
+  // Construir set de claves que SÍ están en el remoto (para detectar borrados)
+  const remoteKeys = new Set();
+  Object.keys(data).forEach(key => {
+    if (key.startsWith('turnos:') &&
+        !key.startsWith('turnos:hist:') &&
+        key !== FIREBASE_CONFIG_KEY &&
+        key !== FIREBASE_LAST_SYNC_KEY) {
+      remoteKeys.add(key);
+    }
+  });
+
+  // PASO 1: borrar las claves locales `turnos:*` que NO están en el remoto.
+  // Esto permite que borrar un mes en un dispositivo se refleje en los demás.
+  const localKeysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith('turnos:') &&
+        !key.startsWith('turnos:hist:') &&
+        key !== FIREBASE_CONFIG_KEY &&
+        key !== FIREBASE_LAST_SYNC_KEY &&
+        !remoteKeys.has(key)) {
+      localKeysToRemove.push(key);
+    }
+  }
+  localKeysToRemove.forEach(k => localStorage.removeItem(k));
+
+  // PASO 2: aplicar las claves del remoto al localStorage
   Object.keys(data).forEach(key => {
     if (key.startsWith('turnos:') &&
         !key.startsWith('turnos:hist:') &&
@@ -1008,6 +1035,7 @@ function applyRemoteData(data) {
       }
     }
   });
+
   // Invalidar caches y recargar
   _personColorsCache = null;
   _personColorsMonthCache = {};
@@ -1020,7 +1048,11 @@ function applyRemoteData(data) {
   renderFilters();
   if (state.selectedDay !== null) renderDetail();
   setSyncStatus('connected');
-  showToast('🔄 Datos sincronizados');
+  if (localKeysToRemove.length > 0) {
+    showToast(`🔄 ${localKeysToRemove.length} cambio${localKeysToRemove.length > 1 ? 's' : ''} sincronizado${localKeysToRemove.length > 1 ? 's' : ''} (incluye borrados)`);
+  } else {
+    showToast('🔄 Datos sincronizados');
+  }
   setTimeout(() => { _suppressNextPush = false; }, 100);
 }
 
@@ -3051,13 +3083,28 @@ function importData(file) {
 
 function clearCurrentMonth() {
   if (!confirm(`¿Borrar todos los datos de ${MES_NAMES[state.month - 1]} ${state.year}?`)) return;
+  const y = state.year, m = state.month;
+  const mKey = `${y}-${String(m).padStart(2, '0')}`;
+  // Limpiar localStorage completamente para todas las claves del mes
+  // (así el push posterior no incluye estas claves y el otro dispositivo las borra)
+  localStorage.removeItem(`turnos:${mKey}`);
+  localStorage.removeItem(`turnos:feriado:${mKey}`);
+  localStorage.removeItem(`turnos:feria_jud:${mKey}`);
+  localStorage.removeItem(`turnos:replacements:${mKey}`);
+  localStorage.removeItem(`turnos:person_colors_month:${mKey}`);
+  // Estado en memoria
   state.data = {};
   state._feriados = {};
+  state._feriaJud = {};
+  state._replacements = {};
   state.selectedDay = null;
-  saveMonthData(state.year, state.month, state.data);
-  saveFeriados(state.year, state.month, state._feriados);
-  rerenderActiveView(); renderDetail();
+  state._manageOpen = false;
+  state.editingDay = false;
+  rerenderActiveView();
+  renderDetail();
   showToast('Mes borrado');
+  // Forzar push inmediato (sin esperar el debounce) si hay sync activo
+  scheduleCloudPush();
 }
 
 // ---------- Modal: Configuración del generador ----------
@@ -3612,13 +3659,26 @@ function generateMonth() {
 
   const y = state.year, m = state.month;
 
+  // === CHECK 0: feria judicial (enero y julio) — no se genera con la lógica habitual ===
+  // En estos meses los equipos rotan de forma distinta, así que la generación automática
+  // queda inhabilitada. El usuario los carga manualmente o marca los días con feria judicial.
+  if (m === 1 || m === 7) {
+    alert(`${MES_NAMES[m-1]} es mes de feria judicial. La generación automática no se aplica porque los equipos rotan de forma diferente.\n\nPodés cargar los turnos manualmente o marcar los días con feria judicial desde el panel del día.`);
+    return;
+  }
+
   // === CHECK 1: el mes anterior tiene que tener datos (continuidad) ===
   const prevY = m === 1 ? y - 1 : y;
   const prevM = m === 1 ? 12 : m - 1;
+  // Para febrero y agosto (que vienen DESPUÉS de feria judicial), saltamos el check
+  // de continuidad porque enero/julio no se generan automáticamente.
+  const prevIsFeriaJud = (prevM === 1 || prevM === 7);
   const prevData = loadMonthData(prevY, prevM);
-  if (Object.keys(prevData).length === 0) {
-    alert(`No se puede generar ${MES_NAMES[m-1]} ${y}.\n\nPrimero generá ${MES_NAMES[prevM-1]} ${prevY} (no tiene datos) para que el generador pueda continuar la rotación.`);
-    return;
+  if (!prevIsFeriaJud) {
+    if (Object.keys(prevData).length === 0) {
+      alert(`No se puede generar ${MES_NAMES[m-1]} ${y}.\n\nPrimero generá ${MES_NAMES[prevM-1]} ${prevY} (no tiene datos) para que el generador pueda continuar la rotación.`);
+      return;
+    }
   }
 
   const msg = `Esto va a reemplazar TODOS los turnos de ${MES_NAMES[state.month - 1]} ${state.year} con una asignación generada. ¿Continuar?`;
@@ -3823,6 +3883,12 @@ function generateMonth() {
   let lastWeekFridayTeam = -1;   // descansa esta semana excepto en finde
   const lastSlotTeam = { weekend: -1, monTue: -1, wedThu: -1, fri: -1 };
 
+  // Para CADA equipo, registro qué tipo de slot SEMANAL hizo la última vez.
+  // Así, cuando el equipo vuelve a tocar la semana siguiente, le preferimos
+  // un slot distinto al que hizo. Ej: si hizo Mié-Jue, prefiero darle Lun-Mar.
+  // Valores posibles: 'monTue' | 'wedThu' | 'fri' | undefined.
+  const teamLastWeekdaySlot = {};
+
   // Recorrer la última semana completa del mes anterior buscando los equipos por slot
   for (let d = lastFullWeekEnd; d >= lastFullWeekStart; d--) {
     if (d < 1) break;
@@ -3951,14 +4017,23 @@ function generateMonth() {
       if (lastSlotTeam.monTue >= 0) hardExclude.add(lastSlotTeam.monTue);
       teamsBlockedByBirthday([wk[0], wk[1]]).forEach(i => hardExclude.add(i));
 
-      const idx = assignTwoDaySlot([wk[0], wk[1]], hardExclude, null);
+      // SOFT (preferAvoid): equipos cuyo último slot semanal fue también Lun-Mar.
+      // Así rota: si Frias hizo Lun-Mar la vez pasada, prefiero darle Mié-Jue o Vie.
+      const preferAvoid = new Set();
+      teams.forEach((_, i) => {
+        if (teamLastWeekdaySlot[i] === 'monTue') preferAvoid.add(i);
+      });
+
+      const idx = assignTwoDaySlot([wk[0], wk[1]], hardExclude, preferAvoid);
       if (idx >= 0) {
         used.add(idx);
         lastSlotTeam.monTue = idx;
+        teamLastWeekdaySlot[idx] = 'monTue';
       }
     } else if (weekIdx === 0 && preAssignedSlotType === 'monTue') {
       // Slot Lun-Mar ya pre-asignado (día 1 = Martes, continúa)
       lastSlotTeam.monTue = preAssignedTeamIdx;
+      teamLastWeekdaySlot[preAssignedTeamIdx] = 'monTue';
     }
 
     // === Slot Mié-Jue ===
@@ -3969,14 +4044,20 @@ function generateMonth() {
       if (lastSlotTeam.wedThu >= 0) hardExclude.add(lastSlotTeam.wedThu);
       teamsBlockedByBirthday([wk[2], wk[3]]).forEach(i => hardExclude.add(i));
 
-      const idx = assignTwoDaySlot([wk[2], wk[3]], hardExclude, null);
+      const preferAvoid = new Set();
+      teams.forEach((_, i) => {
+        if (teamLastWeekdaySlot[i] === 'wedThu') preferAvoid.add(i);
+      });
+
+      const idx = assignTwoDaySlot([wk[2], wk[3]], hardExclude, preferAvoid);
       if (idx >= 0) {
         used.add(idx);
         lastSlotTeam.wedThu = idx;
+        teamLastWeekdaySlot[idx] = 'wedThu';
       }
     } else if (weekIdx === 0 && preAssignedSlotType === 'wedThu') {
-      // Slot Mié-Jue ya pre-asignado (día 1 = Jueves, continúa)
       lastSlotTeam.wedThu = preAssignedTeamIdx;
+      teamLastWeekdaySlot[preAssignedTeamIdx] = 'wedThu';
     }
 
     // === Slot Viernes ===
@@ -3988,11 +4069,17 @@ function generateMonth() {
       if (lastSlotTeam.fri >= 0) hardExclude.add(lastSlotTeam.fri);
       teamsBlockedByBirthday([wk[4]]).forEach(i => hardExclude.add(i));
 
-      thisWeekFriTeam = pickBest(hardExclude, 1, null);
+      const preferAvoid = new Set();
+      teams.forEach((_, i) => {
+        if (teamLastWeekdaySlot[i] === 'fri') preferAvoid.add(i);
+      });
+
+      thisWeekFriTeam = pickBest(hardExclude, 1, preferAvoid);
       if (thisWeekFriTeam >= 0) {
         assignSlot(thisWeekFriTeam, [wk[4]]);
         used.add(thisWeekFriTeam);
         lastSlotTeam.fri = thisWeekFriTeam;
+        teamLastWeekdaySlot[thisWeekFriTeam] = 'fri';
       } else if (!isSkipDay(y, m, wk[4])) {
         unassignedDays.push(wk[4]);
       }
