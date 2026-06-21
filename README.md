@@ -159,6 +159,11 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v43
+- **🛠️ Bug enero 2027 — panel del día "en blanco" al editar**: cuando un día no tenía equipo asignado y entrabas en modo Editar, sólo aparecía un placeholder "Sin equipo asignado" sin dropdowns para elegir. Ahora si entrás en modo Editar y no hay equipo, aparecen **2 dropdowns vacíos** en Equipo de Intervención para que elijas directamente sin tener que pasar por el "+".
+- **🛌 Descanso post-feria en febrero/agosto**: cuando generás el mes siguiente a un mes de feria (febrero después de enero, agosto después de julio), el algoritmo recolecta todos los equipos que aparecieron en la **última semana del mes de feria** y los pone en el `restExclude` de la PRIMERA semana del mes nuevo. Así, los que vienen trabajando del 16 al 31 de enero no arrancan febrero — el algoritmo prefiere a los que estaban descansando (los que hicieron 1-15 de feria o los que no entraron a feria).
+- **📦 Gestión de Materiales auto-asignada alternando Alvaro/Martín cada finde**: el generador ahora asigna automáticamente ALVARO o MARTIN como Gestión de Materiales en cada finde (sábado + domingo), alternando entre ellos. Si el último G.MAT fue ALVARO, este finde es MARTIN, y viceversa. La alternancia es persistente cross-month (se guarda y se recupera con `rebuildHistoryFromMonths`). NO se asigna en findes de feria. Verificado en Agosto 2026: MARTIN → ALVARO → MARTIN → ALVARO → MARTIN, alterna perfecto.
+
 ### v42
 - **✨ Sección "Extras" en Gestionar día**: nueva sección debajo de "Reemplazos" para asignar personas de OTROS (Juan Díaz Loza, Juan Pablo Godoy, Alvaro, Martín) como extras del día. Útil principalmente para feria judicial donde tres o cuatro de esos pueden trabajar el mismo día. Cada extra se ve como pill de color con × para quitarlo. Botón "+ Agregar extra" abre un picker con los OTROS.
 - **🏛️ En feria los extras NO se muestran como "Gestión de materiales"**: en días marcados feria judicial, los tiles del calendario (Mes y Semana) muestran a ALVARO y MARTIN como pills normales con su nombre, no como "📦 G. MAT.". La etiqueta de gestión de materiales queda reservada para sábados y domingos fuera de feria.

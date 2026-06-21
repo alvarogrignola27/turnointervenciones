@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '42';
+const APP_VERSION = '43';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -22,6 +22,8 @@ const WEEKEND_ROT_KEY = 'turnos:gen_weekend_idx';
 // vuelva a hacer finde hasta que pasen al menos 6 findes desde el último.
 const WEEKEND_RECENT_KEY = 'turnos:gen_weekend_recent';
 const WEEKEND_RECENT_MIN_GAP = 6;
+// Último ALVARO/MARTIN asignado a Gestión de Materiales (alternancia finde a finde).
+const GMAT_LAST_KEY = 'turnos:gen_last_gmat';
 const TEAM_HISTORY_KEY = 'turnos:gen_team_history';
 const PERSON_COLORS_KEY = 'turnos:person_colors';
 const PERSON_COLORS_MONTH_PREFIX = 'turnos:person_colors_month:';
@@ -2659,11 +2661,42 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
       team1.appendChild(thirdWrap);
     }
   } else {
-    const ph = document.createElement('div');
-    ph.className = 'di-team-pill empty';
-    ph.style.flex = '1';
-    ph.textContent = 'Sin equipo asignado';
-    team1.appendChild(ph);
+    // No hay equipo asignado. Si estoy en modo edit, muestro 2 dropdowns vacíos
+    // así el user puede elegir directamente desde ahí. Caso clave: enero/julio (feria)
+    // sin datos generados — el user quiere poder cargar a mano sin pasar por "+".
+    if (editable && state.editingDay) {
+      [0, 1].forEach(sideIdx => {
+        const sel = document.createElement('select');
+        sel.className = 'di-team-pill di-select-pill empty';
+        const empty = document.createElement('option');
+        empty.value = ''; empty.textContent = '—';
+        sel.appendChild(empty);
+        ROSTER.forEach(name => {
+          const o = document.createElement('option');
+          o.value = name; o.textContent = name;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change', (e) => {
+          const newName = e.target.value || null;
+          if (!newName) return;
+          snapshotDayBeforeEdit(d);
+          if (!state.data[String(d)]) state.data[String(d)] = [];
+          if (!state.data[String(d)][0]) state.data[String(d)][0] = [null, null];
+          state.data[String(d)][0][sideIdx] = newName;
+          saveMonthData(state.year, state.month, state.data);
+          rerenderActiveView();
+          if (state.view === 'month') renderDetail();
+          else if (state.view === 'day') renderDayView();
+        });
+        team1.appendChild(sel);
+      });
+    } else {
+      const ph = document.createElement('div');
+      ph.className = 'di-team-pill empty';
+      ph.style.flex = '1';
+      ph.textContent = 'Sin equipo asignado';
+      team1.appendChild(ph);
+    }
   }
   // Botón "+" para agregar otra persona al equipo de intervención (modo edición)
   if (editable && state.editingDay) {
@@ -3839,6 +3872,9 @@ function rebuildHistoryFromMonths(excludeY, excludeM) {
   const recentWeekends = [];
   let weekendIdx = 0;
   const teamHistory = {};
+  // lastGmat: el último (más reciente) Alvaro/Martín que hizo G.MAT en un finde no-feria.
+  // Sirve para alternarlo: el próximo finde, el OTRO hará G.MAT.
+  let lastGmat = null;
 
   monthKeys.forEach(({ y, m, key }) => {
     let data;
@@ -3863,9 +3899,23 @@ function rebuildHistoryFromMonths(excludeY, excludeM) {
         weekendIdx++;
       }
     }
+    // Escaneo paralelo: encontrar el último ALVARO/MARTIN que hizo G.MAT en sábado.
+    // (Como monthKeys está ordenado, el último que se encuentre es el más reciente.)
+    for (let d = 1; d <= dim; d++) {
+      const dt = new Date(y, m - 1, d);
+      if (dt.getDay() !== 6) continue;
+      const daySlots = data[String(d)] || [];
+      for (const s of daySlots) {
+        if (!s) continue;
+        const name = s[0] || s[1];
+        if (name === 'ALVARO' || name === 'MARTIN') {
+          lastGmat = name;
+        }
+      }
+    }
   });
 
-  return { recentWeekends, weekendIdx, teamHistory };
+  return { recentWeekends, weekendIdx, teamHistory, lastGmat };
 }
 function loadTeamHistory() {
   try {
@@ -4063,9 +4113,30 @@ function generateMonth() {
   let weekendIdx = rebuilt.weekendIdx;
   const recentWeekends = rebuilt.recentWeekends;
   const teamHistory = rebuilt.teamHistory;
+  // Para alternar Alvaro/Martín en G.MAT cada finde
+  let lastGmat = rebuilt.lastGmat;
   const teamKeys = teams.map(t => teamKey(t));
   const histDays = teams.map((_, i) => (teamHistory[teamKeys[i]]?.totalDays || 0));
   const unassignedDays = [];
+
+  // Si el mes anterior es feria (enero o julio), recolectar los equipos que
+  // trabajaron en su última semana. Esos equipos deben descansar en la PRIMERA
+  // semana del mes actual (ej: febrero después de enero, agosto después de julio).
+  const postFeriaRestTeams = new Set();
+  if (prevM === 1 || prevM === 7) {
+    const prevDim = new Date(prevY, prevM, 0).getDate();
+    const startD = Math.max(1, prevDim - 6);
+    for (let dd = startD; dd <= prevDim; dd++) {
+      const daySlots = prevData[String(dd)] || [];
+      daySlots.forEach(slot => {
+        if (!slot || !slot[0] || !slot[1]) return;
+        const tIdx = teams.findIndex(t =>
+          (t.a === slot[0] && t.b === slot[1]) || (t.a === slot[1] && t.b === slot[0])
+        );
+        if (tIdx >= 0) postFeriaRestTeams.add(tIdx);
+      });
+    }
+  }
 
   // Si la rotación automática está activa, recalcular los maxDays para este mes
   // (los equipos con menos historial reciben los cupos más altos)
@@ -4371,6 +4442,20 @@ function generateMonth() {
         lastSlotTeam.weekend = thisWeekendTeam;
         recentWeekends.push(thisWeekendTeam);
         weekendIdx++;
+
+        // GESTIÓN DE MATERIALES: alternar Alvaro/Martín cada finde no-feria.
+        // Si el último fue ALVARO, este finde es MARTIN, y viceversa.
+        // (en feria no se asigna G.MAT — la lógica los considera "extras" ahí)
+        const currentGmat = lastGmat === 'ALVARO' ? 'MARTIN' : 'ALVARO';
+        if (hasSat && wk[5] !== null) {
+          if (!newData[String(wk[5])]) newData[String(wk[5])] = [];
+          newData[String(wk[5])].push([currentGmat, null]);
+        }
+        if (hasSun && wk[6] !== null) {
+          if (!newData[String(wk[6])]) newData[String(wk[6])] = [];
+          newData[String(wk[6])].push([currentGmat, null]);
+        }
+        lastGmat = currentGmat;
       }
     } else if (weekIdx === 0 && preAssignedSlotType === 'satSun') {
       // Slot Sáb-Dom ya pre-asignado (día 1 = Domingo, continúa el slot del mes anterior)
@@ -4385,6 +4470,11 @@ function generateMonth() {
     const restExclude = new Set();
     if (lastWeekFridayTeam >= 0) restExclude.add(lastWeekFridayTeam);
     if (prevWeekendTeamIdx >= 0) restExclude.add(prevWeekendTeamIdx);
+    // En la PRIMERA semana, si venimos de un mes de feria (enero/julio), los equipos
+    // que trabajaron en su última semana descansan en la primera del mes actual.
+    if (weekIdx === 0) {
+      postFeriaRestTeams.forEach(t => restExclude.add(t));
+    }
 
     // === Slot Lun-Mar ===
     const hasMon = wk[0] !== null, hasTue = wk[1] !== null;
