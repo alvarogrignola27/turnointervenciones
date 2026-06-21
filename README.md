@@ -159,6 +159,10 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v41
+- **🐛 Apoyo en feria escribía sobre intervención**: bug crítico. En días feria, al cambiar una persona del Equipo de Apoyo, el cambio iba al slot[0] (intervención) y reemplazaba a alguien del equipo de intervención. Causa: el cálculo de `apSlotIdx` usaba `findTeamSlot` que devuelve el primer slot con equipo (= slot 0). Ahora cuando es feria, se fuerza `apSlotIdx = 1` (slot del apoyo). Verificado: en día feria con sólo intervención cargada, al elegir Capdevila en el primer dropdown del Apoyo, se crea correctamente `[["Frias","Echague"],["Capdevila",null]]` con la intervención intacta.
+- **Sobre los dropdowns grises**: cuando el día feria todavía no tiene apoyo cargado, los dropdowns del Apoyo aparecen vacíos con "—" (grises) — es el estado vacío esperando que elijas. No es bug, es la indicación visual de que falta seleccionar.
+
 ### v40
 - **🏛️ Feria judicial: 4 personas en el mismo día como 2 equipos**: cuando un día está marcado como feria judicial, el panel muestra las **primeras 2 personas como Equipo de Intervención** (slot 0 del mismo día) y las **otras 2 como Equipo de Apoyo** (slot 1 del MISMO día, no del día siguiente). Antes el apoyo se buscaba siempre en el día siguiente. También se oculta la nota "Entra el ..." porque no aplica en feria. El "+" en cada equipo agrega al slot correspondiente (intervención → slot 0; apoyo → slot 1) manteniendo el 2x2 prolijo.
 

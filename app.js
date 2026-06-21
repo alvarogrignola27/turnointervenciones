@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '40';
+const APP_VERSION = '41';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -2659,7 +2659,10 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     const apD = apoyo.date.getDate();
     const apSlots = getDayDataAny(apY, apM, apD);
     const apTeamRes = findTeamSlot(apSlots);
-    const apSlotIdx = apTeamRes ? apTeamRes.idx : 0;
+    // En feria, el apoyo es el slot[1] del MISMO día — forzar índice 1.
+    // Si no fuera feria, busco el primer slot con equipo (puede ser distinto al 0
+    // cuando hay reemplazos o slots vacíos antes).
+    const apSlotIdx = apoyo.isFeria ? 1 : (apTeamRes ? apTeamRes.idx : 0);
 
     [apoyo.team[0], apoyo.team[1]].forEach((n, sideIdx) => {
       if (editable) {
