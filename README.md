@@ -159,6 +159,16 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v39
+- **🪟 2x2 para 4 personas en feria**: cuando agregás personas con el "+", el sistema ahora **rellena los huecos** existentes en las filas antes de crear filas nuevas. Así, en días de feria judicial con 4 personas, queda 2 arriba y 2 abajo (en lugar de 2 arriba + 1 + 1 sueltas). Aplica también a días normales.
+- **♻️ Regeneración no se contamina con la generación anterior**: bug encontrado. Cuando regenerabas un mes una segunda vez, el algoritmo seguía viendo los findes y el uso de la 1ra generación → la rotación quedaba desbalanceada. Ahora el historial (recentWeekends, weekendIdx, teamHistory) se RECONSTRUYE desde cero cada vez, escaneando todos los meses persistidos pero EXCLUYENDO el mes que se está regenerando. Resultado: la regeneración es determinística y respeta exactamente las mismas reglas siempre. También se excluyen enero/julio (feria) del rebuild para que no contaminen la rotación normal. Verificado: regenerar Ago 2026 dos veces da resultado idéntico.
+
+### v38
+- **📋 Replicar día en un rango (feria judicial)**: cuando un día está marcado como feria judicial, en "Gestionar día" aparece la opción **"📋 Replicar este día en un rango"**. Abre un modal con dos campos (desde / hasta) y copia las personas asignadas a todos los días del rango, marcando también feria judicial en cada uno. Por defecto sugiere desde el día siguiente hasta el 15 o el fin de mes (según convenga). Pensado para feria de enero/julio donde típicamente las mismas personas hacen del 1 al 15 y otras del 16 al 31 — cargás el día 1, replicás hasta el 15, y después modificás puntualmente lo que necesites.
+
+### v37
+- **🛌 Descanso post-finde (Sáb-Dom → no Lun-Mar inmediato)**: bug en la lógica de generación detectado. Cuando un mes arrancaba en Sáb-Dom (como agosto 2026), el equipo asignado al finde inicial podía aparecer también en Lun-Mar de la semana siguiente — porque el `used` se resetea por semana y no había tracking cruzado. Ahora se mantiene un `prevWeekendTeamIdx` que se agrega al `restExclude` de la siguiente semana, así el equipo del finde descansa al menos hasta Mié-Jue. Verificado con 5 regeneraciones consecutivas (Ago-Nov 2026): ningún equipo de finde aparece en el Lun-Mar siguiente.
+
 ### v36
 - **🔄 Sync Firebase bidireccional real-time (incluye borrados)**: el listener de Firebase ya existía pero tenía un bug — cuando borrabas un mes en PC, mobile recibía el snapshot pero solo APLICABA las claves recibidas (no detectaba las que faltaban). Ahora `applyRemoteData` también elimina del localStorage local cualquier clave `turnos:*` que ya no esté en el snapshot remoto. Así, borrar un mes en PC se refleja al instante en mobile y viceversa. Toast informativo cuando se aplican borrados ("🔄 N cambios sincronizados (incluye borrados)").
 - **🗑️ Borrar mes con limpieza completa**: ahora también elimina marcadores de feriado/feria judicial, reemplazos y overrides de colores del mes. Push inmediato a la nube.

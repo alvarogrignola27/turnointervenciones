@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '36';
+const APP_VERSION = '39';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -410,10 +410,114 @@ function buildManagePanel(day) {
     });
     panel.appendChild(fjBtn);
 
+    // Si el día está marcado como feria judicial, mostrar opción para replicar
+    // este día (sus slots) en un rango de días. Útil para llenar feria de enero/julio
+    // donde típicamente la misma persona/equipo hace varios días seguidos.
+    if (isFj) {
+      const dimNow = new Date(state.year, state.month, 0).getDate();
+      const replicateBtn = document.createElement('button');
+      replicateBtn.className = 'manage-item';
+      replicateBtn.innerHTML = '📋 Replicar este día en un rango';
+      replicateBtn.title = 'Copiar las personas asignadas hoy a varios días consecutivos';
+      replicateBtn.addEventListener('click', () => openReplicateDayForm(day));
+      panel.appendChild(replicateBtn);
+    }
+
     wrap.appendChild(panel);
   }
 
   return wrap;
+}
+
+// Modal "Replicar este día desde X hasta Y" — copia los slots del día actual
+// a todos los días del rango, marcándolos también como feria judicial.
+function openReplicateDayForm(srcDay) {
+  const dim = new Date(state.year, state.month, 0).getDate();
+  const srcSlots = state.data[String(srcDay)];
+  if (!srcSlots || srcSlots.length === 0) {
+    showToast('Este día no tiene personas asignadas todavía');
+    return;
+  }
+  // Resumen de quién está asignado hoy (para que el usuario vea qué va a replicar)
+  const people = [];
+  srcSlots.forEach(s => {
+    if (s[0]) people.push(s[0]);
+    if (s[1]) people.push(s[1]);
+  });
+  const peopleStr = people.length > 0 ? people.join(', ') : '(día vacío)';
+
+  // Por defecto: desde día siguiente hasta fin de la primera quincena o fin de mes
+  const defFrom = Math.min(srcDay + 1, dim);
+  const defTo = srcDay <= 15 ? Math.min(15, dim) : dim;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal';
+  overlay.innerHTML = `
+    <div class="modal-backdrop"></div>
+    <div class="modal-card modal-card-small">
+      <div class="modal-head">
+        <h2>📋 Replicar día ${srcDay}</h2>
+        <button class="modal-close" data-act="cancel">×</button>
+      </div>
+      <div class="modal-body" style="padding:14px 16px;">
+        <div style="font-size:13px;color:#3a3a3c;margin-bottom:10px;">
+          Se van a copiar las personas asignadas el día <b>${srcDay}</b> a todos los días del rango.
+          También se marcará feria judicial en cada uno.
+        </div>
+        <div style="background:#fff8e0;border-radius:8px;padding:8px 10px;font-size:12px;color:#8a5a00;margin-bottom:12px;">
+          <b>Asignados hoy:</b> ${peopleStr}
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <label style="font-size:13px;flex:1;">
+            Desde el día
+            <input type="number" id="rep-from" min="1" max="${dim}" value="${defFrom}" class="rep-day-input">
+          </label>
+          <label style="font-size:13px;flex:1;">
+            hasta el día
+            <input type="number" id="rep-to" min="1" max="${dim}" value="${defTo}" class="rep-day-input">
+          </label>
+        </div>
+        <div style="font-size:11px;color:#8e8e93;margin-top:10px;">
+          Los días que ya tengan personas asignadas se sobrescriben. ${MES_NAMES[state.month-1]} tiene ${dim} días.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn secondary" data-act="cancel">Cancelar</button>
+        <button class="modal-btn primary" data-act="apply">Replicar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('.modal-backdrop').addEventListener('click', close);
+  overlay.querySelectorAll('[data-act="cancel"]').forEach(b => b.addEventListener('click', close));
+  overlay.querySelector('[data-act="apply"]').addEventListener('click', () => {
+    let from = parseInt(overlay.querySelector('#rep-from').value, 10);
+    let to = parseInt(overlay.querySelector('#rep-to').value, 10);
+    if (!from || !to || from < 1 || to < 1 || from > dim || to > dim) {
+      alert('Días inválidos. Tienen que estar entre 1 y ' + dim);
+      return;
+    }
+    if (from > to) { const t = from; from = to; to = t; }
+    // Clonar los slots del día origen (deep copy para que cada día tenga su propio array)
+    const cloneSlots = () => srcSlots.map(s => [s[0] || null, s[1] || null]);
+    if (!state._feriaJud) state._feriaJud = {};
+    let count = 0;
+    for (let d = from; d <= to; d++) {
+      if (d === srcDay) continue;  // no nos pisamos a nosotros mismos
+      state.data[String(d)] = cloneSlots();
+      // También marcar feria judicial en cada día replicado
+      state._feriaJud[String(d)] = true;
+      count++;
+    }
+    saveMonthData(state.year, state.month, state.data);
+    saveFeriaJud(state.year, state.month, state._feriaJud);
+    rerenderActiveView();
+    if (state.view === 'month') renderDetail();
+    else if (state.view === 'day') renderDayView();
+    showToast(`📋 Replicado en ${count} día${count !== 1 ? 's' : ''} (${from}–${to})`);
+    close();
+  });
 }
 
 // Construye el botón "⚙️ Gestionar día" + panel desplegable — versión LEGACY (mantenida).
@@ -483,7 +587,17 @@ function openAddPersonForm(day, kind, apoyoInfo) {
       data = loadMonthData(targetY, targetM);
     }
     if (!data[String(targetDay)]) data[String(targetDay)] = [];
-    data[String(targetDay)].push([name, null]);
+    // Buscar primero un slot con un hueco (null) para mantener filas de a 2.
+    // Así, al agregar personas en feria judicial, quedan en 2x2 (no en filas sueltas).
+    const daySlots = data[String(targetDay)];
+    let filled = false;
+    for (const s of daySlots) {
+      if (!s[0]) { s[0] = name; filled = true; break; }
+      if (!s[1]) { s[1] = name; filled = true; break; }
+    }
+    if (!filled) {
+      daySlots.push([name, null]);
+    }
     if (isCurMonth) {
       state.data = data;
       saveMonthData(state.year, state.month, state.data);
@@ -3500,6 +3614,72 @@ function teamKey(team) {
   if (team.c) parts.push(team.c);
   return parts.filter(Boolean).sort().join('|');
 }
+
+// Reconstruye el historial (recentWeekends, weekendIdx, teamHistory) escaneando TODOS
+// los meses persistidos en localStorage, EXCEPTO el mes que se está regenerando.
+// Esto asegura que las regeneraciones del mismo mes no se contaminen con la versión
+// anterior — cada vez se parte de un estado coherente con los demás meses guardados.
+function rebuildHistoryFromMonths(excludeY, excludeM) {
+  const cfg = loadGenConfig();
+  const teams = cfg.teams || [];
+  const teamKeys = teams.map(t => teamKey(t));
+  // Encontrar índice del equipo por sus dos miembros (a, b)
+  const findTeamIdxByNames = (a, b) => {
+    if (!a || !b) return -1;
+    return teams.findIndex(t =>
+      (t.a === a && t.b === b) || (t.a === b && t.b === a)
+    );
+  };
+
+  // Colectar todos los meses guardados (formato turnos:YYYY-MM)
+  const monthKeys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    const match = key && key.match(/^turnos:(\d{4})-(\d{2})$/);
+    if (match) {
+      const yy = parseInt(match[1], 10);
+      const mm = parseInt(match[2], 10);
+      // Excluir el mes que se está regenerando, y enero/julio (feria judicial)
+      // que tienen patrones distintos a la rotación normal.
+      if (yy === excludeY && mm === excludeM) continue;
+      if (mm === 1 || mm === 7) continue;
+      monthKeys.push({ y: yy, m: mm, key });
+    }
+  }
+  // Ordenar cronológicamente (los más antiguos primero)
+  monthKeys.sort((a, b) => (a.y * 12 + a.m) - (b.y * 12 + b.m));
+
+  const recentWeekends = [];
+  let weekendIdx = 0;
+  const teamHistory = {};
+
+  monthKeys.forEach(({ y, m, key }) => {
+    let data;
+    try { data = JSON.parse(localStorage.getItem(key) || '{}'); }
+    catch { return; }
+    const dim = new Date(y, m, 0).getDate();
+    for (let d = 1; d <= dim; d++) {
+      const slot = data[String(d)] && data[String(d)][0];
+      if (!slot || !slot[0] || !slot[1]) continue;
+      const teamIdx = findTeamIdxByNames(slot[0], slot[1]);
+      if (teamIdx < 0) continue;
+
+      // Sumar al historial total
+      const k = teamKeys[teamIdx];
+      if (!teamHistory[k]) teamHistory[k] = { totalDays: 0 };
+      teamHistory[k].totalDays++;
+
+      // Si es sábado, agregar a recentWeekends y avanzar weekendIdx
+      const dt = new Date(y, m - 1, d);
+      if (dt.getDay() === 6) {
+        recentWeekends.push(teamIdx);
+        weekendIdx++;
+      }
+    }
+  });
+
+  return { recentWeekends, weekendIdx, teamHistory };
+}
 function loadTeamHistory() {
   try {
     return JSON.parse(localStorage.getItem(TEAM_HISTORY_KEY) || '{}');
@@ -3687,15 +3867,18 @@ function generateMonth() {
   const daysInMonth = new Date(y, m, 0).getDate();
   const newData = {};
   const usage = teams.map(() => 0);
-  let weekendIdx = loadWeekendRotation();
-  // Historial cross-month de findes (últimos N team indices que hicieron finde)
-  const recentWeekends = loadRecentWeekends();
-  const unassignedDays = [];
 
-  // Cargar historial cross-month (balance entre meses)
-  const teamHistory = loadTeamHistory();
+  // RECONSTRUIR el historial desde TODOS los meses persistidos (excluyendo el actual
+  // y enero/julio de feria). Esto evita que las regeneraciones del mismo mes se
+  // contaminen con los datos de la generación anterior. Cada vez que regenerás, el
+  // algoritmo arranca con un historial limpio y coherente.
+  const rebuilt = rebuildHistoryFromMonths(y, m);
+  let weekendIdx = rebuilt.weekendIdx;
+  const recentWeekends = rebuilt.recentWeekends;
+  const teamHistory = rebuilt.teamHistory;
   const teamKeys = teams.map(t => teamKey(t));
   const histDays = teams.map((_, i) => (teamHistory[teamKeys[i]]?.totalDays || 0));
+  const unassignedDays = [];
 
   // Si la rotación automática está activa, recalcular los maxDays para este mes
   // (los equipos con menos historial reciben los cupos más altos)
@@ -3883,6 +4066,11 @@ function generateMonth() {
   let lastWeekFridayTeam = -1;   // descansa esta semana excepto en finde
   const lastSlotTeam = { weekend: -1, monTue: -1, wedThu: -1, fri: -1 };
 
+  // Tracking del equipo del finde de la SEMANA ANTERIOR (no la actual).
+  // Esto evita que el equipo que hizo Sáb-Dom haga también Lun-Mar de la semana
+  // siguiente (4 días consecutivos, descanso necesario). Lo agregamos a restExclude.
+  let prevWeekendTeamIdx = -1;
+
   // Para CADA equipo, registro qué tipo de slot SEMANAL hizo la última vez.
   // Así, cuando el equipo vuelve a tocar la semana siguiente, le preferimos
   // un slot distinto al que hizo. Ej: si hizo Mié-Jue, prefiero darle Lun-Mar.
@@ -4005,8 +4193,11 @@ function generateMonth() {
 
     // === Construir el set "hard exclude" extra para slots de semana ===
     // El equipo que hizo VIERNES la semana pasada NO puede hacer Lun-Mar/Mié-Jue/Vie
+    // y tampoco el equipo que hizo el FIN DE SEMANA anterior (descanso post-finde,
+    // para que no haga 4 días consecutivos: Sáb-Dom-Lun-Mar)
     const restExclude = new Set();
     if (lastWeekFridayTeam >= 0) restExclude.add(lastWeekFridayTeam);
+    if (prevWeekendTeamIdx >= 0) restExclude.add(prevWeekendTeamIdx);
 
     // === Slot Lun-Mar ===
     const hasMon = wk[0] !== null, hasTue = wk[1] !== null;
@@ -4089,6 +4280,13 @@ function generateMonth() {
     // (si esta semana hubo viernes asignado, ese equipo descansa la próxima
     //  semana excepto en el finde)
     lastWeekFridayTeam = thisWeekFriTeam;
+    // El equipo del finde de ESTA semana se convierte en "previo" para la próxima
+    // (para evitar que haga también Lun-Mar de la próxima semana → descanso post-finde)
+    if (thisWeekendTeam >= 0) {
+      prevWeekendTeamIdx = thisWeekendTeam;
+    } else if (weekIdx === 0 && preAssignedSlotType === 'satSun') {
+      prevWeekendTeamIdx = preAssignedTeamIdx;
+    }
   });
 
   // Guardar mes
