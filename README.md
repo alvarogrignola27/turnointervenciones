@@ -159,6 +159,9 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v40
+- **🏛️ Feria judicial: 4 personas en el mismo día como 2 equipos**: cuando un día está marcado como feria judicial, el panel muestra las **primeras 2 personas como Equipo de Intervención** (slot 0 del mismo día) y las **otras 2 como Equipo de Apoyo** (slot 1 del MISMO día, no del día siguiente). Antes el apoyo se buscaba siempre en el día siguiente. También se oculta la nota "Entra el ..." porque no aplica en feria. El "+" en cada equipo agrega al slot correspondiente (intervención → slot 0; apoyo → slot 1) manteniendo el 2x2 prolijo.
+
 ### v39
 - **🪟 2x2 para 4 personas en feria**: cuando agregás personas con el "+", el sistema ahora **rellena los huecos** existentes en las filas antes de crear filas nuevas. Así, en días de feria judicial con 4 personas, queda 2 arriba y 2 abajo (en lugar de 2 arriba + 1 + 1 sueltas). Aplica también a días normales.
 - **♻️ Regeneración no se contamina con la generación anterior**: bug encontrado. Cuando regenerabas un mes una segunda vez, el algoritmo seguía viendo los findes y el uso de la 1ra generación → la rotación quedaba desbalanceada. Ahora el historial (recentWeekends, weekendIdx, teamHistory) se RECONSTRUYE desde cero cada vez, escaneando todos los meses persistidos pero EXCLUYENDO el mes que se está regenerando. Resultado: la regeneración es determinística y respeta exactamente las mismas reglas siempre. También se excluyen enero/julio (feria) del rebuild para que no contaminen la rotación normal. Verificado: regenerar Ago 2026 dos veces da resultado idéntico.

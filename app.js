@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '39';
+const APP_VERSION = '40';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -587,16 +587,37 @@ function openAddPersonForm(day, kind, apoyoInfo) {
       data = loadMonthData(targetY, targetM);
     }
     if (!data[String(targetDay)]) data[String(targetDay)] = [];
-    // Buscar primero un slot con un hueco (null) para mantener filas de a 2.
-    // Así, al agregar personas en feria judicial, quedan en 2x2 (no en filas sueltas).
     const daySlots = data[String(targetDay)];
+
+    // Estrategia de inserción según el tipo (intervención = slot 0, apoyo = slot 1):
+    //  - Si "intervención": rellenar huecos del slot[0]; si no hay, push.
+    //  - Si "apoyo": rellenar huecos del slot[1]; si no existe, crearlo en posición 1.
+    //  - En días de feria, esto asegura que las primeras 2 personas vayan a intervención
+    //    y las otras 2 al apoyo (formando un 2x2 limpio en el tile).
     let filled = false;
-    for (const s of daySlots) {
-      if (!s[0]) { s[0] = name; filled = true; break; }
-      if (!s[1]) { s[1] = name; filled = true; break; }
-    }
-    if (!filled) {
-      daySlots.push([name, null]);
+    if (kind === 'apoyo') {
+      // Asegurar que existan al menos 2 slots
+      while (daySlots.length < 2) daySlots.push([null, null]);
+      const s1 = daySlots[1];
+      if (!s1[0]) { s1[0] = name; filled = true; }
+      else if (!s1[1]) { s1[1] = name; filled = true; }
+      // Si slot 1 ya tiene los dos llenos, crear un slot 2 (raro)
+      if (!filled) { daySlots.push([name, null]); filled = true; }
+    } else {
+      // Intervención: rellenar huecos del slot 0 primero
+      if (daySlots.length === 0) daySlots.push([null, null]);
+      const s0 = daySlots[0];
+      if (!s0[0]) { s0[0] = name; filled = true; }
+      else if (!s0[1]) { s0[1] = name; filled = true; }
+      else {
+        // Slot 0 lleno: rellenar el primer hueco encontrado en otros slots
+        for (let i = 1; i < daySlots.length; i++) {
+          const s = daySlots[i];
+          if (!s[0]) { s[0] = name; filled = true; break; }
+          if (!s[1]) { s[1] = name; filled = true; break; }
+        }
+        if (!filled) { daySlots.push([name, null]); filled = true; }
+      }
     }
     if (isCurMonth) {
       state.data = data;
@@ -2604,7 +2625,31 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   lbl2.textContent = 'Equipo de apoyo';
   sec2.appendChild(lbl2);
 
-  const apoyo = findApoyo(y, m, d, teamSlot);
+  const apoyo = (() => {
+    // SI el día es feria judicial: el apoyo es el slot[1] del MISMO día
+    // (no del día siguiente). Esa es la lógica especial de feria — 4 personas
+    // en el mismo día divididas en 2 equipos.
+    if (isFeriaJud(y, m, d)) {
+      const sameDaySlot1 = slots[1];
+      if (sameDaySlot1 && (sameDaySlot1[0] || sameDaySlot1[1])) {
+        const fakeSlots = [sameDaySlot1];
+        return {
+          team: sameDaySlot1,
+          members: { a: sameDaySlot1[0], b: sameDaySlot1[1], c: null, mainSlotIdx: 1, thirdSlotIdx: null },
+          date: new Date(y, m - 1, d),
+          isFeria: true
+        };
+      }
+      // Feria pero sin slot[1] aún → mostrar vacío para que el "+" lo agregue
+      return {
+        team: [null, null],
+        members: { a: null, b: null, c: null, mainSlotIdx: 1, thirdSlotIdx: null },
+        date: new Date(y, m - 1, d),
+        isFeria: true
+      };
+    }
+    return findApoyo(y, m, d, teamSlot);
+  })();
   const team2 = document.createElement('div');
   team2.className = 'di-team';
   if (apoyo) {
@@ -2778,12 +2823,15 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     }
 
     sec2.appendChild(team2);
-    const note = document.createElement('div');
-    note.className = 'di-note';
-    const ap = apoyo.date;
-    const apDayName = DAY_NAMES[ap.getDay()];
-    note.textContent = `Entra el ${apDayName} ${ap.getDate()} de ${MES_NAMES[ap.getMonth()].toLowerCase()}`;
-    sec2.appendChild(note);
+    // Nota "Entra el ..." solo si NO es feria (en feria el apoyo es el mismo día)
+    if (!apoyo.isFeria) {
+      const note = document.createElement('div');
+      note.className = 'di-note';
+      const ap = apoyo.date;
+      const apDayName = DAY_NAMES[ap.getDay()];
+      note.textContent = `Entra el ${apDayName} ${ap.getDate()} de ${MES_NAMES[ap.getMonth()].toLowerCase()}`;
+      sec2.appendChild(note);
+    }
   } else {
     const ph = document.createElement('div');
     ph.className = 'di-team-pill empty';
