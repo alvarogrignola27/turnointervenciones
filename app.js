@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '43';
+const APP_VERSION = '44';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -2485,9 +2485,12 @@ function renderDayView() {
 
 // ---------- Helper: bloque "Equipo de intervención + Apoyo" ----------
 function buildDayInfoBlock(y, m, d, opts = {}) {
+  // IMPORTANTE: slots siempre es un array (nunca null). Si el día no tiene datos
+  // todavía, es [] vacío. Antes el fallback era null y crasheaba al hacer slots[1]
+  // en la lógica de feria judicial. Ahora es coherente con el resto del código.
   const slots = opts.useStateData
-    ? (state.data[String(d)] || null)
-    : getDayDataAny(y, m, d);
+    ? (state.data[String(d)] || [])
+    : (getDayDataAny(y, m, d) || []);
   const teamRes = findTeamSlot(slots);
   const teamSlot = teamRes ? teamRes.slot : null;
   // Editable solo si los datos son del mes en curso

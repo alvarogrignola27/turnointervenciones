@@ -159,6 +159,9 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v44
+- **🐛 BUG CRÍTICO ARREGLADO — feria judicial bloqueaba el día**: cuando marcabas un día sin datos como feria judicial (típico en enero o julio), un error JS rompía toda la renderización del panel. Síntomas: el botón seguía diciendo "Marcar como feria judicial" en lugar de cambiar a "Quitar", no aparecía "Replicar este día", no se podían cargar personas — el día quedaba "bloqueado" hasta hacer "Borrar mes actual". **Causa raíz**: en `buildDayInfoBlock`, cuando el día no tenía datos, `slots` era `null` en lugar de `[]` (incoherente con el resto del código). Después en la lógica de feria hacía `slots[1]` → crash con `Cannot read properties of null (reading '1')`. **Fix**: `slots` ahora siempre es array (`|| []` en lugar de `|| null`), coherente con el resto del código. Verificado: cero errores JS, panel re-renderiza completo, "Quitar feria judicial" y "Replicar" aparecen, dropdowns vacíos funcionan, se puede cargar gente.
+
 ### v43
 - **🛠️ Bug enero 2027 — panel del día "en blanco" al editar**: cuando un día no tenía equipo asignado y entrabas en modo Editar, sólo aparecía un placeholder "Sin equipo asignado" sin dropdowns para elegir. Ahora si entrás en modo Editar y no hay equipo, aparecen **2 dropdowns vacíos** en Equipo de Intervención para que elijas directamente sin tener que pasar por el "+".
 - **🛌 Descanso post-feria en febrero/agosto**: cuando generás el mes siguiente a un mes de feria (febrero después de enero, agosto después de julio), el algoritmo recolecta todos los equipos que aparecieron en la **última semana del mes de feria** y los pone en el `restExclude` de la PRIMERA semana del mes nuevo. Así, los que vienen trabajando del 16 al 31 de enero no arrancan febrero — el algoritmo prefiere a los que estaban descansando (los que hicieron 1-15 de feria o los que no entraron a feria).
