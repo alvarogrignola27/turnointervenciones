@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '41';
+const APP_VERSION = '42';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -382,6 +382,60 @@ function buildManagePanel(day) {
     panel.appendChild(lblReps);
     panel.appendChild(buildReplacementsBlock(day));
 
+    // Sección "Extras" — personas adicionales (OTROS) que no son intervención ni apoyo.
+    // Para feria judicial se usan extras como Juan Diaz Loza / Juan Pablo Godoy / Alvaro / Martín.
+    // Fuera de feria, ALVARO y MARTIN sólo se muestran como "gestión de materiales" en sáb/dom.
+    const extras = collectExtras(state.year, state.month, day);
+    const lblExtras = document.createElement('div');
+    lblExtras.className = 'manage-section-label';
+    lblExtras.textContent = `✨ Extras${extras.length > 0 ? ` (${extras.length})` : ''}`;
+    panel.appendChild(lblExtras);
+
+    if (extras.length > 0) {
+      const extrasList = document.createElement('div');
+      extrasList.className = 'extras-list';
+      extras.forEach(({ name, slotIdx, sideIdx }) => {
+        const row = document.createElement('div');
+        row.className = 'extra-row';
+        const pill = document.createElement('span');
+        pill.className = 'extra-pill';
+        pill.style.background = colorFor(name);
+        pill.style.color = textColorFor(name);
+        pill.textContent = name;
+        row.appendChild(pill);
+        const del = document.createElement('button');
+        del.className = 'extra-del';
+        del.textContent = '×';
+        del.title = `Quitar a ${name}`;
+        del.addEventListener('click', () => {
+          if (!confirm(`¿Quitar a ${name} de los extras del día ${day}?`)) return;
+          snapshotDayBeforeEdit(day);
+          if (state.data[String(day)] && state.data[String(day)][slotIdx]) {
+            state.data[String(day)][slotIdx][sideIdx] = null;
+            // Si quedó vacío, lo saco
+            const s = state.data[String(day)][slotIdx];
+            if (!s[0] && !s[1]) {
+              state.data[String(day)].splice(slotIdx, 1);
+              if (state.data[String(day)].length === 0) delete state.data[String(day)];
+            }
+          }
+          saveMonthData(state.year, state.month, state.data);
+          rerenderActiveView();
+          renderDetail();
+          showToast(`✓ ${name} quitado`);
+        });
+        row.appendChild(del);
+        extrasList.appendChild(row);
+      });
+      panel.appendChild(extrasList);
+    }
+
+    const addExtraBtn = document.createElement('button');
+    addExtraBtn.className = 'manage-item';
+    addExtraBtn.innerHTML = '+ Agregar extra';
+    addExtraBtn.addEventListener('click', () => openAddExtraForm(day));
+    panel.appendChild(addExtraBtn);
+
     // Sección "Marcadores"
     const lblMark = document.createElement('div');
     lblMark.className = 'manage-section-label';
@@ -535,6 +589,83 @@ function buildReplacementsBlock(day) {
   wrap.appendChild(addRepBtn);
 
   return wrap;
+}
+
+// Recolecta las personas OTROS asignadas a un día como "extras" (slots fuera
+// del equipo principal y del apoyo). Útil para la sección Extras del Gestionar día.
+function collectExtras(y, m, d) {
+  const isCur = (y === state.year && m === state.month);
+  const slots = isCur ? (state.data[String(d)] || []) : (loadMonthData(y, m)[String(d)] || []);
+  if (!slots || slots.length === 0) return [];
+  const teamMembers = findTeamMembers(slots);
+  const teamSlotIdx = teamMembers ? teamMembers.mainSlotIdx : -1;
+  const thirdSlotIdx = teamMembers && teamMembers.thirdSlotIdx !== null ? teamMembers.thirdSlotIdx : -1;
+  const isFeria = isFeriaJud(y, m, d);
+  const extras = [];
+  slots.forEach((slot, slotIdx) => {
+    if (slotIdx === teamSlotIdx || slotIdx === thirdSlotIdx) return;
+    // En feria, el slot[1] es el apoyo: tampoco lo tomamos como extra.
+    if (isFeria && slotIdx === 1) return;
+    for (let sideIdx = 0; sideIdx < 2; sideIdx++) {
+      const name = slot[sideIdx];
+      if (name && OTROS.includes(name)) {
+        extras.push({ name, slotIdx, sideIdx });
+      }
+    }
+  });
+  return extras;
+}
+
+// Modal "+ Agregar extra al día" — agrega una persona de OTROS como slot extra del día.
+function openAddExtraForm(day) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal';
+  const opts = OTROS.map(n => `<option value="${n}">${n}</option>`).join('');
+  overlay.innerHTML = `
+    <div class="modal-backdrop"></div>
+    <div class="modal-card modal-card-small">
+      <div class="modal-head">
+        <h2>✨ Agregar extra — día ${day}</h2>
+        <button class="modal-close" data-act="cancel">×</button>
+      </div>
+      <div class="modal-body" style="padding:14px 16px;">
+        <label style="font-size:13px;color:#6c6c70;">Persona</label>
+        <select id="extra-person-select" class="rep-select" style="margin-top:6px;">${opts}</select>
+        <div style="font-size:11px;color:#8e8e93;margin-top:10px;">
+          Los extras se agregan como fila adicional. Aparecen abajo del equipo en el detalle del día.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn secondary" data-act="cancel">Cancelar</button>
+        <button class="modal-btn primary" data-act="save">Agregar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('.modal-backdrop').addEventListener('click', close);
+  overlay.querySelectorAll('[data-act="cancel"]').forEach(b => b.addEventListener('click', close));
+  overlay.querySelector('[data-act="save"]').addEventListener('click', () => {
+    const name = overlay.querySelector('#extra-person-select').value;
+    if (!name) { close(); return; }
+    snapshotDayBeforeEdit(day);
+    if (!state.data[String(day)]) state.data[String(day)] = [];
+    // Buscar primero un slot con un hueco
+    let filled = false;
+    for (const s of state.data[String(day)]) {
+      if (!s[0]) { s[0] = name; filled = true; break; }
+      if (!s[1]) { s[1] = name; filled = true; break; }
+    }
+    if (!filled) {
+      state.data[String(day)].push([name, null]);
+    }
+    saveMonthData(state.year, state.month, state.data);
+    rerenderActiveView();
+    if (state.view === 'month') renderDetail();
+    else if (state.view === 'day') renderDayView();
+    showToast(`✨ ${name} agregado como extra`);
+    close();
+  });
 }
 
 // Form rápido para agregar una persona al equipo de intervención o apoyo
@@ -1992,9 +2123,12 @@ function renderMonthView() {
     visibleSlots.forEach((slot, slotIdx) => {
       const row = document.createElement('div');
       row.className = 'slot';
-      // Detectar si este slot es Gestión de materiales (solo ALVARO o MARTIN)
+      // Detectar si este slot es Gestión de materiales (solo ALVARO o MARTIN).
+      // EXCEPCIÓN: en feria judicial NO se muestra como gestión de materiales —
+      // ahí son "extras", aparecen como pill normal con su nombre.
       const names = [slot[0], slot[1]].filter(Boolean);
-      const isGestion = names.length > 0 && names.every(n => GESTION_MATERIALES.includes(n));
+      const isFeriaDay = isFeriaJud(state.year, state.month, day);
+      const isGestion = !isFeriaDay && names.length > 0 && names.every(n => GESTION_MATERIALES.includes(n));
       if (isGestion) {
         // Pill especial "GESTIÓN DE MATERIALES" con el color de la persona
         const personName = names[0];
@@ -2123,8 +2257,10 @@ function renderWeekView() {
         const row = document.createElement('div');
         row.className = 'wk-slot';
         // Detectar Gestión de materiales (ALVARO o MARTIN solos)
+        // EXCEPCIÓN: en feria judicial NO aplica — son extras normales.
         const names = [slot[0], slot[1]].filter(Boolean);
-        const isGestion = names.length > 0 && names.every(n => GESTION_MATERIALES.includes(n));
+        const isFeriaDay = isFeriaJud(y, m, d);
+        const isGestion = !isFeriaDay && names.length > 0 && names.every(n => GESTION_MATERIALES.includes(n));
         if (isGestion) {
           const personName = names[0];
           const pill = document.createElement('span');

@@ -159,6 +159,11 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v42
+- **✨ Sección "Extras" en Gestionar día**: nueva sección debajo de "Reemplazos" para asignar personas de OTROS (Juan Díaz Loza, Juan Pablo Godoy, Alvaro, Martín) como extras del día. Útil principalmente para feria judicial donde tres o cuatro de esos pueden trabajar el mismo día. Cada extra se ve como pill de color con × para quitarlo. Botón "+ Agregar extra" abre un picker con los OTROS.
+- **🏛️ En feria los extras NO se muestran como "Gestión de materiales"**: en días marcados feria judicial, los tiles del calendario (Mes y Semana) muestran a ALVARO y MARTIN como pills normales con su nombre, no como "📦 G. MAT.". La etiqueta de gestión de materiales queda reservada para sábados y domingos fuera de feria.
+- Estructura final del panel Gestionar día: **Reemplazos → Extras → Marcadores** (feriado / feria judicial / replicar día).
+
 ### v41
 - **🐛 Apoyo en feria escribía sobre intervención**: bug crítico. En días feria, al cambiar una persona del Equipo de Apoyo, el cambio iba al slot[0] (intervención) y reemplazaba a alguien del equipo de intervención. Causa: el cálculo de `apSlotIdx` usaba `findTeamSlot` que devuelve el primer slot con equipo (= slot 0). Ahora cuando es feria, se fuerza `apSlotIdx = 1` (slot del apoyo). Verificado: en día feria con sólo intervención cargada, al elegir Capdevila en el primer dropdown del Apoyo, se crea correctamente `[["Frias","Echague"],["Capdevila",null]]` con la intervención intacta.
 - **Sobre los dropdowns grises**: cuando el día feria todavía no tiene apoyo cargado, los dropdowns del Apoyo aparecen vacíos con "—" (grises) — es el estado vacío esperando que elijas. No es bug, es la indicación visual de que falta seleccionar.

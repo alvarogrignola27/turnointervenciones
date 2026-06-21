@@ -341,6 +341,32 @@ input, select { font: inherit; }
 .manage-item.active.editing-active {
   background: #dbeafe; border-color: #93c5fd; color: #1e40af; font-weight: 600;
 }
+
+/* Lista de extras (personas adicionales OTROS que no son intervención ni apoyo) */
+.extras-list {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-bottom: 6px;
+}
+.extra-row {
+  display: flex; align-items: center; gap: 4px;
+  background: #fff; border: 1px solid #e5e5ea;
+  border-radius: 8px; padding: 3px 3px 3px 0;
+}
+.extra-pill {
+  font-size: 12px; font-weight: 600;
+  padding: 4px 10px; border-radius: 6px;
+  line-height: 1.2;
+}
+.extra-del {
+  background: #fde0e0; color: #b71c1c;
+  border: none;
+  width: 26px; height: 26px;
+  border-radius: 6px;
+  font-size: 16px; font-weight: 700; line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.extra-del:active { transform: scale(0.95); }
 .di-team-pill.empty {
   background: #ececee; color: #c7c7cc; font-weight: 500;
   font-style: italic;
