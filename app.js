@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '48';
+const APP_VERSION = '49';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -905,65 +905,250 @@ async function exportAndShareMonth() {
     return;
   }
 
-  // Forzar vista mes y deseleccionar día
-  if (state.view !== 'month') {
-    state.view = 'month';
-    state.selectedDay = null;
-    rerenderActiveView();
-    renderDetail();
-    await new Promise(r => setTimeout(r, 200));
-  }
-
   showToast('Generando imagen del mes...');
 
-  // Crear contenedor offscreen con título + calendario clonado
+  const y = state.year, m = state.month;
+  const monthName = MES_NAMES[m - 1];
+  const dim = new Date(y, m, 0).getDate();
+  const cfg = loadGenConfig();
+  const teams = cfg.teams || [];
+
+  // === Crear contenedor con render profesional desde cero (no clona el DOM) ===
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'position:fixed;left:-9999px;top:0;background:#fff;padding:24px;width:1240px;font-family:-apple-system,system-ui,sans-serif;';
+  wrap.style.cssText = `
+    position:fixed; left:-9999px; top:0;
+    background:#fff; padding:40px 36px;
+    width:1240px; box-sizing:border-box;
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    color:#1c1c1e;
+  `;
 
-  const title = document.createElement('h1');
-  title.textContent = `Turnos de Intervenciones — ${MES_NAMES[state.month - 1]} ${state.year}`;
-  title.style.cssText = 'margin:0 0 16px;font-size:24px;color:#1c1c1e;text-align:center;';
-  wrap.appendChild(title);
+  // --- Encabezado profesional ---
+  const header = document.createElement('div');
+  header.style.cssText = `
+    display:flex; align-items:center; justify-content:space-between;
+    padding-bottom:18px; margin-bottom:24px;
+    border-bottom:3px solid #1f3a68;
+  `;
+  const headLeft = document.createElement('div');
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:28px; font-weight:700; color:#1f3a68; letter-spacing:0.3px;';
+  title.textContent = 'Turnos de Intervenciones';
+  const subtitle = document.createElement('div');
+  subtitle.style.cssText = 'font-size:20px; font-weight:600; color:#3a3a3c; margin-top:4px;';
+  subtitle.textContent = `${monthName} ${y}`;
+  headLeft.appendChild(title);
+  headLeft.appendChild(subtitle);
+  header.appendChild(headLeft);
+  // Bloque resumen a la derecha del header
+  const headRight = document.createElement('div');
+  headRight.style.cssText = 'text-align:right; font-size:13px; color:#6c6c70; line-height:1.6;';
+  const now = new Date();
+  const dayStrings = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  headRight.innerHTML = `
+    <div>Emitido: <b style="color:#1c1c1e;">${dayStrings[now.getDay()]} ${now.getDate()} de ${MES_NAMES[now.getMonth()].toLowerCase()} ${now.getFullYear()}</b></div>
+    <div>${now.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'})} hs</div>
+  `;
+  header.appendChild(headRight);
+  wrap.appendChild(header);
 
-  // Clonar el calendario actual
-  const monthView = document.getElementById('view-month');
-  if (!monthView) {
-    showToast('No hay vista de mes para exportar');
-    return;
-  }
-  const clone = monthView.cloneNode(true);
-  clone.querySelectorAll('.filtered-out, .filter-match').forEach(el => {
-    el.classList.remove('filtered-out', 'filter-match');
+  // --- Grilla profesional del mes (sin íconos de cumpleaños) ---
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid; grid-template-columns:repeat(7,1fr); gap:8px; margin-bottom:24px;';
+
+  // Headers de la semana
+  ['LUN','MAR','MIÉ','JUE','VIE','SÁB','DOM'].forEach((name, i) => {
+    const h = document.createElement('div');
+    h.style.cssText = `
+      font-size:12px; font-weight:700; color:${i >= 5 ? '#b71c1c' : '#1f3a68'};
+      text-align:center; padding:8px 0;
+      background:#f2f2f7; border-radius:6px; letter-spacing:0.5px;
+    `;
+    h.textContent = name;
+    grid.appendChild(h);
   });
-  wrap.appendChild(clone);
 
-  // Lista de reemplazos del mes (si los hay)
+  // Días — calculamos offset para que arranque en Lun (Date.getDay: 0=Dom,1=Lun)
+  const firstDow = new Date(y, m-1, 1).getDay();
+  const offset = firstDow === 0 ? 6 : firstDow - 1;
+  for (let i = 0; i < offset; i++) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'min-height:110px;';
+    grid.appendChild(empty);
+  }
+  for (let d = 1; d <= dim; d++) {
+    const cell = document.createElement('div');
+    const dow = new Date(y, m-1, d).getDay();
+    const isWeekend = (dow === 0 || dow === 6);
+    const isFer = isFeriado(y, m, d);
+    const isFj = isFeriaJud(y, m, d);
+    cell.style.cssText = `
+      min-height:110px; padding:6px 7px;
+      background:${isFj ? '#fff8e0' : (isFer ? '#fff0d6' : (isWeekend ? '#fafafa' : '#fff'))};
+      border:1px solid ${isFj ? '#f0c674' : (isFer ? '#f0c674' : '#e5e5ea')};
+      border-radius:6px; box-sizing:border-box;
+    `;
+    // Cabecera del día
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;';
+    const num = document.createElement('div');
+    num.style.cssText = `font-size:13px; font-weight:700; color:${isWeekend ? '#b71c1c' : '#1c1c1e'};`;
+    num.textContent = String(d);
+    head.appendChild(num);
+    if (isFj) {
+      const tag = document.createElement('span');
+      tag.style.cssText = 'font-size:9px; font-weight:700; padding:1px 5px; background:#b71c1c; color:#fff; border-radius:3px;';
+      tag.textContent = 'FERIA';
+      head.appendChild(tag);
+    } else if (isFer) {
+      const tag = document.createElement('span');
+      tag.style.cssText = 'font-size:9px; font-weight:700; padding:1px 5px; background:#d97706; color:#fff; border-radius:3px;';
+      tag.textContent = 'FERIADO';
+      head.appendChild(tag);
+    }
+    cell.appendChild(head);
+
+    // Slots
+    const slots = state.data[String(d)] || [];
+    slots.forEach(slot => {
+      if (!slot) return;
+      const a = slot[0], b = slot[1];
+      if (!a && !b) return;
+      // ¿Es G.MAT? (solo ALVARO o MARTIN, no en feria)
+      const isGmat = !isFj && ((a && !b && GESTION_MATERIALES.includes(a)) ||
+                                (!a && b && GESTION_MATERIALES.includes(b)));
+      if (isGmat) {
+        const gmName = a || b;
+        const row = document.createElement('div');
+        row.style.cssText = `
+          display:flex; align-items:center; gap:3px;
+          background:${colorFor(gmName)}; color:${textColorFor(gmName)};
+          font-size:9px; font-weight:600; padding:2px 5px; border-radius:3px;
+          margin-bottom:2px; line-height:1.2;
+        `;
+        row.innerHTML = `<span style="opacity:0.8;">📦</span><span>${gmName}</span>`;
+        cell.appendChild(row);
+        return;
+      }
+      // Equipo / par normal
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; gap:2px; margin-bottom:2px;';
+      [a, b].forEach(name => {
+        if (!name) return;
+        const pill = document.createElement('span');
+        pill.style.cssText = `
+          flex:1; background:${colorFor(name)}; color:${textColorFor(name)};
+          font-size:10px; font-weight:600; padding:2px 4px; border-radius:3px;
+          text-align:center; line-height:1.2;
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        `;
+        pill.textContent = name;
+        row.appendChild(pill);
+      });
+      cell.appendChild(row);
+    });
+    grid.appendChild(cell);
+  }
+  wrap.appendChild(grid);
+
+  // === Bloques de información complementaria ===
+  const infoSections = document.createElement('div');
+  infoSections.style.cssText = 'display:flex; gap:16px; flex-wrap:wrap;';
+
+  // Reemplazos del mes
   const allReps = state._replacements || {};
-  const repDays = Object.keys(allReps).map(Number).filter(d => allReps[String(d)] && allReps[String(d)].length > 0).sort((a,b) => a-b);
+  const repDays = Object.keys(allReps).map(Number)
+    .filter(d => allReps[String(d)] && allReps[String(d)].length > 0)
+    .sort((a, b) => a - b);
   if (repDays.length > 0) {
-    const repsSection = document.createElement('div');
-    repsSection.style.cssText = 'margin-top:16px;padding:12px;background:#f7f4fc;border-left:4px solid #5e35b1;border-radius:8px;';
-    const repsTitle = document.createElement('div');
-    repsTitle.style.cssText = 'font-weight:700;font-size:14px;color:#311b92;margin-bottom:8px;';
-    repsTitle.textContent = '↪ Reemplazos del mes';
-    repsSection.appendChild(repsTitle);
+    const sec = document.createElement('div');
+    sec.style.cssText = `
+      flex:1; min-width:300px;
+      padding:14px 16px; background:#f7f4fc;
+      border-left:4px solid #5e35b1; border-radius:6px;
+    `;
+    const t = document.createElement('div');
+    t.style.cssText = 'font-weight:700; font-size:14px; color:#311b92; margin-bottom:8px; letter-spacing:0.3px;';
+    t.textContent = '↪ REEMPLAZOS DEL MES';
+    sec.appendChild(t);
     repDays.forEach(d => {
-      const reps = allReps[String(d)];
-      reps.forEach(rep => {
+      allReps[String(d)].forEach(rep => {
         const line = document.createElement('div');
-        line.style.cssText = 'font-size:13px;color:#311b92;padding:3px 0;';
-        line.innerHTML = `<b>Día ${d}</b> — <b>${rep.replacement}</b> reemplaza a ${rep.original}`;
-        repsSection.appendChild(line);
+        line.style.cssText = 'font-size:12px; color:#311b92; padding:2px 0;';
+        line.innerHTML = `<b>Día ${d}:</b> ${rep.replacement} reemplaza a ${rep.original}`;
+        sec.appendChild(line);
       });
     });
-    wrap.appendChild(repsSection);
+    infoSections.appendChild(sec);
   }
 
-  // Footer
+  // Ausencias del mes (que caigan en este mes)
+  const absences = loadAbsences();
+  const monthStart = ymdString(y, m, 1);
+  const monthEnd = ymdString(y, m, dim);
+  const monthAbs = absences.filter(a => a.from <= monthEnd && a.to >= monthStart);
+  if (monthAbs.length > 0) {
+    const sec = document.createElement('div');
+    sec.style.cssText = `
+      flex:1; min-width:300px;
+      padding:14px 16px; background:#fef3f2;
+      border-left:4px solid #b71c1c; border-radius:6px;
+    `;
+    const t = document.createElement('div');
+    t.style.cssText = 'font-weight:700; font-size:14px; color:#7f0e0e; margin-bottom:8px; letter-spacing:0.3px;';
+    t.textContent = '👤 AUSENCIAS DEL MES';
+    sec.appendChild(t);
+    monthAbs.forEach(a => {
+      const line = document.createElement('div');
+      line.style.cssText = 'font-size:12px; color:#7f0e0e; padding:2px 0;';
+      line.innerHTML = `<b>${a.name}:</b> ${a.from} → ${a.to}`;
+      sec.appendChild(line);
+    });
+    infoSections.appendChild(sec);
+  }
+
+  // Leyenda de equipos
+  const legend = document.createElement('div');
+  legend.style.cssText = `
+    flex:1; min-width:300px;
+    padding:14px 16px; background:#f5f7fb;
+    border-left:4px solid #1f3a68; border-radius:6px;
+  `;
+  const lT = document.createElement('div');
+  lT.style.cssText = 'font-weight:700; font-size:14px; color:#1f3a68; margin-bottom:8px; letter-spacing:0.3px;';
+  lT.textContent = '🤝 EQUIPOS';
+  legend.appendChild(lT);
+  teams.forEach(t => {
+    const members = [t.a, t.b, t.c].filter(Boolean);
+    const line = document.createElement('div');
+    line.style.cssText = 'display:flex; gap:4px; align-items:center; padding:2px 0; font-size:11px;';
+    members.forEach(name => {
+      const pill = document.createElement('span');
+      pill.style.cssText = `
+        background:${colorFor(name)}; color:${textColorFor(name)};
+        padding:2px 7px; border-radius:3px; font-weight:600;
+      `;
+      pill.textContent = name;
+      line.appendChild(pill);
+    });
+    legend.appendChild(line);
+  });
+  infoSections.appendChild(legend);
+
+  if (infoSections.children.length > 0) wrap.appendChild(infoSections);
+
+  // Footer profesional
   const footer = document.createElement('div');
-  footer.style.cssText = 'margin-top:12px;text-align:right;font-size:11px;color:#888;';
-  const now = new Date();
-  footer.textContent = `Generado ${now.toLocaleDateString('es-AR')} ${now.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'})} — Turnos de Intervenciones v${APP_VERSION}`;
+  footer.style.cssText = `
+    margin-top:24px; padding-top:12px;
+    border-top:1px solid #e5e5ea;
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:11px; color:#8e8e93;
+  `;
+  footer.innerHTML = `
+    <div>📅 Turnos de Intervenciones</div>
+    <div>Generado automáticamente · v${APP_VERSION}</div>
+  `;
   wrap.appendChild(footer);
 
   document.body.appendChild(wrap);
@@ -3417,6 +3602,42 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
       repSection.appendChild(repBtn);
       block.appendChild(repSection);
     }
+
+    // --- Botón BORRAR DÍA (limpia equipos, reemplazos y marcadores del día) ---
+    const delSection = document.createElement('div');
+    delSection.className = 'di-edit-extra-section';
+    const delBtn = document.createElement('button');
+    delBtn.className = 'manage-item del-day-btn';
+    delBtn.innerHTML = '🗑️ Borrar este día';
+    delBtn.title = 'Borra equipos, reemplazos y marcadores de este día';
+    delBtn.addEventListener('click', () => {
+      const dayName = DAY_NAMES[new Date(y, m - 1, d).getDay()];
+      if (!confirm(`¿Borrar TODO el contenido del ${dayName} ${d}?\n\nEsto incluye:\n• Equipos (intervención y apoyo)\n• Reemplazos del día\n• Marcadores (feriado / feria judicial)\n• G.MAT y extras`)) return;
+      snapshotDayBeforeEdit(d);
+      // Limpiar slots
+      delete state.data[String(d)];
+      // Limpiar reemplazos del día
+      if (state._replacements && state._replacements[String(d)]) {
+        delete state._replacements[String(d)];
+        saveReplacements(state.year, state.month, state._replacements);
+      }
+      // Limpiar marcadores del día
+      if (state._feriados && state._feriados[String(d)]) {
+        delete state._feriados[String(d)];
+        saveFeriados(state.year, state.month, state._feriados);
+      }
+      if (state._feriaJud && state._feriaJud[String(d)]) {
+        delete state._feriaJud[String(d)];
+        saveFeriaJud(state.year, state.month, state._feriaJud);
+      }
+      saveMonthData(state.year, state.month, state.data);
+      state.editingDay = false;
+      rerenderActiveView();
+      renderDetail();
+      showToast(`✓ Día ${d} borrado`);
+    });
+    delSection.appendChild(delBtn);
+    block.appendChild(delSection);
 
     // --- Sección GESTIÓN DE MATERIALES (sábado/domingo no-feria) ---
     const dow = new Date(y, m - 1, d).getDay();

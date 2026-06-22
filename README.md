@@ -159,6 +159,10 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v49
+- **🎨 Exportación PDF/imagen profesional, sin torta de cumpleaños**: la imagen del mes ahora se renderiza desde cero (no clona la vista). Layout corporativo: header con franja azul, título "Turnos de Intervenciones" + mes en grande a la izquierda, fecha de emisión a la derecha; grilla limpia Lun-Dom con headers grises (Sáb/Dom en rojo); cada día con pills coloreadas de los equipos + 📦 G.MAT; tags **FERIA** / **FERIADO** cuando aplica; bloques inferiores con **Reemplazos del mes**, **Ausencias del mes** y leyenda de **Equipos** con todos los miembros; footer con marca y versión. NO incluye iconos de cumpleaños (🎂) — la imagen es para uso institucional.
+- **🗑️ Botón "Borrar este día"**: nuevo botón rojo al final de la sección "Gestionar equipos" del card del día. Al apretarlo confirma con detalle qué se va a borrar (equipos, reemplazos, marcadores de feriado/feria, G.MAT, extras) y limpia todo lo del día específico. Equivale a la opción "Borrar mes" pero acotada a un solo día.
+
 ### v48
 - **🧹 Extras removido de "Gestionar equipos"**: la sección ✨ Extras se sacó del modo Gestionar equipos. Los días feria con 4+ personas igual funcionan: usás "+" del Intervención (slot 0) y "+" del Apoyo (slot 1) para cargarlos. Si necesitás una 5ta persona, otro "+" del Apoyo la pone en un slot adicional. Estructura final del modo Gestionar equipos: Equipos + Reemplazos + G.MAT (Sáb/Dom) + Replicar (Feria).
 - **👤 Ausencias planificadas**: nueva opción en el menú Generar. Permite cargar ausencias por rango de fechas para cualquier persona (roster + otros). Cada ausencia bloquea al equipo de esa persona para que el generador no le asigne turnos en esos días. Funciona igual que el bloqueo por cumpleaños (hard exclude). Modal con lista de ausencias activas (con × para borrar) y formulario para agregar (persona + Desde + Hasta). Las ausencias se persisten cross-month y se sincronizan a la nube. Verificado: Frias ausente del 10-15 ago → el generador asignó Hidalgo, Sallas, Campi, Milisenda en esos días, sin Frias.

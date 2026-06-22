@@ -292,6 +292,14 @@ input, select { font: inherit; }
   font-size: 14px;
   background: #fff;
 }
+
+/* Botón "Borrar día" en rojo dentro de Gestionar equipos */
+.del-day-btn {
+  background: #fef3f2 !important;
+  border-color: #fca5a5 !important;
+  color: #b71c1c !important;
+}
+.del-day-btn:active { transform: scale(0.98); }
 .di-edit-btn {
   background: #fff; color: #1f3a68;
   border: 1px solid #c9d4e8;
