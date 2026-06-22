@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '49';
+const APP_VERSION = '50';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -1337,6 +1337,12 @@ let _fbDb = null;
 let _fbUser = null;
 let _syncTimer = null;
 let _suppressNextPush = false; // Para no rebotar al aplicar datos remotos
+// CRÍTICO: bloquea TODO push hasta que el primer pull desde la nube haya terminado.
+// Sin esta protección, un dispositivo nuevo que se conecta primero programa pushes
+// con su estado local (vacío o defaults) durante la inicialización, y al disparar
+// pisa la nube con esos datos antes de que llegue el snapshot remoto.
+// Se setea en true después de que initFirebaseSync hace el pull inicial bloqueante.
+let _initialSyncDone = false;
 
 function resetPersonColors() {
   _personColorsCache = {};
@@ -1436,6 +1442,29 @@ async function initFirebaseSync() {
       }
     }
     _fbUser = cred.user;
+
+    // === PULL INICIAL BLOQUEANTE ===
+    // Antes de habilitar pushes, descargamos lo que hay en la nube. Esto previene
+    // que un dispositivo nuevo (con localStorage vacío o con defaults) pise los
+    // datos buenos que ya están en la nube. Si la nube tiene datos: aplicarlos
+    // primero. Si está vacía: nada que pullear, igual marcamos initialSyncDone.
+    setSyncInlineStatus('connecting', '🟡 Descargando datos iniciales de la nube...');
+    try {
+      const initSnap = await _fbDb.ref(`users/${_fbUser.uid}/data`).once('value');
+      const initData = initSnap.val();
+      if (initData && initData._timestamp) {
+        // Hay datos remotos válidos → aplicarlos antes de habilitar pushes
+        applyRemoteData(initData);
+        localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(initData._timestamp));
+      }
+      // Si no hay datos remotos, queda el local intacto (probablemente sea el
+      // primer dispositivo del usuario y va a poblar la nube cuando edite algo)
+    } catch (pullErr) {
+      console.warn('Initial pull failed (continuing anyway):', pullErr);
+    }
+
+    // Recién ahora habilitamos pushes y el listener para cambios incrementales
+    _initialSyncDone = true;
     setupRemoteListener();
     setSyncStatus('connected');
     setSyncInlineStatus('connected', '🟢 Conectado como ' + _fbUser.email);
@@ -1545,6 +1574,9 @@ function applyRemoteData(data) {
 function scheduleCloudPush() {
   if (_suppressNextPush) return;
   if (!_fbUser || !_fbDb) return;
+  // CRÍTICO: no pushear nada hasta que el primer pull haya terminado.
+  // Esto previene que un dispositivo nuevo pise la nube con su estado local vacío.
+  if (!_initialSyncDone) return;
   if (_syncTimer) clearTimeout(_syncTimer);
   setSyncStatus('syncing');
   _syncTimer = setTimeout(() => pushToCloud(), 1500);
@@ -1552,6 +1584,8 @@ function scheduleCloudPush() {
 
 async function pushToCloud() {
   if (!_fbUser || !_fbDb) return;
+  // Doble salvaguarda: tampoco pusheamos si initial sync no terminó
+  if (!_initialSyncDone) return;
   const data = {};
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
@@ -1621,6 +1655,7 @@ async function disconnectSync() {
     try { await _fbAuth.signOut(); } catch (e) {}
   }
   _fbApp = null; _fbAuth = null; _fbDb = null; _fbUser = null;
+  _initialSyncDone = false; // Forzar pull inicial otra vez la próxima conexión
   saveFirebaseConfig(null);
   localStorage.removeItem(FIREBASE_LAST_SYNC_KEY);
   setSyncStatus('idle');
@@ -2423,8 +2458,43 @@ function findTeamSlot(slots) {
   return null;
 }
 
+// Helper: popula un <select> con la opción vacía + ROSTER (+ OTROS si includeOtros).
+// Si selectedName coincide con alguna opción, la marca como seleccionada.
+// En modo feria (includeOtros), usa optgroups para separar Equipos / Otros visualmente.
+function populateNamesDropdown(sel, selectedName, includeOtros) {
+  const empty = document.createElement('option');
+  empty.value = ''; empty.textContent = '—';
+  sel.appendChild(empty);
+  if (includeOtros) {
+    const ogTeams = document.createElement('optgroup');
+    ogTeams.label = 'Equipos';
+    ROSTER.forEach(name => {
+      const o = document.createElement('option');
+      o.value = name; o.textContent = name;
+      if (name === selectedName) o.selected = true;
+      ogTeams.appendChild(o);
+    });
+    sel.appendChild(ogTeams);
+    const ogOtros = document.createElement('optgroup');
+    ogOtros.label = 'Otros';
+    OTROS.forEach(name => {
+      const o = document.createElement('option');
+      o.value = name; o.textContent = name;
+      if (name === selectedName) o.selected = true;
+      ogOtros.appendChild(o);
+    });
+    sel.appendChild(ogOtros);
+  } else {
+    ROSTER.forEach(name => {
+      const o = document.createElement('option');
+      o.value = name; o.textContent = name;
+      if (name === selectedName) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+}
+
 // Encuentra el slot del día que contiene un G.MAT (ALVARO o MARTIN solos).
-// Retorna: { slotIdx, sideIdx, name } o null.
 function findGmatSlot(slots) {
   if (!slots) return null;
   for (let i = 0; i < slots.length; i++) {
@@ -3093,15 +3163,8 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
         } else {
           sel.classList.add('empty');
         }
-        const empty = document.createElement('option');
-        empty.value = ''; empty.textContent = '—';
-        sel.appendChild(empty);
-        ROSTER.forEach(name => {
-          const o = document.createElement('option');
-          o.value = name; o.textContent = name;
-          if (name === n) o.selected = true;
-          sel.appendChild(o);
-        });
+        // En feria también permitimos OTROS (Juan Diaz Loza, Juan Pablo Godoy, MARTIN, ALVARO)
+        populateNamesDropdown(sel, n, isFeriaJud(y, m, d));
         sel.addEventListener('change', (e) => {
           const newName = e.target.value || null;
           snapshotDayBeforeEdit(d);
@@ -3143,15 +3206,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
       thirdPill.style.color = textColorFor(thirdName);
       if (editable) {
         thirdPill.classList.add('di-team-pill-select');
-        const empty = document.createElement('option');
-        empty.value = ''; empty.textContent = '—';
-        thirdPill.appendChild(empty);
-        ROSTER.forEach(name => {
-          const o = document.createElement('option');
-          o.value = name; o.textContent = name;
-          if (name === thirdName) o.selected = true;
-          thirdPill.appendChild(o);
-        });
+        populateNamesDropdown(thirdPill, thirdName, isFeriaJud(y, m, d));
         thirdPill.addEventListener('change', (e) => {
           const newName = e.target.value || null;
           snapshotDayBeforeEdit(d);
@@ -3209,14 +3264,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
       [0, 1].forEach(sideIdx => {
         const sel = document.createElement('select');
         sel.className = 'di-team-pill di-select-pill empty';
-        const empty = document.createElement('option');
-        empty.value = ''; empty.textContent = '—';
-        sel.appendChild(empty);
-        ROSTER.forEach(name => {
-          const o = document.createElement('option');
-          o.value = name; o.textContent = name;
-          sel.appendChild(o);
-        });
+        populateNamesDropdown(sel, null, isFeriaJud(y, m, d));
         sel.addEventListener('change', (e) => {
           const newName = e.target.value || null;
           if (!newName) return;
@@ -3384,15 +3432,8 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
         } else {
           sel.classList.add('empty');
         }
-        const empty = document.createElement('option');
-        empty.value = ''; empty.textContent = '—';
-        sel.appendChild(empty);
-        ROSTER.forEach(name => {
-          const o = document.createElement('option');
-          o.value = name; o.textContent = name;
-          if (name === n) o.selected = true;
-          sel.appendChild(o);
-        });
+        // En FERIA, permitimos también OTROS en el apoyo (3 de los 4 OTROS pueden trabajar juntos)
+        populateNamesDropdown(sel, n, !!apoyo.isFeria);
         sel.addEventListener('change', (e) => {
           const newName = e.target.value || null;
           // Editar el slot del día del equipo de apoyo (puede ser otro mes)
@@ -3448,15 +3489,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
         sel.className = 'di-team-pill di-select-pill di-team-pill-third';
         sel.style.background = colorFor(thirdName);
         sel.style.color = textColorFor(thirdName);
-        const empty = document.createElement('option');
-        empty.value = ''; empty.textContent = '—';
-        sel.appendChild(empty);
-        ROSTER.forEach(name => {
-          const o = document.createElement('option');
-          o.value = name; o.textContent = name;
-          if (name === thirdName) o.selected = true;
-          sel.appendChild(o);
-        });
+        populateNamesDropdown(sel, thirdName, !!apoyo.isFeria);
         sel.addEventListener('change', (e) => {
           const newName = e.target.value || null;
           const isCurMonth = (apY === state.year && apM === state.month);
@@ -4737,7 +4770,7 @@ function preloadArgentinaHolidays() {
 // - Los slots de SEMANA se asignan al equipo menos usado del mes (balanceado)
 //   sin repetir un equipo dentro de la misma semana.
 // - Se respetan los topes (maxDays por equipo) y los feriados ya marcados.
-function generateMonth() {
+function generateMonth(opts = {}) {
   const cfg = loadGenConfig();
   const teams = cfg.teams || [];
   if (teams.length < 4) {
@@ -4745,6 +4778,11 @@ function generateMonth() {
     openGenSettings();
     return;
   }
+
+  // shuffleOffset: si > 0, corre el equipo de partida para el primer finde y
+  // así produce una distribución distinta cuando el usuario regenera. Default 0
+  // (determinístico). Se usa al apretar "🔀 Probar otra distribución".
+  const shuffleOffset = opts.shuffleOffset || 0;
 
   const y = state.year, m = state.month;
 
@@ -4783,6 +4821,10 @@ function generateMonth() {
   // algoritmo arranca con un historial limpio y coherente.
   const rebuilt = rebuildHistoryFromMonths(y, m);
   let weekendIdx = rebuilt.weekendIdx;
+  // Aplicar shuffle si el usuario pidió otra distribución
+  if (shuffleOffset > 0) {
+    weekendIdx = (weekendIdx + shuffleOffset) % teams.length;
+  }
   const recentWeekends = rebuilt.recentWeekends;
   const teamHistory = rebuilt.teamHistory;
   // Para alternar Alvaro/Martín en G.MAT cada finde
@@ -5355,6 +5397,15 @@ function wireUp() {
       else if (a === 'import') document.getElementById('import-file').click();
       else if (a === 'clear') clearCurrentMonth();
       else if (a === 'generate') generateMonth();
+      else if (a === 'regenerate') {
+        // Pide otra distribución: aumenta el shuffleOffset
+        // y guarda en localStorage para que cada llamada sucesiva varíe distinto
+        const SHUFFLE_KEY = 'turnos:gen_shuffle_offset';
+        const cur = parseInt(localStorage.getItem(SHUFFLE_KEY) || '0', 10);
+        const next = (cur + 1) % 7;
+        localStorage.setItem(SHUFFLE_KEY, String(next));
+        generateMonth({ shuffleOffset: next + 1 });
+      }
       else if (a === 'export-image') exportAndShareMonth();
       else if (a === 'stats') openStatsSettings();
       else if (a === 'absences') openAbsencesModal();
