@@ -300,6 +300,50 @@ input, select { font: inherit; }
   color: #b71c1c !important;
 }
 .del-day-btn:active { transform: scale(0.98); }
+
+/* === Badge de versión / indicador de actualización === */
+.version-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px; font-weight: 600;
+  background: #ecfdf5;
+  color: #166534;
+  border: 1px solid #86efac;
+  margin-bottom: 6px;
+}
+.version-badge .version-dot {
+  font-size: 10px;
+  color: #16a34a;
+}
+.version-badge.has-update {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+.version-badge.has-update .version-dot {
+  color: #dc2626;
+  animation: blink-dot 1.2s ease-in-out infinite;
+}
+@keyframes blink-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.version-update-btn {
+  display: block; width: 100%;
+  padding: 10px 14px;
+  background: #dc2626;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 6px;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.3);
+}
+.version-update-btn:active { transform: scale(0.98); }
+.version-update-btn.hidden { display: none; }
 .di-edit-btn {
   background: #fff; color: #1f3a68;
   border: 1px solid #c9d4e8;

@@ -122,7 +122,13 @@
       <button data-action="install" id="install-btn" class="hidden">Instalar app</button>
       <button data-action="close">Cerrar</button>
       <div class="menu-version">
-        Versión <span id="app-version">50</span>
+        <div class="version-badge ok" id="version-badge">
+          <span class="version-dot">●</span>
+          <span class="version-label">Versión <span id="app-version">51</span> · actualizada</span>
+        </div>
+        <button class="version-update-btn hidden" id="version-update-btn">
+          🔴 Hay una versión nueva — Tocar para actualizar
+        </button>
         <div class="sync-status-indicator idle" id="sync-status-indicator">⚪ Sin conectar</div>
       </div>
       <input type="file" id="import-file" accept="application/json" class="hidden">
@@ -304,10 +310,60 @@
   <script src="data.js"></script>
   <script src="app.js"></script>
   <script>
+    // === Detección de actualizaciones del Service Worker ===
+    // Mantiene una referencia al SW "esperando" (instalado pero no activo todavía).
+    // Cuando aparece, la app muestra el botón "Actualizar" en rojo en el header.
+    // El botón le manda SKIP_WAITING al SW y recarga la página.
+    let _swWaiting = null;
+    let _swRegistration = null;
+
+    function setUpdateAvailable(reg) {
+      _swRegistration = reg;
+      _swWaiting = reg.waiting;
+      if (typeof onSwUpdateAvailable === 'function') {
+        try { onSwUpdateAvailable(); } catch (e) { console.warn(e); }
+      }
+    }
+
+    function applySwUpdate() {
+      if (!_swWaiting) return;
+      // El listener controllerchange recarga la página cuando el nuevo SW toma control
+      _swWaiting.postMessage({ type: 'SKIP_WAITING' });
+    }
+
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('service-worker.js').catch(err => {
+        navigator.serviceWorker.register('service-worker.js').then((reg) => {
+          // Ya hay un SW esperando al cargar (caso típico: actualización detectada en otra pestaña)
+          if (reg.waiting && navigator.serviceWorker.controller) {
+            setUpdateAvailable(reg);
+          }
+          // Cuando se descarga un nuevo SW
+          reg.addEventListener('updatefound', () => {
+            const newSw = reg.installing;
+            if (!newSw) return;
+            newSw.addEventListener('statechange', () => {
+              if (newSw.state === 'installed' && navigator.serviceWorker.controller) {
+                // Nuevo SW instalado y hay un SW activo → es UPDATE (no primera instalación)
+                setUpdateAvailable(reg);
+              }
+            });
+          });
+          // Chequeo periódico cada 5 minutos para detectar nuevas versiones
+          // mientras la app está abierta
+          setInterval(() => {
+            reg.update().catch(() => {});
+          }, 5 * 60 * 1000);
+        }).catch(err => {
           console.warn('SW registration failed:', err);
+        });
+
+        // Cuando el SW nuevo toma el control, recargamos automáticamente
+        let _refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (_refreshing) return;
+          _refreshing = true;
+          window.location.reload();
         });
       });
     }

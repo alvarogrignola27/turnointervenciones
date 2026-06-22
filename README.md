@@ -159,6 +159,14 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v51
+- **🟢🔴 Indicador de versión con detección automática de actualizaciones**: nuevo badge en el menú **Datos** que muestra el estado de la app:
+  - **🟢 Verde** "● Versión 51 · actualizada" cuando estás en la última versión disponible.
+  - **🔴 Rojo** "● Versión 51 · hay una nueva" + botón grande rojo "🔴 Hay una versión nueva — Tocar para actualizar" cuando el Service Worker detecta una versión nueva descargada.
+- **Cómo funciona**: el SW chequea actualizaciones cada 5 minutos mientras la app está abierta. Cuando hay una versión nueva en el servidor, el SW la descarga en background pero NO la activa automáticamente — espera a que el usuario aprete el botón. Esto evita pisar el trabajo en curso. Al tocar el botón, el SW recibe `SKIP_WAITING` y toma el control; el listener `controllerchange` recarga la página automáticamente con la versión nueva ya activa.
+- **Detección al abrir la app**: si al abrir hay un SW esperando (caso típico: actualización detectada en otra pestaña/sesión), el badge ya aparece en rojo de entrada.
+- **Animación sutil**: el punto rojo del badge parpadea suavemente para que se note sin ser molesto.
+
 ### v50
 - **🏛️ En feria: OTROS disponibles en los dropdowns de Intervención y Apoyo**: en días marcados feria judicial, los dropdowns de equipos ahora muestran tanto los miembros del ROSTER (Frias, Echague, Hidalgo, etc.) como los OTROS (Juan Diaz Loza, Juan Pablo Godoy, MARTIN, ALVARO), separados en grupos visuales ("Equipos" y "Otros"). Esto resuelve el caso típico donde 3 de los 4 OTROS trabajan el mismo día en feria. Fuera de feria, los dropdowns mantienen sólo el ROSTER (los OTROS se asignan automáticamente como G.MAT en sáb/dom).
 - **🔥 BUG CRÍTICO de sincronización ARREGLADO — versión vieja pisando la nube**: un dispositivo nuevo que se conectaba a Firebase por primera vez podía pisar la nube con su estado local vacío (o con defaults pre-cargados de la versión cacheada) antes de que llegara el snapshot remoto. Causa raíz: durante la inicialización del app, varias funciones llaman `scheduleCloudPush()` (cargar DEFAULT_BIRTHDAYS, etc.), dejando un timer pendiente. Cuando finalmente Firebase autenticaba, ese push pendiente disparaba y sobrescribía la nube ANTES de que llegara el listener con los datos buenos. **Fix de raíz**: nueva flag `_initialSyncDone` que bloquea TODO push hasta que `initFirebaseSync` haya completado un pull bloqueante (`once('value')`) y aplicado los datos remotos. Recién después se habilita el push y se setea el listener para cambios incrementales. La flag se resetea al desconectar para forzar otro pull al volver a conectar.

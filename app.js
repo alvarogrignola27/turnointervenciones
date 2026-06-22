@@ -2,7 +2,23 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '50';
+const APP_VERSION = '51';
+
+// Llamada por el código en index.html cuando el SW detecta una versión nueva
+// (a través de updatefound + statechange === 'installed'). Cambia el badge
+// del header a rojo y muestra el botón "Actualizar".
+function onSwUpdateAvailable() {
+  const badge = document.getElementById('version-badge');
+  const btn = document.getElementById('version-update-btn');
+  if (badge) {
+    badge.classList.add('has-update');
+    const label = badge.querySelector('.version-label');
+    if (label) label.textContent = `Versión ${APP_VERSION} · hay una nueva`;
+  }
+  if (btn) btn.classList.remove('hidden');
+}
+// La exponemos en window para que el script de SW del index.html la encuentre
+if (typeof window !== 'undefined') window.onSwUpdateAvailable = onSwUpdateAvailable;
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -5497,6 +5513,22 @@ function wireUp() {
   document.getElementById('absences-close-btn').addEventListener('click', closeAbsencesModal);
   document.querySelector('#absences-modal .modal-backdrop').addEventListener('click', closeAbsencesModal);
   document.getElementById('absence-add-btn').addEventListener('click', addAbsenceFromForm);
+
+  // === Botón de actualización de versión (Service Worker) ===
+  // Se conecta a `applySwUpdate` definido en index.html. Cuando aparezca un
+  // SW nuevo (vía onSwUpdateAvailable más abajo), el botón se muestra en rojo.
+  const updateBtn = document.getElementById('version-update-btn');
+  if (updateBtn) {
+    updateBtn.addEventListener('click', () => {
+      updateBtn.textContent = '⏳ Actualizando...';
+      updateBtn.disabled = true;
+      // La función global applySwUpdate envía SKIP_WAITING al SW.
+      // controllerchange recarga la página al activarse el nuevo SW.
+      if (typeof applySwUpdate === 'function') applySwUpdate();
+      // Fallback por si controllerchange no dispara
+      setTimeout(() => window.location.reload(), 2000);
+    });
+  }
 
   // Modal de sincronización
   document.getElementById('sync-modal-close').addEventListener('click', closeSyncSettings);
