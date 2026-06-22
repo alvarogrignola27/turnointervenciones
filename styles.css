@@ -344,6 +344,44 @@ input, select { font: inherit; }
 }
 .version-update-btn:active { transform: scale(0.98); }
 .version-update-btn.hidden { display: none; }
+
+/* Banner global de actualización: aparece arriba de todo, full-width, visible
+   apenas el SW detecta una versión nueva. */
+.update-banner {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  color: #fff;
+  padding: 12px 16px;
+  display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+  position: sticky; top: 0; z-index: 100;
+  font-size: 13px;
+}
+.update-banner.hidden { display: none; }
+.update-banner-text {
+  flex: 1;
+  display: flex; align-items: center; gap: 8px;
+}
+.update-banner-dot {
+  color: #fef9c3;
+  font-size: 12px;
+  animation: blink-dot 1.2s ease-in-out infinite;
+}
+.update-banner-btn {
+  background: #fff;
+  color: #b91c1c;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px; font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.update-banner-btn:active { transform: scale(0.97); }
+@media (max-width: 480px) {
+  .update-banner { flex-direction: column; padding: 10px 12px; }
+  .update-banner-text { width: 100%; }
+  .update-banner-btn { width: 100%; }
+}
 .di-edit-btn {
   background: #fff; color: #1f3a68;
   border: 1px solid #c9d4e8;

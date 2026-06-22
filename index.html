@@ -21,6 +21,15 @@
 </head>
 <body>
   <div id="app">
+    <!-- Banner de actualización: aparece a TODA la app cuando el SW detecta una versión nueva.
+         Se mantiene oculto por defecto y se muestra desde onSwUpdateAvailable. -->
+    <div id="update-banner" class="update-banner hidden">
+      <div class="update-banner-text">
+        <span class="update-banner-dot">●</span>
+        <span><b>Hay una versión nueva disponible.</b> Tocá para actualizar.</span>
+      </div>
+      <button class="update-banner-btn" id="update-banner-btn">↻ Actualizar ahora</button>
+    </div>
     <header class="hdr">
       <div class="hdr-left">
         <button id="prev" class="nav-btn" aria-label="Anterior">‹</button>
@@ -124,7 +133,7 @@
       <div class="menu-version">
         <div class="version-badge ok" id="version-badge">
           <span class="version-dot">●</span>
-          <span class="version-label">Versión <span id="app-version">51</span> · actualizada</span>
+          <span class="version-label">Versión <span id="app-version">52</span> · actualizada</span>
         </div>
         <button class="version-update-btn hidden" id="version-update-btn">
           🔴 Hay una versión nueva — Tocar para actualizar

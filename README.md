@@ -159,6 +159,10 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v52
+- **🔴 Banner de actualización movido arriba de toda la app**: el aviso de "nueva versión disponible" ya no vive sólo dentro del menú Datos. Ahora aparece como un banner rojo full-width en el tope absoluto de la pantalla, sticky (se queda visible aunque scrollees), imposible de pasar por alto. Cuando hay update aparece automáticamente, con texto "● Hay una versión nueva disponible. Tocá para actualizar." y un botón blanco grande "↻ Actualizar ahora". El badge verde/rojo en el menú Datos sigue funcionando como antes (confirmación adicional del estado).
+- **Verificación de feria con OTROS en dropdowns**: en v51 los dropdowns en feria ya muestran "Equipos: 15 + Otros: 4" — si no se veían era porque el dispositivo tenía cacheada una versión anterior. Una vez actualizado a v52 (con el banner imposible de ignorar), el problema queda resuelto definitivamente.
+
 ### v51
 - **🟢🔴 Indicador de versión con detección automática de actualizaciones**: nuevo badge en el menú **Datos** que muestra el estado de la app:
   - **🟢 Verde** "● Versión 51 · actualizada" cuando estás en la última versión disponible.

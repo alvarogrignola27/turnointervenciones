@@ -2,19 +2,22 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '51';
+const APP_VERSION = '52';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
-// (a través de updatefound + statechange === 'installed'). Cambia el badge
-// del header a rojo y muestra el botón "Actualizar".
+// (a través de updatefound + statechange === 'installed'). Muestra:
+// - El banner rojo arriba de toda la app (siempre visible)
+// - El badge en rojo del menú Datos (para confirmar el estado)
 function onSwUpdateAvailable() {
+  const banner = document.getElementById('update-banner');
+  if (banner) banner.classList.remove('hidden');
   const badge = document.getElementById('version-badge');
-  const btn = document.getElementById('version-update-btn');
   if (badge) {
     badge.classList.add('has-update');
     const label = badge.querySelector('.version-label');
     if (label) label.textContent = `Versión ${APP_VERSION} · hay una nueva`;
   }
+  const btn = document.getElementById('version-update-btn');
   if (btn) btn.classList.remove('hidden');
 }
 // La exponemos en window para que el script de SW del index.html la encuentre
@@ -5515,20 +5518,22 @@ function wireUp() {
   document.getElementById('absence-add-btn').addEventListener('click', addAbsenceFromForm);
 
   // === Botón de actualización de versión (Service Worker) ===
-  // Se conecta a `applySwUpdate` definido en index.html. Cuando aparezca un
-  // SW nuevo (vía onSwUpdateAvailable más abajo), el botón se muestra en rojo.
-  const updateBtn = document.getElementById('version-update-btn');
-  if (updateBtn) {
-    updateBtn.addEventListener('click', () => {
-      updateBtn.textContent = '⏳ Actualizando...';
-      updateBtn.disabled = true;
-      // La función global applySwUpdate envía SKIP_WAITING al SW.
-      // controllerchange recarga la página al activarse el nuevo SW.
-      if (typeof applySwUpdate === 'function') applySwUpdate();
-      // Fallback por si controllerchange no dispara
-      setTimeout(() => window.location.reload(), 2000);
-    });
+  // Hay 2 botones: el banner arriba de todo (más visible) y el de Datos.
+  // Ambos hacen lo mismo: enviar SKIP_WAITING al SW, que dispara controllerchange
+  // y recarga la página con la versión nueva.
+  function triggerSwUpdate(btnEl) {
+    if (btnEl) {
+      btnEl.textContent = '⏳ Actualizando...';
+      btnEl.disabled = true;
+    }
+    if (typeof applySwUpdate === 'function') applySwUpdate();
+    // Fallback por si controllerchange no dispara (ej. primera vez sin SW activo)
+    setTimeout(() => window.location.reload(), 2000);
   }
+  const updateBtn = document.getElementById('version-update-btn');
+  if (updateBtn) updateBtn.addEventListener('click', () => triggerSwUpdate(updateBtn));
+  const updateBanner = document.getElementById('update-banner-btn');
+  if (updateBanner) updateBanner.addEventListener('click', () => triggerSwUpdate(updateBanner));
 
   // Modal de sincronización
   document.getElementById('sync-modal-close').addEventListener('click', closeSyncSettings);
