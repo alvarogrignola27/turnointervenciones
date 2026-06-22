@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '54';
+const APP_VERSION = '55';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -2725,14 +2725,35 @@ function renderMonthView() {
 
     const slots = state.data[String(day)] || [];
     const visibleSlots = slots.slice(0, 4);
+    // En FERIA, los "extras" (personas en slots 2+) se renderizan APILADAS si
+    // son hasta 3 personas: cada una ocupa una fila full-width con su nombre.
+    // Eso queda más prolijo cuando hay 1, 2 o 3 personas en feria.
+    // Si hay más de 3, caen al renderizado normal compacto.
+    const isFeriaDayTile = isFeriaJud(state.year, state.month, day);
+    let extraSlotIdxs = [];
+    let extraNamesFlat = [];
+    if (isFeriaDayTile && visibleSlots.length > 2) {
+      for (let si = 2; si < visibleSlots.length; si++) {
+        const sl = visibleSlots[si];
+        if (!sl) continue;
+        if (sl[0]) extraNamesFlat.push(sl[0]);
+        if (sl[1]) extraNamesFlat.push(sl[1]);
+        extraSlotIdxs.push(si);
+      }
+    }
+    const stackExtras = isFeriaDayTile && extraNamesFlat.length > 0 && extraNamesFlat.length <= 3;
+
     visibleSlots.forEach((slot, slotIdx) => {
+      // Si vamos a stackear los extras, saltamos los slots 2+ acá y los
+      // dibujamos después como filas apiladas
+      if (stackExtras && slotIdx >= 2) return;
       const row = document.createElement('div');
       row.className = 'slot';
       // Detectar si este slot es Gestión de materiales (solo ALVARO o MARTIN).
       // EXCEPCIÓN: en feria judicial NO se muestra como gestión de materiales —
       // ahí son "extras", aparecen como pill normal con su nombre.
       const names = [slot[0], slot[1]].filter(Boolean);
-      const isFeriaDay = isFeriaJud(state.year, state.month, day);
+      const isFeriaDay = isFeriaDayTile;
       const isGestion = !isFeriaDay && names.length > 0 && names.every(n => GESTION_MATERIALES.includes(n));
       if (isGestion) {
         // Pill especial "GESTIÓN DE MATERIALES" con el color de la persona
@@ -2759,6 +2780,22 @@ function renderMonthView() {
       }
       el.appendChild(row);
     });
+
+    // Render apilado de extras (cada persona en su propia fila full-width)
+    if (stackExtras) {
+      extraNamesFlat.forEach(name => {
+        const row = document.createElement('div');
+        row.className = 'slot slot-extra-stacked';
+        const pill = document.createElement('span');
+        pill.className = 'pill pill-wide pill-extra-full';
+        pill.style.background = colorFor(name);
+        pill.style.color = textColorFor(name);
+        pill.textContent = name;
+        pill.title = name;
+        row.appendChild(pill);
+        el.appendChild(row);
+      });
+    }
 
     el.addEventListener('click', () => {
       // Si cambiamos a otro día, cerrar el panel "Gestionar día"
@@ -3644,6 +3681,45 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   // Reemplazos del APOYO: van debajo del bloque de Apoyo
   if (apoyoReps.length > 0) {
     block.appendChild(makeRepsSection(apoyoReps, 'Reemplazos del apoyo'));
+  }
+
+  // ===== Sección "GESTIÓN" (siempre visible en modo lectura): lista las personas
+  //       que están en el día más allá del equipo de intervención y apoyo.
+  //       Incluye G.MAT (Alvaro/Martín en sáb/dom no-feria) y extras (en feria).
+  //       Si no hay nadie en esa categoría, la sección no aparece. =====
+  {
+    const gestionPeople = [];
+    const usedSlots = new Set();
+    if (members) {
+      usedSlots.add(members.mainSlotIdx);
+      if (members.thirdSlotIdx !== null) usedSlots.add(members.thirdSlotIdx);
+    }
+    if (apoyo && apoyo.isFeria) usedSlots.add(1);
+    // Recolectar nombres en slots no usados
+    slots.forEach((s, i) => {
+      if (usedSlots.has(i) || !s) return;
+      [s[0], s[1]].forEach(n => { if (n) gestionPeople.push(n); });
+    });
+    if (gestionPeople.length > 0) {
+      const gestSec = document.createElement('div');
+      gestSec.className = 'di-section di-section-gestion';
+      const gestLbl = document.createElement('div');
+      gestLbl.className = 'di-label';
+      gestLbl.textContent = '📦 Gestión';
+      gestSec.appendChild(gestLbl);
+      const gestList = document.createElement('div');
+      gestList.className = 'di-gestion-list';
+      gestionPeople.forEach(name => {
+        const pill = document.createElement('div');
+        pill.className = 'di-team-pill di-gestion-pill';
+        pill.style.background = colorFor(name);
+        pill.style.color = textColorFor(name);
+        pill.textContent = name;
+        gestList.appendChild(pill);
+      });
+      gestSec.appendChild(gestList);
+      block.appendChild(gestSec);
+    }
   }
 
   // ===== Cuando el botón "Gestionar equipos" está activo (state.editingDay):

@@ -407,6 +407,30 @@ input, select { font: inherit; }
   display: flex; gap: 6px; align-items: center;
 }
 .di-extra-edit-row select { flex: 1; }
+
+/* Tiles: extras apilados en filas full-width (feria con 1-3 extras) */
+.slot-extra-stacked { margin-top: 2px; }
+.pill-extra-full {
+  display: block; width: 100%;
+  text-align: center;
+  font-size: 10px; font-weight: 600;
+  padding: 2px 4px;
+  border-radius: 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Sección "Gestión" en el detalle del día (después de Intervención + Apoyo) */
+.di-section-gestion { margin-top: 8px; }
+.di-gestion-list {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.di-gestion-pill {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 14px; font-weight: 600;
+  flex: 1; min-width: 120px;
+  text-align: center;
+}
 .di-edit-btn {
   background: #fff; color: #1f3a68;
   border: 1px solid #c9d4e8;
