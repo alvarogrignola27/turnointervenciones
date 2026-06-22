@@ -120,7 +120,7 @@
       <button data-action="install" id="install-btn" class="hidden">Instalar app</button>
       <button data-action="close">Cerrar</button>
       <div class="menu-version">
-        Versión <span id="app-version">44</span>
+        Versión <span id="app-version">45</span>
         <div class="sync-status-indicator idle" id="sync-status-indicator">⚪ Sin conectar</div>
       </div>
       <input type="file" id="import-file" accept="application/json" class="hidden">
@@ -195,7 +195,18 @@
         </div>
         <div class="stats-scope-toggle">
           <button class="scope-btn active" data-stats-scope="month">📅 Este mes</button>
+          <button class="scope-btn" data-stats-scope="range">📆 Rango</button>
           <button class="scope-btn" data-stats-scope="total">📚 Histórico total</button>
+        </div>
+        <div id="stats-range-pickers" class="stats-range-pickers hidden">
+          <label>Desde
+            <select id="stats-range-from-m"></select>
+            <select id="stats-range-from-y"></select>
+          </label>
+          <label>Hasta
+            <select id="stats-range-to-m"></select>
+            <select id="stats-range-to-y"></select>
+          </label>
         </div>
         <div id="stats-content" class="stats-content"></div>
         <div class="modal-footer">

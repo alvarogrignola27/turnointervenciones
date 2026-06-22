@@ -159,6 +159,10 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v45
+- **⭐ Botones rápidos Feriado / Feria judicial arriba del card**: ahora al tocar un día, arriba a la izquierda aparecen 2 botones cuadrados al lado del "✎ Editar": **☆** para feriado y **⚖** para feria judicial. Tocás una vez y queda marcado (el botón se pone en color: feriado amarillo, feria rojo). Volvés a tocar y lo quitás. Un paso menos: ya no hace falta abrir Gestionar día → Marcadores. Las opciones siguen estando en Gestionar día también, no se rompió nada.
+- **📆 Estadísticas con rango personalizado (Desde / Hasta)**: nueva pestaña "📆 Rango" en el modal de Estadísticas, entre "Este mes" e "Histórico total". Cuando la elegís, aparecen 4 selectores arriba (mes y año Desde, mes y año Hasta). Cambia automáticamente al ajustar los selectores. Calcula días por equipo y por persona en TODO el rango seleccionado, sumando los meses persistidos. Default: Enero-mes actual del año en curso. Ejemplo: Agosto-Octubre 2026 muestra "Sallas+Ibañez 15 días, Capdevila+Gomez 14, ...". Si elegís Desde > Hasta, las invierte automáticamente.
+
 ### v44
 - **🐛 BUG CRÍTICO ARREGLADO — feria judicial bloqueaba el día**: cuando marcabas un día sin datos como feria judicial (típico en enero o julio), un error JS rompía toda la renderización del panel. Síntomas: el botón seguía diciendo "Marcar como feria judicial" en lugar de cambiar a "Quitar", no aparecía "Replicar este día", no se podían cargar personas — el día quedaba "bloqueado" hasta hacer "Borrar mes actual". **Causa raíz**: en `buildDayInfoBlock`, cuando el día no tenía datos, `slots` era `null` en lugar de `[]` (incoherente con el resto del código). Después en la lógica de feria hacía `slots[1]` → crash con `Cannot read properties of null (reading '1')`. **Fix**: `slots` ahora siempre es array (`|| []` en lugar de `|| null`), coherente con el resto del código. Verificado: cero errores JS, panel re-renderiza completo, "Quitar feria judicial" y "Replicar" aparecen, dropdowns vacíos funcionan, se puede cargar gente.
 

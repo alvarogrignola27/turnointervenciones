@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '44';
+const APP_VERSION = '45';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -1505,7 +1505,50 @@ let _statsScope = 'month'; // 'month' | 'total'
 
 function openStatsSettings() {
   document.getElementById('stats-modal').classList.remove('hidden');
+  populateStatsRangePickers();
   renderStats();
+}
+
+// Popular los selects de Desde/Hasta con meses y años disponibles
+function populateStatsRangePickers() {
+  const fromM = document.getElementById('stats-range-from-m');
+  const fromY = document.getElementById('stats-range-from-y');
+  const toM = document.getElementById('stats-range-to-m');
+  const toY = document.getElementById('stats-range-to-y');
+  if (!fromM || !fromY || !toM || !toY) return;
+  // Defaults: si no hay rango seleccionado, "este año" (enero-diciembre del año actual)
+  if (_statsRangeFromY === null) {
+    _statsRangeFromY = state.year; _statsRangeFromM = 1;
+    _statsRangeToY = state.year; _statsRangeToM = state.month;
+  }
+  // Meses
+  [fromM, toM].forEach(sel => {
+    sel.innerHTML = '';
+    MES_NAMES.forEach((name, i) => {
+      const o = document.createElement('option');
+      o.value = String(i + 1); o.textContent = name;
+      sel.appendChild(o);
+    });
+  });
+  // Años: rango del año actual ±5
+  const baseY = state.year;
+  [fromY, toY].forEach(sel => {
+    sel.innerHTML = '';
+    for (let y = baseY - 5; y <= baseY + 5; y++) {
+      const o = document.createElement('option');
+      o.value = String(y); o.textContent = String(y);
+      sel.appendChild(o);
+    }
+  });
+  fromM.value = String(_statsRangeFromM);
+  fromY.value = String(_statsRangeFromY);
+  toM.value = String(_statsRangeToM);
+  toY.value = String(_statsRangeToY);
+  // Listeners (idempotentes — usamos onchange)
+  fromM.onchange = () => { _statsRangeFromM = parseInt(fromM.value, 10); renderStats(); };
+  fromY.onchange = () => { _statsRangeFromY = parseInt(fromY.value, 10); renderStats(); };
+  toM.onchange = () => { _statsRangeToM = parseInt(toM.value, 10); renderStats(); };
+  toY.onchange = () => { _statsRangeToY = parseInt(toY.value, 10); renderStats(); };
 }
 function closeStatsSettings() {
   document.getElementById('stats-modal').classList.add('hidden');
@@ -1545,6 +1588,59 @@ function countDaysByTeamInCurrentMonth() {
   }
   return { teams, counts };
 }
+
+// Cuenta días por equipo en un rango de meses (inclusive)
+function countDaysByTeamInRange(fromY, fromM, toY, toM) {
+  const cfg = loadGenConfig();
+  const teams = cfg.teams || [];
+  const counts = teams.map(() => 0);
+  let y = fromY, m = fromM;
+  while (y < toY || (y === toY && m <= toM)) {
+    const data = (y === state.year && m === state.month) ? state.data : loadMonthData(y, m);
+    const dim = new Date(y, m, 0).getDate();
+    for (let d = 1; d <= dim; d++) {
+      const slot = data[String(d)];
+      if (!slot || slot.length === 0) continue;
+      const main = slot[0];
+      if (!main) continue;
+      const idx = teams.findIndex(t =>
+        (t.a === main[0] && t.b === main[1]) ||
+        (t.a === main[1] && t.b === main[0])
+      );
+      if (idx >= 0) counts[idx]++;
+    }
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return { teams, counts };
+}
+
+// Cuenta días por persona en un rango de meses (inclusive)
+function countDaysByPersonInRange(fromY, fromM, toY, toM) {
+  const counts = {};
+  let y = fromY, m = fromM;
+  while (y < toY || (y === toY && m <= toM)) {
+    const data = (y === state.year && m === state.month) ? state.data : loadMonthData(y, m);
+    const dim = new Date(y, m, 0).getDate();
+    for (let d = 1; d <= dim; d++) {
+      const slot = data[String(d)];
+      if (!slot || slot.length === 0) continue;
+      slot.forEach(s => {
+        [s[0], s[1]].forEach(name => {
+          if (!name) return;
+          counts[name] = (counts[name] || 0) + 1;
+        });
+      });
+    }
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return counts;
+}
+
+// Estado del rango seleccionado (persistido por sesión)
+let _statsRangeFromY = null, _statsRangeFromM = null;
+let _statsRangeToY = null, _statsRangeToM = null;
 function renderStats() {
   const content = document.getElementById('stats-content');
   content.innerHTML = '';
@@ -1553,6 +1649,91 @@ function renderStats() {
   document.querySelectorAll('#stats-modal .scope-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.statsScope === _statsScope);
   });
+  // Mostrar pickers de rango sólo en scope 'range'
+  const pickers = document.getElementById('stats-range-pickers');
+  if (pickers) pickers.classList.toggle('hidden', _statsScope !== 'range');
+
+  if (_statsScope === 'range') {
+    // Normalizar rango (asegurar que from <= to)
+    let fromY = _statsRangeFromY, fromM = _statsRangeFromM;
+    let toY = _statsRangeToY, toM = _statsRangeToM;
+    if (fromY > toY || (fromY === toY && fromM > toM)) {
+      [fromY, toY] = [toY, fromY]; [fromM, toM] = [toM, fromM];
+    }
+    const intro = document.createElement('div');
+    intro.className = 'stats-intro';
+    intro.textContent = `Días asignados desde ${MES_NAMES[fromM-1]} ${fromY} hasta ${MES_NAMES[toM-1]} ${toY}`;
+    content.appendChild(intro);
+
+    // Por equipo en rango
+    const { teams, counts } = countDaysByTeamInRange(fromY, fromM, toY, toM);
+    const teamSection = document.createElement('div');
+    teamSection.className = 'stats-section';
+    const teamTitle = document.createElement('h3');
+    teamTitle.textContent = '🤝 Por equipo (intervención)';
+    teamSection.appendChild(teamTitle);
+    const maxCount = Math.max(1, ...counts);
+    teams.forEach((t, idx) => {
+      const teamName = [t.a, t.b, t.c].filter(Boolean).join(' + ');
+      const row = document.createElement('div');
+      row.className = 'stats-row';
+      const label = document.createElement('div');
+      label.className = 'stats-label';
+      label.textContent = teamName;
+      label.style.background = colorFor(t.a);
+      label.style.color = textColorFor(t.a);
+      const barWrap = document.createElement('div');
+      barWrap.className = 'stats-bar-wrap';
+      const bar = document.createElement('div');
+      bar.className = 'stats-bar';
+      bar.style.width = `${(counts[idx] / maxCount) * 100}%`;
+      bar.style.background = colorFor(t.a);
+      barWrap.appendChild(bar);
+      const num = document.createElement('div');
+      num.className = 'stats-num';
+      num.textContent = `${counts[idx]} días`;
+      row.appendChild(label);
+      row.appendChild(barWrap);
+      row.appendChild(num);
+      teamSection.appendChild(row);
+    });
+    content.appendChild(teamSection);
+
+    // Por persona en rango
+    const personCounts = countDaysByPersonInRange(fromY, fromM, toY, toM);
+    const personSection = document.createElement('div');
+    personSection.className = 'stats-section';
+    const personTitle = document.createElement('h3');
+    personTitle.textContent = '👤 Por persona';
+    personSection.appendChild(personTitle);
+    const sortedPeople = Object.keys(personCounts).sort((a, b) => personCounts[b] - personCounts[a]);
+    const maxP = Math.max(1, ...Object.values(personCounts));
+    sortedPeople.forEach(name => {
+      const row = document.createElement('div');
+      row.className = 'stats-row';
+      const label = document.createElement('div');
+      label.className = 'stats-label';
+      label.textContent = name;
+      label.style.background = colorFor(name);
+      label.style.color = textColorFor(name);
+      const barWrap = document.createElement('div');
+      barWrap.className = 'stats-bar-wrap';
+      const bar = document.createElement('div');
+      bar.className = 'stats-bar';
+      bar.style.width = `${(personCounts[name] / maxP) * 100}%`;
+      bar.style.background = colorFor(name);
+      barWrap.appendChild(bar);
+      const num = document.createElement('div');
+      num.className = 'stats-num';
+      num.textContent = `${personCounts[name]} d`;
+      row.appendChild(label);
+      row.appendChild(barWrap);
+      row.appendChild(num);
+      personSection.appendChild(row);
+    });
+    content.appendChild(personSection);
+    return;
+  }
 
   if (_statsScope === 'month') {
     const monthName = `${MES_NAMES[state.month-1]} ${state.year}`;
@@ -2513,10 +2694,48 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   const block = document.createElement('div');
   block.className = 'di-block';
 
-  // Botón "✎ Editar" arriba a la derecha (solo si estamos en el mes en curso)
+  // Barra superior con botones rápidos: Feriado / Feria judicial / Editar
+  // Los toggles permiten marcar/quitar feriado o feria sin abrir Gestionar día
   if (editable) {
     const editBar = document.createElement('div');
     editBar.className = 'di-edit-bar';
+
+    // Botón rápido FERIADO (☆ → ★)
+    const isFer = isFeriado(y, m, d);
+    const ferBtn = document.createElement('button');
+    ferBtn.className = 'di-quick-btn' + (isFer ? ' active-feriado' : '');
+    ferBtn.innerHTML = isFer ? '★' : '☆';
+    ferBtn.title = isFer ? 'Quitar feriado' : 'Marcar como feriado';
+    ferBtn.setAttribute('aria-label', ferBtn.title);
+    ferBtn.addEventListener('click', () => {
+      toggleFeriado(d);
+      rerenderActiveView();
+      if (state.view === 'month') renderDetail();
+      else if (state.view === 'day') renderDayView();
+    });
+    editBar.appendChild(ferBtn);
+
+    // Botón rápido FERIA JUDICIAL (⚖)
+    const isFj = isFeriaJud(y, m, d);
+    const fjBtn = document.createElement('button');
+    fjBtn.className = 'di-quick-btn' + (isFj ? ' active-feriajud' : '');
+    fjBtn.innerHTML = '⚖';
+    fjBtn.title = isFj ? 'Quitar feria judicial' : 'Marcar como feria judicial';
+    fjBtn.setAttribute('aria-label', fjBtn.title);
+    fjBtn.addEventListener('click', () => {
+      toggleFeriaJud(d);
+      rerenderActiveView();
+      if (state.view === 'month') renderDetail();
+      else if (state.view === 'day') renderDayView();
+    });
+    editBar.appendChild(fjBtn);
+
+    // Spacer para empujar Editar a la derecha
+    const spacer = document.createElement('div');
+    spacer.style.flex = '1';
+    editBar.appendChild(spacer);
+
+    // Botón Editar
     const editBtn = document.createElement('button');
     editBtn.className = 'di-edit-btn' + (state.editingDay ? ' active' : '');
     editBtn.innerHTML = state.editingDay ? '✓ Listo' : '✎ Editar';
