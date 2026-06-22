@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '53';
+const APP_VERSION = '54';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -674,7 +674,10 @@ function collectExtras(y, m, d) {
 function openAddExtraForm(day) {
   const overlay = document.createElement('div');
   overlay.className = 'modal';
-  const opts = OTROS.map(n => `<option value="${n}">${n}</option>`).join('');
+  // Opciones: ROSTER y OTROS separados en grupos visuales para que sea claro.
+  const teamOpts = ROSTER.map(n => `<option value="${n}">${n}</option>`).join('');
+  const otrosOpts = OTROS.map(n => `<option value="${n}">${n}</option>`).join('');
+  const opts = `<optgroup label="Equipos">${teamOpts}</optgroup><optgroup label="Otros">${otrosOpts}</optgroup>`;
   overlay.innerHTML = `
     <div class="modal-backdrop"></div>
     <div class="modal-card modal-card-small">
@@ -704,14 +707,25 @@ function openAddExtraForm(day) {
     if (!name) { close(); return; }
     snapshotDayBeforeEdit(day);
     if (!state.data[String(day)]) state.data[String(day)] = [];
-    // Buscar primero un slot con un hueco
+    const ds = state.data[String(day)];
+    // En FERIA, slot 0 = intervención y slot 1 = apoyo: no los tocamos.
+    // Buscar hueco en slots 2+ (extras propiamente dichos).
+    const isFeria = isFeriaJud(state.year, state.month, day);
     let filled = false;
-    for (const s of state.data[String(day)]) {
+    const startSlot = isFeria ? 2 : 0;
+    for (let i = startSlot; i < ds.length; i++) {
+      const s = ds[i];
+      if (!s) continue;
       if (!s[0]) { s[0] = name; filled = true; break; }
       if (!s[1]) { s[1] = name; filled = true; break; }
     }
     if (!filled) {
-      state.data[String(day)].push([name, null]);
+      // En feria, si no hay slots de extras todavía, aseguramos que exista al menos
+      // slot 0 y slot 1 (vacíos si hace falta) para que el nuevo vaya en slot 2+
+      if (isFeria) {
+        while (ds.length < 2) ds.push([null, null]);
+      }
+      ds.push([name, null]);
     }
     saveMonthData(state.year, state.month, state.data);
     rerenderActiveView();
@@ -3212,9 +3226,13 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
       }
     });
 
-    // TERCER MIEMBRO (equipos de 3 personas)
-    if (thirdMember || thirdMemberConfigName) {
-      const thirdName = thirdMember ? thirdMember.name : thirdMemberConfigName;
+    // TERCER MIEMBRO (equipos de 3 personas) — SOLO si está realmente en los slots.
+    // Antes mostrábamos también `thirdMemberConfigName` cuando el equipo es de 3 en
+    // la config pero no estaba asignado al día — eso hacía que después de borrarlo
+    // con la × siguiera apareciendo como pill vacía. Ahora si no está en slots,
+    // no se muestra (el usuario puede re-agregarlo con el "+").
+    if (thirdMember) {
+      const thirdName = thirdMember.name;
       // En modo edición wrappeo la pill con un container para incluir el × de borrar
       const thirdWrap = document.createElement('div');
       thirdWrap.className = 'di-team-pill-third-wrap';
@@ -3497,8 +3515,9 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
       }
     });
 
-    // 3er miembro del equipo de APOYO (si es de 3 personas)
-    if (apoyo.members && apoyo.members.c) {
+    // 3er miembro del equipo de APOYO (si es de 3 personas y está en los slots del día).
+    // Si fue borrado y no está más en slots, no se muestra (mismo fix que en intervención).
+    if (apoyo.members && apoyo.members.c && apoyo.members.thirdSlotIdx !== null) {
       const thirdName = apoyo.members.c;
       const thirdSlotIdx = apoyo.members.thirdSlotIdx;
       const thirdWrap = document.createElement('div');
@@ -3631,6 +3650,98 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   //       mostramos abajo Reemplazos + Gestión de Materiales (este último solo
   //       en sábado/domingo no-feria, ya que ahí no aplica). =====
   if (editable && state.editingDay) {
+    // --- Sección EXTRAS (solo en FERIA): muestra todos los slots adicionales más
+    //     allá del equipo y el apoyo. Cada extra es editable (dropdown) y borrable (×).
+    //     Se ofrece "+ Agregar extra" para sumar más personas (típico en feria con 5-6).
+    if (isFeriaJud(y, m, d)) {
+      const extrasSection = document.createElement('div');
+      extrasSection.className = 'di-edit-extra-section';
+      const extrasLabel = document.createElement('div');
+      extrasLabel.className = 'manage-section-label';
+
+      // Recolectar TODAS las personas en slots 2+ (no solo OTROS — todas).
+      // En feria, slot 0 = intervención, slot 1 = apoyo, slot 2+ = extras.
+      const allExtras = [];
+      for (let si = 2; si < slots.length; si++) {
+        const s = slots[si];
+        if (!s) continue;
+        for (let sideIdx = 0; sideIdx < 2; sideIdx++) {
+          if (s[sideIdx]) allExtras.push({ name: s[sideIdx], slotIdx: si, sideIdx });
+        }
+      }
+      extrasLabel.textContent = `✨ Extras${allExtras.length > 0 ? ` (${allExtras.length})` : ''}`;
+      extrasSection.appendChild(extrasLabel);
+
+      // Lista de extras existentes: cada uno como dropdown editable + ×
+      if (allExtras.length > 0) {
+        const extrasList = document.createElement('div');
+        extrasList.className = 'di-extras-edit-list';
+        allExtras.forEach(ex => {
+          const row = document.createElement('div');
+          row.className = 'di-extra-edit-row';
+
+          const sel = document.createElement('select');
+          sel.className = 'di-team-pill di-select-pill';
+          sel.style.background = colorFor(ex.name);
+          sel.style.color = textColorFor(ex.name);
+          sel.style.fontWeight = '600';
+          // En feria, dropdown completo (Equipos + Otros) para poder elegir cualquiera
+          populateNamesDropdown(sel, ex.name, true);
+          sel.addEventListener('change', (e) => {
+            const newName = e.target.value || null;
+            snapshotDayBeforeEdit(d);
+            if (!state.data[String(d)] || !state.data[String(d)][ex.slotIdx]) return;
+            if (newName === null) {
+              // Borrar este lado del slot
+              state.data[String(d)][ex.slotIdx][ex.sideIdx] = null;
+              const s = state.data[String(d)][ex.slotIdx];
+              if (!s[0] && !s[1]) state.data[String(d)].splice(ex.slotIdx, 1);
+            } else {
+              state.data[String(d)][ex.slotIdx][ex.sideIdx] = newName;
+            }
+            cleanupDay(d);
+            saveMonthData(state.year, state.month, state.data);
+            rerenderActiveView();
+            if (state.view === 'month') renderDetail();
+            else if (state.view === 'day') renderDayView();
+          });
+          row.appendChild(sel);
+
+          const del = document.createElement('button');
+          del.className = 'di-pill-delete';
+          del.textContent = '×';
+          del.title = `Quitar a ${ex.name}`;
+          del.addEventListener('click', () => {
+            if (!confirm(`¿Quitar a ${ex.name}?`)) return;
+            snapshotDayBeforeEdit(d);
+            if (state.data[String(d)] && state.data[String(d)][ex.slotIdx]) {
+              state.data[String(d)][ex.slotIdx][ex.sideIdx] = null;
+              const s = state.data[String(d)][ex.slotIdx];
+              if (!s[0] && !s[1]) state.data[String(d)].splice(ex.slotIdx, 1);
+            }
+            cleanupDay(d);
+            saveMonthData(state.year, state.month, state.data);
+            rerenderActiveView();
+            if (state.view === 'month') renderDetail();
+            else if (state.view === 'day') renderDayView();
+            showToast(`✓ ${ex.name} quitado`);
+          });
+          row.appendChild(del);
+          extrasList.appendChild(row);
+        });
+        extrasSection.appendChild(extrasList);
+      }
+
+      // Botón "+ Agregar extra" — abre modal con ROSTER + OTROS
+      const addExtraBtn = document.createElement('button');
+      addExtraBtn.className = 'manage-item';
+      addExtraBtn.innerHTML = '+ Agregar extra';
+      addExtraBtn.addEventListener('click', () => openAddExtraForm(d));
+      extrasSection.appendChild(addExtraBtn);
+
+      block.appendChild(extrasSection);
+    }
+
     // --- Sección REEMPLAZOS ---
     const repsSection = document.createElement('div');
     repsSection.className = 'di-edit-extra-section';

@@ -159,6 +159,10 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v54
+- **🐛 Bug del 3er miembro (Martinez) arreglado**: cuando borrabas a Martinez (o cualquier 3er miembro de un equipo de 3) con la × del pill, se borraba bien de los datos pero el pill vacío seguía apareciendo en el panel. Causa: el código mostraba el 3er miembro si estaba en los slots del día O si la config del equipo lo definía como de 3 personas. Como la config siempre dice "Sallas+Ibañez+Martinez", aunque borrabas Martinez del día específico, igual aparecía como pill vacía. **Fix**: ahora el 3er miembro solo se muestra si está realmente en los slots del día. Si lo borrás, desaparece. Para re-agregarlo usás el "+" del equipo de intervención.
+- **✨ Sección Extras visible en feria judicial dentro de "Gestionar equipos"**: cuando un día está marcado como feria y activás "Gestionar equipos", ahora aparece una sección **✨ EXTRAS (N)** entre los equipos y los Reemplazos. Cada extra se ve como un dropdown editable (con el color de la persona) + un × para borrarlo. Abajo hay un botón "+ Agregar extra" que abre un picker con grupos "Equipos" (ROSTER completo) y "Otros" (Juan Diaz Loza, Juan Pablo Godoy, MARTIN, ALVARO). Los extras se agregan en los slots 2+ (no tocan Intervención=slot 0 ni Apoyo=slot 1). Permite los casos típicos de feria con 5-6 personas trabajando el mismo día. Fuera de feria, la sección no aparece (no aplica).
+
 ### v53
 - **🚀 Anti-cache agresivo para que las actualizaciones lleguen YA**: arregla el caso donde el dispositivo no detecta las versiones nuevas y queda atascado en una vieja. Tres capas:
   1. **Meta-tags `Cache-Control: no-cache, no-store, must-revalidate`** en el HTML — el navegador siempre revalida el index con el servidor.

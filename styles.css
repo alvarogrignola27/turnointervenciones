@@ -397,6 +397,16 @@ input, select { font: inherit; }
   font-style: italic;
   line-height: 1.4;
 }
+
+/* Lista editable de extras (en Gestionar equipos, solo feria) */
+.di-extras-edit-list {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-bottom: 8px;
+}
+.di-extra-edit-row {
+  display: flex; gap: 6px; align-items: center;
+}
+.di-extra-edit-row select { flex: 1; }
 .di-edit-btn {
   background: #fff; color: #1f3a68;
   border: 1px solid #c9d4e8;
