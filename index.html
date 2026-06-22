@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#1f3a68">
+  <!-- Anti-cache: estos meta-tags piden al navegador NO cachear el HTML, así
+       siempre tenemos la última versión y el SW puede detectar actualizaciones rápido. -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Turnos">
@@ -11,7 +16,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=53">
   <!-- Firebase SDK (compat) - se conecta solo si está configurado -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -122,7 +127,8 @@
 
       <div data-section="data" class="menu-section">
         <div class="menu-section-title">☁️ Datos y nube</div>
-        <button data-action="check-update">🔄 Buscar actualización de la app</button>
+        <button data-action="check-update" class="menu-item-highlight">🔄 Forzar actualización (limpiar caché)</button>
+        <div class="menu-hint">¿No ves los últimos cambios? Tocá esto para descargar la versión más nueva.</div>
         <button data-action="sync-settings">☁️ Sincronización en la nube</button>
         <button data-action="export">📦 Exportar datos (JSON)</button>
         <button data-action="import">📥 Importar datos (JSON)</button>
@@ -133,7 +139,7 @@
       <div class="menu-version">
         <div class="version-badge ok" id="version-badge">
           <span class="version-dot">●</span>
-          <span class="version-label">Versión <span id="app-version">52</span> · actualizada</span>
+          <span class="version-label">Versión <span id="app-version">53</span> · actualizada</span>
         </div>
         <button class="version-update-btn hidden" id="version-update-btn">
           🔴 Hay una versión nueva — Tocar para actualizar
@@ -316,8 +322,8 @@
     </div>
   </div>
 
-  <script src="data.js"></script>
-  <script src="app.js"></script>
+  <script src="data.js?v=53"></script>
+  <script src="app.js?v=53"></script>
   <script>
     // === Detección de actualizaciones del Service Worker ===
     // Mantiene una referencia al SW "esperando" (instalado pero no activo todavía).
@@ -342,7 +348,10 @@
 
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('service-worker.js').then((reg) => {
+        // updateViaCache: 'none' fuerza al navegador a chequear si el SW cambió en el
+        // servidor SIN usar la cache HTTP. Sin esto, el browser puede servir el SW
+        // viejo desde su cache hasta 24h, dejando al usuario con versión vieja.
+        navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' }).then((reg) => {
           // Ya hay un SW esperando al cargar (caso típico: actualización detectada en otra pestaña)
           if (reg.waiting && navigator.serviceWorker.controller) {
             setUpdateAvailable(reg);

@@ -2,7 +2,7 @@
 // Estrategia: network-first para HTML/JS (para que las nuevas versiones lleguen
 // rápido), cache-first para assets estáticos. Firebase nunca se cachea.
 
-const CACHE_NAME = 'turnos-v52';
+const CACHE_NAME = 'turnos-v53';
 const ASSETS = [
   './',
   './index.html',
@@ -59,7 +59,10 @@ self.addEventListener('fetch', (event) => {
   const isCode = url.endsWith('.html') || url.endsWith('.js') || url.endsWith('.css') || url.endsWith('/');
   if (isCode) {
     event.respondWith(
-      fetch(event.request)
+      // cache:'no-cache' fuerza al SW a saltearse la cache HTTP del navegador
+      // y siempre revalidar con el servidor. Esto + updateViaCache:'none' en el
+      // register garantiza que las actualizaciones lleguen rápido.
+      fetch(event.request, { cache: 'no-cache' })
         .then((response) => {
           if (response && response.status === 200 && response.type === 'basic') {
             const clone = response.clone();

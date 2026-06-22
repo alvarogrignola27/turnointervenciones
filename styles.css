@@ -382,6 +382,21 @@ input, select { font: inherit; }
   .update-banner-text { width: 100%; }
   .update-banner-btn { width: 100%; }
 }
+
+/* Botón destacado en el menú (Forzar actualización) */
+.menu-item-highlight {
+  background: #fef3c7 !important;
+  color: #92400e !important;
+  border: 1px solid #fcd34d !important;
+  font-weight: 600 !important;
+}
+.menu-hint {
+  font-size: 11px;
+  color: #6c6c70;
+  padding: 4px 12px 8px;
+  font-style: italic;
+  line-height: 1.4;
+}
 .di-edit-btn {
   background: #fff; color: #1f3a68;
   border: 1px solid #c9d4e8;

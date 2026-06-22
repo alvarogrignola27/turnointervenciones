@@ -159,6 +159,14 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v53
+- **🚀 Anti-cache agresivo para que las actualizaciones lleguen YA**: arregla el caso donde el dispositivo no detecta las versiones nuevas y queda atascado en una vieja. Tres capas:
+  1. **Meta-tags `Cache-Control: no-cache, no-store, must-revalidate`** en el HTML — el navegador siempre revalida el index con el servidor.
+  2. **`updateViaCache: 'none'`** en el registro del Service Worker — el navegador NO usa su caché HTTP para chequear si el SW cambió (antes podía servir el SW viejo hasta 24 horas).
+  3. **`fetch(..., { cache: 'no-cache' })`** en el SW para HTML/JS/CSS — el SW también saltea la caché HTTP al ir a buscar archivos nuevos.
+  4. **Cache-busting con `?v=53`** en los imports de `app.js`, `data.js` y `styles.css` desde el HTML — cada release cambia el sufijo y fuerza descarga fresca.
+- **🟠 Botón "Forzar actualización" más visible y explicado**: renombrado de "Buscar actualización" a "**🔄 Forzar actualización (limpiar caché)**", con estilo destacado en amarillo y texto explicativo abajo: "¿No ves los últimos cambios? Tocá esto para descargar la versión más nueva." Internamente desregistra TODOS los SW, borra TODAS las caches y recarga con cache-bust. Garantizado.
+
 ### v52
 - **🔴 Banner de actualización movido arriba de toda la app**: el aviso de "nueva versión disponible" ya no vive sólo dentro del menú Datos. Ahora aparece como un banner rojo full-width en el tope absoluto de la pantalla, sticky (se queda visible aunque scrollees), imposible de pasar por alto. Cuando hay update aparece automáticamente, con texto "● Hay una versión nueva disponible. Tocá para actualizar." y un botón blanco grande "↻ Actualizar ahora". El badge verde/rojo en el menú Datos sigue funcionando como antes (confirmación adicional del estado).
 - **Verificación de feria con OTROS en dropdowns**: en v51 los dropdowns en feria ya muestran "Equipos: 15 + Otros: 4" — si no se veían era porque el dispositivo tenía cacheada una versión anterior. Una vez actualizado a v52 (con el banner imposible de ignorar), el problema queda resuelto definitivamente.
