@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '46';
+const APP_VERSION = '47';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -2652,11 +2652,10 @@ function renderDayView() {
     }
   }
 
-  // Panel "⚙️ Gestionar día" — mismo helper que se usa en el panel del Mes,
-  // así desde acá podemos modificar feriado, feria judicial, reemplazos y filas.
-  if (y === state.year && m === state.month) {
-    card.appendChild(buildManagePanel(d));
-  } else {
+  // El panel "Gestionar día" se removió en v47 — sus secciones (Extras, Replicar, Marcadores)
+  // están ahora integradas en el botón "Gestionar equipos" arriba del card y los botones
+  // rápidos ☆/⚖.
+  if (y !== state.year || m !== state.month) {
     // Si estamos viendo un día de otro mes, ofrecemos cambiar al mes para editar
     const note = document.createElement('button');
     note.className = 'dv-edit-btn';
@@ -3284,6 +3283,72 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     repsSection.appendChild(buildReplacementsBlock(d));
     block.appendChild(repsSection);
 
+    // --- Sección EXTRAS (personas OTROS adicionales — sobre todo para feria) ---
+    const extras = collectExtras(y, m, d);
+    const extrasSection = document.createElement('div');
+    extrasSection.className = 'di-edit-extra-section';
+    const extrasLabel = document.createElement('div');
+    extrasLabel.className = 'manage-section-label';
+    extrasLabel.textContent = `✨ Extras${extras.length > 0 ? ` (${extras.length})` : ''}`;
+    extrasSection.appendChild(extrasLabel);
+    if (extras.length > 0) {
+      const extrasList = document.createElement('div');
+      extrasList.className = 'extras-list';
+      extras.forEach(({ name, slotIdx, sideIdx }) => {
+        const row = document.createElement('div');
+        row.className = 'extra-row';
+        const pill = document.createElement('span');
+        pill.className = 'extra-pill';
+        pill.style.background = colorFor(name);
+        pill.style.color = textColorFor(name);
+        pill.textContent = name;
+        row.appendChild(pill);
+        const del = document.createElement('button');
+        del.className = 'extra-del';
+        del.textContent = '×';
+        del.title = `Quitar a ${name}`;
+        del.addEventListener('click', () => {
+          if (!confirm(`¿Quitar a ${name} de los extras del día ${d}?`)) return;
+          snapshotDayBeforeEdit(d);
+          if (state.data[String(d)] && state.data[String(d)][slotIdx]) {
+            state.data[String(d)][slotIdx][sideIdx] = null;
+            const s = state.data[String(d)][slotIdx];
+            if (!s[0] && !s[1]) {
+              state.data[String(d)].splice(slotIdx, 1);
+              if (state.data[String(d)].length === 0) delete state.data[String(d)];
+            }
+          }
+          saveMonthData(state.year, state.month, state.data);
+          rerenderActiveView();
+          if (state.view === 'month') renderDetail();
+          else if (state.view === 'day') renderDayView();
+          showToast(`✓ ${name} quitado`);
+        });
+        row.appendChild(del);
+        extrasList.appendChild(row);
+      });
+      extrasSection.appendChild(extrasList);
+    }
+    const addExtraBtn = document.createElement('button');
+    addExtraBtn.className = 'manage-item';
+    addExtraBtn.innerHTML = '+ Agregar extra';
+    addExtraBtn.addEventListener('click', () => openAddExtraForm(d));
+    extrasSection.appendChild(addExtraBtn);
+    block.appendChild(extrasSection);
+
+    // --- Botón REPLICAR DÍA (solo si está marcado como feria judicial) ---
+    if (isFeriaJud(y, m, d)) {
+      const repSection = document.createElement('div');
+      repSection.className = 'di-edit-extra-section';
+      const repBtn = document.createElement('button');
+      repBtn.className = 'manage-item';
+      repBtn.innerHTML = '📋 Replicar este día en un rango';
+      repBtn.title = 'Copiar las personas asignadas hoy a varios días consecutivos';
+      repBtn.addEventListener('click', () => openReplicateDayForm(d));
+      repSection.appendChild(repBtn);
+      block.appendChild(repSection);
+    }
+
     // --- Sección GESTIÓN DE MATERIALES (sábado/domingo no-feria) ---
     const dow = new Date(y, m - 1, d).getDay();
     const isWeekendDay = (dow === 0 || dow === 6);
@@ -3410,8 +3475,8 @@ function renderDetail() {
   // Bloque "Equipo de intervención + Apoyo" (sólo lectura)
   card.appendChild(buildDayInfoBlock(state.year, state.month, day, { useStateData: true }));
 
-  // Panel "Gestionar día" (mismo helper que la vista Día — comparten experiencia)
-  card.appendChild(buildManagePanel(day));
+  // Panel "Gestionar día" removido en v47 — sus secciones (Extras + Replicar + Marcadores)
+  // están integradas en buildDayInfoBlock (botones rápidos ☆/⚖ y modo "Gestionar equipos").
 
   // Botón Deshacer (solo visible en modo edición y si hay historia)
   if (state.editingDay && hasHistory(state.year, state.month, day)) {

@@ -159,6 +159,19 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v47
+- **🧹 "Gestionar día" eliminado**: el panel colapsable "⚙️ Gestionar día" se removió por completo. Todas sus opciones quedaron integradas arriba a simple vista:
+  - **Feriado** → botón rápido ☆ en la barra superior
+  - **Feria judicial** → botón rápido ⚖ en la barra superior
+  - **Reemplazos** → dentro de "Gestionar equipos"
+  - **Extras** → dentro de "Gestionar equipos"
+  - **Replicar día (feria)** → dentro de "Gestionar equipos" (solo cuando el día está marcado como feria)
+- **Estructura final del card del día**:
+  - Barra: `[☆] [⚖]` ··· `[✎ Gestionar equipos]`
+  - Equipo de Intervención (con `+` en edit)
+  - Equipo de Apoyo (con `+` en edit)
+  - Al activar Gestionar equipos: **Reemplazos** → **Extras** → **G.MAT** (Sáb/Dom) → **Replicar** (Feria)
+
 ### v46
 - **🔧 "Editar" renombrado a "Gestionar equipos"**: el botón en la barra superior del card del día ahora dice **"✎ Gestionar equipos"** (en lugar de "Editar"). Hace lo mismo: activa los dropdowns para cambiar gente y los botones "+" para agregar.
 - **↪ Reemplazos movido al modo "Gestionar equipos"**: cuando activás el botón, además de los dropdowns aparece la sección **Reemplazos** justo debajo de los equipos, con su botón "+ Agregar reemplazo". Antes estaba dentro de "Gestionar día"; ahora queda más cerca de los equipos.
