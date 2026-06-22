@@ -257,6 +257,41 @@ input, select { font: inherit; }
   margin-top: 6px;
   font-style: italic;
 }
+
+/* Modal de ausencias */
+.absence-row {
+  display: flex; align-items: center;
+  background: #fff;
+  border: 1px solid #e5e5ea;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+}
+.absence-del {
+  background: #fde0e0; color: #b71c1c;
+  border: none;
+  width: 32px; height: 32px;
+  border-radius: 6px;
+  font-size: 18px; font-weight: 700; line-height: 1;
+  cursor: pointer;
+}
+.absence-del:active { transform: scale(0.95); }
+.absence-form {
+  margin-top: 14px;
+  padding: 12px;
+  background: #f8f9fb;
+  border-radius: 8px;
+  border: 1px dashed #c9d4e8;
+}
+.absence-form select,
+.absence-form input[type="date"] {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #c9d4e8;
+  font-size: 14px;
+  background: #fff;
+}
 .di-edit-btn {
   background: #fff; color: #1f3a68;
   border: 1px solid #c9d4e8;

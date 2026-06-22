@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '47';
+const APP_VERSION = '48';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -24,6 +24,9 @@ const WEEKEND_RECENT_KEY = 'turnos:gen_weekend_recent';
 const WEEKEND_RECENT_MIN_GAP = 6;
 // Último ALVARO/MARTIN asignado a Gestión de Materiales (alternancia finde a finde).
 const GMAT_LAST_KEY = 'turnos:gen_last_gmat';
+// Ausencias planificadas: lista de objetos { name, from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' }
+// El generador excluye los equipos cuyos miembros estén ausentes en el día asignado.
+const ABSENCES_KEY = 'turnos:absences';
 const TEAM_HISTORY_KEY = 'turnos:gen_team_history';
 const PERSON_COLORS_KEY = 'turnos:person_colors';
 const PERSON_COLORS_MONTH_PREFIX = 'turnos:person_colors_month:';
@@ -289,6 +292,40 @@ function birthdaysOn(y, m, d) {
     if (b[person] === target) list.push(person);
   }
   return list;
+}
+
+// ---------- AUSENCIAS PLANIFICADAS ----------
+// Cargar/guardar/manipular lista de ausencias.
+// Cada ausencia: { name: 'Frias', from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' }
+function loadAbsences() {
+  try {
+    const v = JSON.parse(localStorage.getItem(ABSENCES_KEY) || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch { return []; }
+}
+function saveAbsences(arr) {
+  try {
+    localStorage.setItem(ABSENCES_KEY, JSON.stringify(arr || []));
+    scheduleCloudPush();
+  } catch {}
+}
+// Formato YYYY-MM-DD desde y/m/d numéricos
+function ymdString(y, m, d) {
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+// Set de nombres ausentes en el día y, m, d (lookup contra una lista ya cargada)
+function absentPeopleOn(y, m, d, absences) {
+  const target = ymdString(y, m, d);
+  const out = new Set();
+  (absences || loadAbsences()).forEach(a => {
+    if (!a || !a.name || !a.from || !a.to) return;
+    if (a.from <= target && target <= a.to) out.add(a.name);
+  });
+  return out;
+}
+// ¿Está ausente la persona `name` en el día y, m, d?
+function isAbsent(name, y, m, d) {
+  return absentPeopleOn(y, m, d).has(name);
 }
 // Devuelve los índices de equipos que TIENEN alguien cumpleaños el día y, m, d
 function teamsWithBirthdayOn(teams, y, m, d) {
@@ -1496,8 +1533,93 @@ async function checkForUpdate() {
   }
 }
 
+// ---------- Modal de Ausencias ----------
+function openAbsencesModal() {
+  document.getElementById('absences-modal').classList.remove('hidden');
+  populateAbsencePersonPicker();
+  renderAbsencesList();
+}
+function closeAbsencesModal() {
+  document.getElementById('absences-modal').classList.add('hidden');
+}
+function populateAbsencePersonPicker() {
+  const sel = document.getElementById('absence-person');
+  if (!sel) return;
+  sel.innerHTML = '';
+  [...ROSTER, ...OTROS].forEach(name => {
+    const o = document.createElement('option');
+    o.value = name; o.textContent = name;
+    sel.appendChild(o);
+  });
+}
+function renderAbsencesList() {
+  const list = document.getElementById('absences-list');
+  if (!list) return;
+  const absences = loadAbsences();
+  list.innerHTML = '';
+  if (absences.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'padding:14px;color:#8e8e93;font-size:13px;text-align:center;';
+    empty.textContent = 'No hay ausencias cargadas.';
+    list.appendChild(empty);
+    return;
+  }
+  // Ordenar por fecha "from" descendente (la más reciente primero)
+  const sorted = [...absences].sort((a, b) => b.from.localeCompare(a.from));
+  sorted.forEach(a => {
+    const row = document.createElement('div');
+    row.className = 'absence-row';
+    const left = document.createElement('div');
+    left.style.flex = '1';
+    const name = document.createElement('div');
+    name.style.cssText = 'font-weight:600;font-size:14px;color:#1c1c1e;';
+    name.textContent = a.name;
+    const range = document.createElement('div');
+    range.style.cssText = 'font-size:12px;color:#6c6c70;margin-top:2px;';
+    range.textContent = `${a.from} → ${a.to}`;
+    left.appendChild(name);
+    left.appendChild(range);
+    row.appendChild(left);
+    const del = document.createElement('button');
+    del.className = 'absence-del';
+    del.textContent = '×';
+    del.title = 'Quitar ausencia';
+    del.addEventListener('click', () => {
+      if (!confirm(`¿Quitar ausencia de ${a.name} (${a.from} → ${a.to})?`)) return;
+      const all = loadAbsences();
+      const realIdx = all.findIndex(x => x.name === a.name && x.from === a.from && x.to === a.to);
+      if (realIdx >= 0) all.splice(realIdx, 1);
+      saveAbsences(all);
+      renderAbsencesList();
+      showToast('Ausencia quitada');
+    });
+    row.appendChild(del);
+    list.appendChild(row);
+  });
+}
+function addAbsenceFromForm() {
+  const name = document.getElementById('absence-person').value;
+  const from = document.getElementById('absence-from').value;
+  const to = document.getElementById('absence-to').value;
+  if (!name || !from || !to) {
+    alert('Completá persona, desde y hasta.');
+    return;
+  }
+  if (from > to) {
+    alert('La fecha "Desde" no puede ser posterior a "Hasta".');
+    return;
+  }
+  const absences = loadAbsences();
+  absences.push({ name, from, to });
+  saveAbsences(absences);
+  document.getElementById('absence-from').value = '';
+  document.getElementById('absence-to').value = '';
+  renderAbsencesList();
+  showToast(`✓ ${name} ausente del ${from} al ${to}`);
+}
+
 // ---------- Modal de Estadísticas ----------
-let _statsScope = 'month'; // 'month' | 'total'
+let _statsScope = 'month'; // 'month' | 'range' | 'total'
 
 function openStatsSettings() {
   document.getElementById('stats-modal').classList.remove('hidden');
@@ -3283,59 +3405,6 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     repsSection.appendChild(buildReplacementsBlock(d));
     block.appendChild(repsSection);
 
-    // --- Sección EXTRAS (personas OTROS adicionales — sobre todo para feria) ---
-    const extras = collectExtras(y, m, d);
-    const extrasSection = document.createElement('div');
-    extrasSection.className = 'di-edit-extra-section';
-    const extrasLabel = document.createElement('div');
-    extrasLabel.className = 'manage-section-label';
-    extrasLabel.textContent = `✨ Extras${extras.length > 0 ? ` (${extras.length})` : ''}`;
-    extrasSection.appendChild(extrasLabel);
-    if (extras.length > 0) {
-      const extrasList = document.createElement('div');
-      extrasList.className = 'extras-list';
-      extras.forEach(({ name, slotIdx, sideIdx }) => {
-        const row = document.createElement('div');
-        row.className = 'extra-row';
-        const pill = document.createElement('span');
-        pill.className = 'extra-pill';
-        pill.style.background = colorFor(name);
-        pill.style.color = textColorFor(name);
-        pill.textContent = name;
-        row.appendChild(pill);
-        const del = document.createElement('button');
-        del.className = 'extra-del';
-        del.textContent = '×';
-        del.title = `Quitar a ${name}`;
-        del.addEventListener('click', () => {
-          if (!confirm(`¿Quitar a ${name} de los extras del día ${d}?`)) return;
-          snapshotDayBeforeEdit(d);
-          if (state.data[String(d)] && state.data[String(d)][slotIdx]) {
-            state.data[String(d)][slotIdx][sideIdx] = null;
-            const s = state.data[String(d)][slotIdx];
-            if (!s[0] && !s[1]) {
-              state.data[String(d)].splice(slotIdx, 1);
-              if (state.data[String(d)].length === 0) delete state.data[String(d)];
-            }
-          }
-          saveMonthData(state.year, state.month, state.data);
-          rerenderActiveView();
-          if (state.view === 'month') renderDetail();
-          else if (state.view === 'day') renderDayView();
-          showToast(`✓ ${name} quitado`);
-        });
-        row.appendChild(del);
-        extrasList.appendChild(row);
-      });
-      extrasSection.appendChild(extrasList);
-    }
-    const addExtraBtn = document.createElement('button');
-    addExtraBtn.className = 'manage-item';
-    addExtraBtn.innerHTML = '+ Agregar extra';
-    addExtraBtn.addEventListener('click', () => openAddExtraForm(d));
-    extrasSection.appendChild(addExtraBtn);
-    block.appendChild(extrasSection);
-
     // --- Botón REPLICAR DÍA (solo si está marcado como feria judicial) ---
     if (isFeriaJud(y, m, d)) {
       const repSection = document.createElement('div');
@@ -4551,6 +4620,24 @@ function generateMonth() {
     return blocked;
   }
 
+  // Análogo a teamsBlockedByBirthday pero para AUSENCIAS planificadas.
+  // Si algún miembro del equipo está ausente en alguno de los días, el equipo se bloquea.
+  function teamsBlockedByAbsence(days) {
+    const blocked = new Set();
+    const absences = loadAbsences();
+    if (absences.length === 0) return blocked;
+    for (const dd of days) {
+      if (dd === null) continue;
+      const absentNames = absentPeopleOn(y, m, dd, absences);
+      if (absentNames.size === 0) continue;
+      teams.forEach((t, i) => {
+        const members = [t.a, t.b, t.c].filter(Boolean);
+        if (members.some(name => absentNames.has(name))) blocked.add(i);
+      });
+    }
+    return blocked;
+  }
+
   function canUse(idx, addDays) {
     const max = effectiveMaxes[idx] != null ? effectiveMaxes[idx] : Infinity;
     return (usage[idx] + addDays) <= max;
@@ -4769,6 +4856,7 @@ function generateMonth() {
       const hardExclude = new Set(used);
       recentWeekends.slice(-WEEKEND_RECENT_MIN_GAP).forEach(i => hardExclude.add(i));
       teamsBlockedByBirthday([wk[5], wk[6]]).forEach(i => hardExclude.add(i));
+      teamsBlockedByAbsence([wk[5], wk[6]]).forEach(i => hardExclude.add(i));
 
       // Buscar siguiente equipo en rotación que cumpla
       let attempts = 0;
@@ -4786,6 +4874,7 @@ function generateMonth() {
         const softExclude = new Set(used);
         recentWeekends.slice(-3).forEach(i => softExclude.add(i));
         teamsBlockedByBirthday([wk[5], wk[6]]).forEach(i => softExclude.add(i));
+        teamsBlockedByAbsence([wk[5], wk[6]]).forEach(i => softExclude.add(i));
         attempts = 0;
         while (attempts < teams.length * 2) {
           const candidate = weekendIdx % teams.length;
@@ -4866,6 +4955,7 @@ function generateMonth() {
       restExclude.forEach(i => hardExclude.add(i));
       if (lastSlotTeam.monTue >= 0) hardExclude.add(lastSlotTeam.monTue);
       teamsBlockedByBirthday([wk[0], wk[1]]).forEach(i => hardExclude.add(i));
+      teamsBlockedByAbsence([wk[0], wk[1]]).forEach(i => hardExclude.add(i));
 
       // SOFT (preferAvoid): equipos cuyo último slot semanal fue también Lun-Mar.
       // Así rota: si Frias hizo Lun-Mar la vez pasada, prefiero darle Mié-Jue o Vie.
@@ -4893,6 +4983,7 @@ function generateMonth() {
       restExclude.forEach(i => hardExclude.add(i));
       if (lastSlotTeam.wedThu >= 0) hardExclude.add(lastSlotTeam.wedThu);
       teamsBlockedByBirthday([wk[2], wk[3]]).forEach(i => hardExclude.add(i));
+      teamsBlockedByAbsence([wk[2], wk[3]]).forEach(i => hardExclude.add(i));
 
       const preferAvoid = new Set();
       teams.forEach((_, i) => {
@@ -4918,6 +5009,7 @@ function generateMonth() {
       restExclude.forEach(i => hardExclude.add(i));
       if (lastSlotTeam.fri >= 0) hardExclude.add(lastSlotTeam.fri);
       teamsBlockedByBirthday([wk[4]]).forEach(i => hardExclude.add(i));
+      teamsBlockedByAbsence([wk[4]]).forEach(i => hardExclude.add(i));
 
       const preferAvoid = new Set();
       teams.forEach((_, i) => {
@@ -5044,6 +5136,7 @@ function wireUp() {
       else if (a === 'generate') generateMonth();
       else if (a === 'export-image') exportAndShareMonth();
       else if (a === 'stats') openStatsSettings();
+      else if (a === 'absences') openAbsencesModal();
       else if (a === 'gen-settings') openGenSettings();
       else if (a === 'colors-settings') openColorsSettings();
       else if (a === 'birthdays-settings') openBirthdaysSettings();
@@ -5126,6 +5219,12 @@ function wireUp() {
       renderStats();
     });
   });
+
+  // Modal de ausencias
+  document.getElementById('absences-modal-close').addEventListener('click', closeAbsencesModal);
+  document.getElementById('absences-close-btn').addEventListener('click', closeAbsencesModal);
+  document.querySelector('#absences-modal .modal-backdrop').addEventListener('click', closeAbsencesModal);
+  document.getElementById('absence-add-btn').addEventListener('click', addAbsenceFromForm);
 
   // Modal de sincronización
   document.getElementById('sync-modal-close').addEventListener('click', closeSyncSettings);

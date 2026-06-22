@@ -94,6 +94,7 @@
         <button data-action="gen-settings">⚙️ Configurar equipos del generador</button>
         <button data-action="export-image">📤 Compartir mes (imagen)</button>
         <button data-action="stats">📊 Estadísticas</button>
+        <button data-action="absences">👤 Ausencias</button>
       </div>
 
       <div data-section="markers" class="menu-section">
@@ -120,7 +121,7 @@
       <button data-action="install" id="install-btn" class="hidden">Instalar app</button>
       <button data-action="close">Cerrar</button>
       <div class="menu-version">
-        Versión <span id="app-version">47</span>
+        Versión <span id="app-version">48</span>
         <div class="sync-status-indicator idle" id="sync-status-indicator">⚪ Sin conectar</div>
       </div>
       <input type="file" id="import-file" accept="application/json" class="hidden">
@@ -182,6 +183,40 @@
           <button id="birthdays-restore" class="modal-btn secondary">🎂 Cargar precargados</button>
           <button id="birthdays-reset" class="modal-btn secondary">Borrar todos</button>
           <button id="birthdays-close-btn" class="modal-btn primary">Listo</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="absences-modal" class="modal hidden" role="dialog" aria-labelledby="absences-modal-title">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2 id="absences-modal-title">👤 Ausencias planificadas</h2>
+          <button class="modal-close" id="absences-modal-close" aria-label="Cerrar">×</button>
+        </div>
+        <div class="modal-body" style="padding:14px 16px;">
+          <div style="font-size:12px;color:#6c6c70;margin-bottom:10px;">
+            Las ausencias bloquean al equipo de la persona ausente para que el generador no le asigne turnos en el rango indicado.
+          </div>
+          <div id="absences-list"></div>
+          <div class="absence-form">
+            <h3 style="margin:14px 0 8px;font-size:13px;color:#3a3a3c;">+ Agregar ausencia</h3>
+            <label style="display:block;margin-bottom:8px;font-size:13px;">Persona
+              <select id="absence-person" class="rep-select" style="margin-top:4px;"></select>
+            </label>
+            <div style="display:flex;gap:8px;">
+              <label style="flex:1;font-size:13px;">Desde
+                <input type="date" id="absence-from" class="rep-select" style="margin-top:4px;">
+              </label>
+              <label style="flex:1;font-size:13px;">Hasta
+                <input type="date" id="absence-to" class="rep-select" style="margin-top:4px;">
+              </label>
+            </div>
+            <button id="absence-add-btn" class="modal-btn primary" style="margin-top:10px;width:100%;">+ Agregar ausencia</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="absences-close-btn" class="modal-btn primary">Listo</button>
         </div>
       </div>
     </div>
