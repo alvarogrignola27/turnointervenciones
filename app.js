@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '55';
+const APP_VERSION = '56';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -46,6 +46,47 @@ const GMAT_LAST_KEY = 'turnos:gen_last_gmat';
 // Ausencias planificadas: lista de objetos { name, from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' }
 // El generador excluye los equipos cuyos miembros estén ausentes en el día asignado.
 const ABSENCES_KEY = 'turnos:absences';
+// Rol del usuario en este dispositivo. Sólo afecta a la UI (no es seguro contra
+// usuarios mañosos que puedan abrir DevTools). 'admin' puede editar todo;
+// 'viewer' es solo lectura. Default 'admin' para no romper instalaciones previas.
+const USER_ROLE_KEY = 'turnos:user_role';
+function loadUserRole() {
+  return localStorage.getItem(USER_ROLE_KEY) === 'viewer' ? 'viewer' : 'admin';
+}
+function saveUserRole(role) {
+  if (role === 'viewer') localStorage.setItem(USER_ROLE_KEY, 'viewer');
+  else localStorage.removeItem(USER_ROLE_KEY);
+  scheduleCloudPush();
+}
+function isViewer() { return loadUserRole() === 'viewer'; }
+function toggleUserRole() {
+  const cur = loadUserRole();
+  const next = cur === 'admin' ? 'viewer' : 'admin';
+  const label = next === 'viewer' ? 'solo lectura (viewer)' : 'editor (admin)';
+  if (!confirm(`¿Cambiar este dispositivo a modo "${label}"?\n\n` +
+    (next === 'viewer'
+      ? '👀 En este dispositivo NO se podrá editar nada: ni generar turnos, ni borrar, ni agregar/quitar gente. Solo ver el calendario y las estadísticas. La sincronización con la nube sigue activa.'
+      : '✏️ Este dispositivo va a poder editar todo: generar turnos, borrar mes, modificar equipos, agregar reemplazos y ausencias.'))) return;
+  saveUserRole(next);
+  // Forzamos salir del modo edición si estábamos en él
+  state.editingDay = false;
+  updateRoleBadge();
+  rerenderActiveView();
+  renderDetail();
+  showToast(`✓ Modo cambiado a ${label}`);
+}
+// Actualiza el indicador visual del rol activo (botón del menú + clase del body)
+function updateRoleBadge() {
+  document.body.classList.toggle('role-viewer', isViewer());
+  const lbl = document.getElementById('user-role-label');
+  if (lbl) lbl.textContent = isViewer() ? '👀 Modo solo lectura' : '✏️ Modo editor';
+  const btn = document.querySelector('[data-action="toggle-role"]');
+  if (btn) {
+    btn.innerHTML = isViewer()
+      ? '🔓 Cambiar a modo editor'
+      : '🔒 Cambiar a modo solo lectura';
+  }
+}
 const TEAM_HISTORY_KEY = 'turnos:gen_team_history';
 const PERSON_COLORS_KEY = 'turnos:person_colors';
 const PERSON_COLORS_MONTH_PREFIX = 'turnos:person_colors_month:';
@@ -1140,33 +1181,9 @@ async function exportAndShareMonth() {
     infoSections.appendChild(sec);
   }
 
-  // Leyenda de equipos
-  const legend = document.createElement('div');
-  legend.style.cssText = `
-    flex:1; min-width:300px;
-    padding:14px 16px; background:#f5f7fb;
-    border-left:4px solid #1f3a68; border-radius:6px;
-  `;
-  const lT = document.createElement('div');
-  lT.style.cssText = 'font-weight:700; font-size:14px; color:#1f3a68; margin-bottom:8px; letter-spacing:0.3px;';
-  lT.textContent = '🤝 EQUIPOS';
-  legend.appendChild(lT);
-  teams.forEach(t => {
-    const members = [t.a, t.b, t.c].filter(Boolean);
-    const line = document.createElement('div');
-    line.style.cssText = 'display:flex; gap:4px; align-items:center; padding:2px 0; font-size:11px;';
-    members.forEach(name => {
-      const pill = document.createElement('span');
-      pill.style.cssText = `
-        background:${colorFor(name)}; color:${textColorFor(name)};
-        padding:2px 7px; border-radius:3px; font-weight:600;
-      `;
-      pill.textContent = name;
-      line.appendChild(pill);
-    });
-    legend.appendChild(line);
-  });
-  infoSections.appendChild(legend);
+  // (Leyenda de equipos removida en v56 — la imagen del calendario queda más grande.
+  //  Si en algún momento querés mostrar los equipos de referencia, te la puedo agregar
+  //  de vuelta como sección opcional.)
 
   if (infoSections.children.length > 0) wrap.appendChild(infoSections);
 
@@ -1395,12 +1412,23 @@ const DEFAULT_FIREBASE_CONFIG = {
 };
 
 function loadFirebaseConfig() {
+  // Empezamos con la base (apiKey + databaseURL + projectId)
+  const base = JSON.parse(JSON.stringify(DEFAULT_FIREBASE_CONFIG));
+  // Si hay config guardada con email/password completos, usarla (gana lo local)
   try {
     const stored = JSON.parse(localStorage.getItem(FIREBASE_CONFIG_KEY) || 'null');
-    if (stored) return stored;
+    if (stored && stored.email && stored.password) return stored;
   } catch {}
-  // Si no hay nada guardado, devolver los defaults (sin email/password)
-  return JSON.parse(JSON.stringify(DEFAULT_FIREBASE_CONFIG));
+  // Si NO hay email/password local pero SÍ hay creds embebidas en data.js,
+  // usar las embebidas (auto-conexión para dispositivos nuevos)
+  if (typeof AUTO_CONNECT_FIREBASE !== 'undefined' &&
+      AUTO_CONNECT_FIREBASE.email && AUTO_CONNECT_FIREBASE.password) {
+    base.email = AUTO_CONNECT_FIREBASE.email;
+    base.password = AUTO_CONNECT_FIREBASE.password;
+    return base;
+  }
+  // Sin creds: devolver la base sin email/password (modo manual)
+  return base;
 }
 function saveFirebaseConfig(cfg) {
   if (cfg === null) {
@@ -3134,6 +3162,9 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   const teamSlot = teamRes ? teamRes.slot : null;
   // Editable solo si los datos son del mes en curso
   const editable = !!opts.useStateData;
+  // En modo viewer (rol "solo lectura"), forzamos editableUI = false para que NO
+  // aparezcan los dropdowns, botones "+", botones × ni la barra de Gestionar equipos.
+  const editableUI = editable && !isViewer();
 
   // Buscar 3er miembro si el equipo es de 3 personas (config tiene .c)
   // Los equipos de 3 se guardan como [[a, b], [c, null]] en slots[]
@@ -3154,7 +3185,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
 
   // Barra superior con botones rápidos: Feriado / Feria judicial / Editar
   // Los toggles permiten marcar/quitar feriado o feria sin abrir Gestionar día
-  if (editable) {
+  if (editableUI) {
     const editBar = document.createElement('div');
     editBar.className = 'di-edit-bar';
 
@@ -3223,8 +3254,8 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     [0, 1].forEach(sideIdx => {
       const n = teamSlot[sideIdx];
 
-      if (editable) {
-        // Pill editable = un <select> estilizado
+      if (editableUI) {
+        // Pill editableUI = un <select> estilizado
         const sel = document.createElement('select');
         sel.className = 'di-team-pill di-team-pill-select';
         if (n) {
@@ -3274,11 +3305,11 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
       const thirdWrap = document.createElement('div');
       thirdWrap.className = 'di-team-pill-third-wrap';
 
-      const thirdPill = document.createElement(editable ? 'select' : 'div');
+      const thirdPill = document.createElement(editableUI ? 'select' : 'div');
       thirdPill.className = 'di-team-pill di-team-pill-third';
       thirdPill.style.background = colorFor(thirdName);
       thirdPill.style.color = textColorFor(thirdName);
-      if (editable) {
+      if (editableUI) {
         thirdPill.classList.add('di-team-pill-select');
         populateNamesDropdown(thirdPill, thirdName, isFeriaJud(y, m, d));
         thirdPill.addEventListener('change', (e) => {
@@ -3308,7 +3339,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
       thirdWrap.appendChild(thirdPill);
 
       // Botón × para borrar al 3er miembro (solo en modo edición y si está en slots)
-      if (editable && state.editingDay && thirdMember && thirdMember.slotIdx !== null) {
+      if (editableUI && state.editingDay && thirdMember && thirdMember.slotIdx !== null) {
         const delBtn = document.createElement('button');
         delBtn.className = 'di-pill-delete';
         delBtn.textContent = '×';
@@ -3334,7 +3365,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     // No hay equipo asignado. Si estoy en modo edit, muestro 2 dropdowns vacíos
     // así el user puede elegir directamente desde ahí. Caso clave: enero/julio (feria)
     // sin datos generados — el user quiere poder cargar a mano sin pasar por "+".
-    if (editable && state.editingDay) {
+    if (editableUI && state.editingDay) {
       [0, 1].forEach(sideIdx => {
         const sel = document.createElement('select');
         sel.className = 'di-team-pill di-select-pill empty';
@@ -3362,7 +3393,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     }
   }
   // Botón "+" para agregar otra persona al equipo de intervención (modo edición)
-  if (editable && state.editingDay) {
+  if (editableUI && state.editingDay) {
     const addBtn = document.createElement('button');
     addBtn.className = 'di-add-person';
     addBtn.title = 'Agregar otra persona al equipo de intervención';
@@ -3449,7 +3480,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     block.appendChild(makeRepsSection(interventionReps, 'Reemplazos del día'));
   }
 
-  // EQUIPO DE APOYO (editable cuando edit mode está activo, igual que intervención)
+  // EQUIPO DE APOYO (editableUI cuando edit mode está activo, igual que intervención)
   const sec2 = document.createElement('div');
   sec2.className = 'di-section';
   const lbl2 = document.createElement('div');
@@ -3497,7 +3528,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     const apSlotIdx = apoyo.isFeria ? 1 : (apTeamRes ? apTeamRes.idx : 0);
 
     [apoyo.team[0], apoyo.team[1]].forEach((n, sideIdx) => {
-      if (editable) {
+      if (editableUI) {
         const sel = document.createElement('select');
         sel.className = 'di-team-pill di-select-pill';
         if (n) {
@@ -3559,7 +3590,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
       const thirdSlotIdx = apoyo.members.thirdSlotIdx;
       const thirdWrap = document.createElement('div');
       thirdWrap.className = 'di-team-pill-third-wrap';
-      if (editable) {
+      if (editableUI) {
         const sel = document.createElement('select');
         sel.className = 'di-team-pill di-select-pill di-team-pill-third';
         sel.style.background = colorFor(thirdName);
@@ -3662,7 +3693,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     sec2.appendChild(team2);
   }
   // Botón "+" para agregar persona al equipo de Apoyo (modo edición, solo en mes actual)
-  if (editable && state.editingDay && apoyo) {
+  if (editableUI && state.editingDay && apoyo) {
     const addBtn = document.createElement('button');
     addBtn.className = 'di-add-person';
     addBtn.title = 'Agregar otra persona al equipo de apoyo';
@@ -3725,9 +3756,9 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   // ===== Cuando el botón "Gestionar equipos" está activo (state.editingDay):
   //       mostramos abajo Reemplazos + Gestión de Materiales (este último solo
   //       en sábado/domingo no-feria, ya que ahí no aplica). =====
-  if (editable && state.editingDay) {
+  if (editableUI && state.editingDay) {
     // --- Sección EXTRAS (solo en FERIA): muestra todos los slots adicionales más
-    //     allá del equipo y el apoyo. Cada extra es editable (dropdown) y borrable (×).
+    //     allá del equipo y el apoyo. Cada extra es editableUI (dropdown) y borrable (×).
     //     Se ofrece "+ Agregar extra" para sumar más personas (típico en feria con 5-6).
     if (isFeriaJud(y, m, d)) {
       const extrasSection = document.createElement('div');
@@ -3748,7 +3779,7 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
       extrasLabel.textContent = `✨ Extras${allExtras.length > 0 ? ` (${allExtras.length})` : ''}`;
       extrasSection.appendChild(extrasLabel);
 
-      // Lista de extras existentes: cada uno como dropdown editable + ×
+      // Lista de extras existentes: cada uno como dropdown editableUI + ×
       if (allExtras.length > 0) {
         const extrasList = document.createElement('div');
         extrasList.className = 'di-extras-edit-list';
@@ -5599,13 +5630,21 @@ function wireUp() {
     btn.addEventListener('click', () => {
       const a = btn.dataset.action;
       menu.classList.add('hidden');
+      // Acciones bloqueadas en modo "viewer" (solo lectura). Si el usuario aprieta,
+      // mostramos un toast en vez de ejecutar. Solo lectura y configuración del rol
+      // están permitidas.
+      const EDIT_ACTIONS = ['generate', 'regenerate', 'clear', 'absences',
+        'gen-settings', 'mark-month-feria', 'mark-range-feria', 'load-holidays',
+        'colors-settings', 'birthdays-settings', 'import'];
+      if (isViewer() && EDIT_ACTIONS.includes(a)) {
+        showToast('🔒 Modo solo lectura activado — no se puede modificar');
+        return;
+      }
       if (a === 'export') exportData();
       else if (a === 'import') document.getElementById('import-file').click();
       else if (a === 'clear') clearCurrentMonth();
       else if (a === 'generate') generateMonth();
       else if (a === 'regenerate') {
-        // Pide otra distribución: aumenta el shuffleOffset
-        // y guarda en localStorage para que cada llamada sucesiva varíe distinto
         const SHUFFLE_KEY = 'turnos:gen_shuffle_offset';
         const cur = parseInt(localStorage.getItem(SHUFFLE_KEY) || '0', 10);
         const next = (cur + 1) % 7;
@@ -5624,6 +5663,7 @@ function wireUp() {
       else if (a === 'sync-settings') openSyncSettings();
       else if (a === 'check-update') checkForUpdate();
       else if (a === 'install') triggerInstall();
+      else if (a === 'toggle-role') toggleUserRole();
     });
   });
 
@@ -5816,7 +5856,8 @@ function boot() {
   rerenderActiveView();
   renderFilters();
   wireUp();
-  // Auto-conectar sync si hay config guardada
+  updateRoleBadge();
+  // Auto-conectar sync si hay config guardada (o creds embebidas en data.js)
   setTimeout(() => initFirebaseSync(), 500);
 }
 boot();

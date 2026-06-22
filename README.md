@@ -159,6 +159,16 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v56
+- **🖼️ Export sin leyenda de equipos**: la sección "🤝 EQUIPOS" se removió del export como imagen. Ahora la grilla del calendario y los reemplazos/ausencias ocupan más espacio, queda más grande y legible.
+- **🔌 Auto-conexión a Firebase con credenciales embebidas**: nueva constante `AUTO_CONNECT_FIREBASE` en `data.js` (vacía por default). Si la completás con tu email y password antes de subir el repo, todos los dispositivos que abran el link se conectan SOLOS a la base de datos compartida — sin tener que configurar manualmente. La descarga inicial de la nube sigue siendo bloqueante (no pisa datos). Si dejás las credenciales vacías, sigue funcionando como antes (config manual). ⚠️ Tener en cuenta que cualquiera con acceso al código fuente verá las credenciales — solo usar para herramientas internas.
+- **👤 Roles "soft" admin / viewer**: nueva sección en el menú Datos para cambiar el rol del DISPOSITIVO actual. Default **✏️ admin** (puede editar todo, como hasta ahora). Cambiando a **👀 viewer**:
+  - Se ocultan los botones "Gestionar equipos", "+", "×", "☆", "⚖" en el card del día.
+  - El menú sigue mostrando botones de edición pero al apretarlos sale toast `🔒 Modo solo lectura activado — no se puede modificar`.
+  - Aparece un badge amarillo "👀 solo lectura" en la esquina del header.
+  - La sincronización con la nube sigue activa (recibe cambios de otros dispositivos en tiempo real).
+  - Es **un control de UX, no de seguridad**: alguien con DevTools puede saltarlo. Útil para que el equipo solo consulte sin riesgo de tocar algo sin querer.
+
 ### v55
 - **🧱 Tiles del mes con extras apilados full-width en feria**: cuando un día de feria tiene 1, 2 o 3 personas extras (más allá de Intervención + Apoyo), cada extra ocupa una fila completa con su nombre centrado, una abajo de la otra. Mucho más legible que las pills pequeñas lado a lado. Si hay 4+ extras, cae al formato compacto anterior para no romper la grilla.
 - **📦 Sección "Gestión" en el detalle del día**: en el card del día (modo lectura, sin tener que abrir "Gestionar equipos"), después del Equipo de Intervención y Apoyo aparece una sección **📦 GESTIÓN** con la persona o personas asignadas. Útil para sábados/domingos donde queda visible al instante quién hace Gestión de Materiales. En feria, lista los extras ahí también. Si no hay nadie en esa categoría, la sección no aparece.

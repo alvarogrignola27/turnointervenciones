@@ -431,6 +431,19 @@ input, select { font: inherit; }
   flex: 1; min-width: 120px;
   text-align: center;
 }
+
+/* Indicador visual cuando el dispositivo está en modo "solo lectura" */
+body.role-viewer .hdr::after {
+  content: '👀 solo lectura';
+  position: absolute;
+  top: 4px; right: 8px;
+  font-size: 10px;
+  background: #fef3c7; color: #92400e;
+  padding: 2px 8px; border-radius: 8px;
+  font-weight: 600;
+  border: 1px solid #fcd34d;
+}
+body.role-viewer .hdr { position: relative; }
 .di-edit-btn {
   background: #fff; color: #1f3a68;
   border: 1px solid #c9d4e8;

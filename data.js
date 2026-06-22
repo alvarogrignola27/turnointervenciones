@@ -2,6 +2,29 @@
 // Datos de la app: roster, colores y datos iniciales de turnos
 // ============================================================
 
+// ════════════════════════════════════════════════════════════
+// AUTO-CONEXIÓN A FIREBASE
+// ════════════════════════════════════════════════════════════
+// Si completás email y password acá, todos los dispositivos que abran este link
+// se conectarán automáticamente a la base de datos compartida — sin tener que
+// configurar manualmente. Útil para que el equipo "abra el link y listo".
+//
+// ⚠️ SEGURIDAD: cualquiera que abra DevTools o vea el código fuente puede leer
+//    estas credenciales. Solo usar para herramientas internas donde confías en
+//    quienes acceden al link. Si la URL es pública, es mejor dejar email/password
+//    vacíos y que cada dispositivo configure manualmente.
+//
+// 📝 INSTRUCCIONES:
+//    1. Reemplazá los strings vacíos con tu email y password de Firebase.
+//    2. Subí los archivos a GitHub Pages como siempre.
+//    3. Cuando un dispositivo nuevo abra el link, se va a conectar solo
+//       al cargar y va a descargar los datos de la nube automáticamente.
+//    4. Si querés desactivar auto-conexión: dejá email y password como '' (vacíos).
+const AUTO_CONNECT_FIREBASE = {
+  email: '',     // ← Poner acá tu email de Firebase, ej: 'alvarogrignola27@gmail.com'
+  password: '',  // ← Poner acá tu password de Firebase
+};
+
 const ROSTER = [
   'Cabeza', 'Campi', 'Capdevila', 'Celina', 'Diaz', 'Echague',
   'Frias', 'Gomez', 'Hidalgo', 'Ibañez', 'Laporta', 'Martinez',
