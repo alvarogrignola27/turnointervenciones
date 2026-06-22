@@ -159,6 +159,17 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v46
+- **🔧 "Editar" renombrado a "Gestionar equipos"**: el botón en la barra superior del card del día ahora dice **"✎ Gestionar equipos"** (en lugar de "Editar"). Hace lo mismo: activa los dropdowns para cambiar gente y los botones "+" para agregar.
+- **↪ Reemplazos movido al modo "Gestionar equipos"**: cuando activás el botón, además de los dropdowns aparece la sección **Reemplazos** justo debajo de los equipos, con su botón "+ Agregar reemplazo". Antes estaba dentro de "Gestionar día"; ahora queda más cerca de los equipos.
+- **📦 Gestión de Materiales editable inline (sólo sábado/domingo no-feria)**: cuando estás en sábado o domingo (y no es feria judicial), al activar "Gestionar equipos" aparece también la sección **📦 GESTIÓN DE MATERIALES** con un dropdown para elegir entre ALVARO, MARTIN o "— sin asignar —". Permite cambiar manualmente quién hace G.MAT ese día sin tocar el resto del equipo. Hint visible: "Alterna Alvaro/Martín cada finde (asignado automáticamente al generar)". En días de semana o feria, la sección no aparece (no aplica).
+- **Estructura final del card del día**:
+  - Barra superior: `[★] [⚖]` ··· `✎ Gestionar equipos`
+  - Equipo de Intervención
+  - Equipo de Apoyo
+  - (Si Gestionar equipos activo) Reemplazos + G.MAT (Sáb/Dom)
+  - Gestionar día → Extras + Marcadores
+
 ### v45
 - **⭐ Botones rápidos Feriado / Feria judicial arriba del card**: ahora al tocar un día, arriba a la izquierda aparecen 2 botones cuadrados al lado del "✎ Editar": **☆** para feriado y **⚖** para feria judicial. Tocás una vez y queda marcado (el botón se pone en color: feriado amarillo, feria rojo). Volvés a tocar y lo quitás. Un paso menos: ya no hace falta abrir Gestionar día → Marcadores. Las opciones siguen estando en Gestionar día también, no se rompió nada.
 - **📆 Estadísticas con rango personalizado (Desde / Hasta)**: nueva pestaña "📆 Rango" en el modal de Estadísticas, entre "Este mes" e "Histórico total". Cuando la elegís, aparecen 4 selectores arriba (mes y año Desde, mes y año Hasta). Cambia automáticamente al ajustar los selectores. Calcula días por equipo y por persona en TODO el rango seleccionado, sumando los meses persistidos. Default: Enero-mes actual del año en curso. Ejemplo: Agosto-Octubre 2026 muestra "Sallas+Ibañez 15 días, Capdevila+Gomez 14, ...". Si elegís Desde > Hasta, las invierte automáticamente.

@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '45';
+const APP_VERSION = '46';
 
 const MES_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -377,12 +377,8 @@ function buildManagePanel(day) {
     const panel = document.createElement('div');
     panel.className = 'manage-panel';
 
-    // Sección "Reemplazos"
-    const lblReps = document.createElement('div');
-    lblReps.className = 'manage-section-label';
-    lblReps.textContent = `↪ Reemplazos${reps.length > 0 ? ` (${reps.length})` : ''}`;
-    panel.appendChild(lblReps);
-    panel.appendChild(buildReplacementsBlock(day));
+    // (Reemplazos se mueve a la sección de "Gestionar equipos" del card del día —
+    // queda más cerca de los equipos y se ve junto al G.MAT.)
 
     // Sección "Extras" — personas adicionales (OTROS) que no son intervención ni apoyo.
     // Para feria judicial se usan extras como Juan Diaz Loza / Juan Pablo Godoy / Alvaro / Martín.
@@ -2120,6 +2116,22 @@ function findTeamSlot(slots) {
   return null;
 }
 
+// Encuentra el slot del día que contiene un G.MAT (ALVARO o MARTIN solos).
+// Retorna: { slotIdx, sideIdx, name } o null.
+function findGmatSlot(slots) {
+  if (!slots) return null;
+  for (let i = 0; i < slots.length; i++) {
+    const s = slots[i];
+    if (!s) continue;
+    const lone = (s[0] && !s[1]) ? { side: 0, name: s[0] }
+              : (!s[0] && s[1]) ? { side: 1, name: s[1] } : null;
+    if (lone && GESTION_MATERIALES.includes(lone.name)) {
+      return { slotIdx: i, sideIdx: lone.side, name: lone.name };
+    }
+  }
+  return null;
+}
+
 // Devuelve los miembros del equipo presente en `slots`, incluyendo el 3ro si existe.
 // Retorna: { a, b, c | null, mainSlotIdx, thirdSlotIdx | null }
 function findTeamMembers(slots) {
@@ -2735,11 +2747,12 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     spacer.style.flex = '1';
     editBar.appendChild(spacer);
 
-    // Botón Editar
+    // Botón Gestionar equipos (antes Editar) — al activarlo muestra dropdowns
+    // editables + secciones Reemplazos y G.MAT debajo
     const editBtn = document.createElement('button');
     editBtn.className = 'di-edit-btn' + (state.editingDay ? ' active' : '');
-    editBtn.innerHTML = state.editingDay ? '✓ Listo' : '✎ Editar';
-    editBtn.title = 'Habilitar/cerrar edición de personas';
+    editBtn.innerHTML = state.editingDay ? '✓ Listo' : '✎ Gestionar equipos';
+    editBtn.title = 'Habilitar/cerrar gestión de equipos, reemplazos y G.MAT';
     editBtn.addEventListener('click', () => {
       state.editingDay = !state.editingDay;
       if (state.view === 'month') renderDetail();
@@ -3254,6 +3267,88 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
   // Reemplazos del APOYO: van debajo del bloque de Apoyo
   if (apoyoReps.length > 0) {
     block.appendChild(makeRepsSection(apoyoReps, 'Reemplazos del apoyo'));
+  }
+
+  // ===== Cuando el botón "Gestionar equipos" está activo (state.editingDay):
+  //       mostramos abajo Reemplazos + Gestión de Materiales (este último solo
+  //       en sábado/domingo no-feria, ya que ahí no aplica). =====
+  if (editable && state.editingDay) {
+    // --- Sección REEMPLAZOS ---
+    const repsSection = document.createElement('div');
+    repsSection.className = 'di-edit-extra-section';
+    const repsLabel = document.createElement('div');
+    repsLabel.className = 'manage-section-label';
+    const dayReps = getReplacementsForDay(y, m, d);
+    repsLabel.textContent = `↪ Reemplazos${dayReps.length > 0 ? ` (${dayReps.length})` : ''}`;
+    repsSection.appendChild(repsLabel);
+    repsSection.appendChild(buildReplacementsBlock(d));
+    block.appendChild(repsSection);
+
+    // --- Sección GESTIÓN DE MATERIALES (sábado/domingo no-feria) ---
+    const dow = new Date(y, m - 1, d).getDay();
+    const isWeekendDay = (dow === 0 || dow === 6);
+    const isFeriaDay = isFeriaJud(y, m, d);
+    if (isWeekendDay && !isFeriaDay) {
+      const gmatSection = document.createElement('div');
+      gmatSection.className = 'di-edit-extra-section';
+      const gmatLabel = document.createElement('div');
+      gmatLabel.className = 'manage-section-label';
+      gmatLabel.textContent = '📦 Gestión de Materiales';
+      gmatSection.appendChild(gmatLabel);
+
+      const gmat = findGmatSlot(slots);
+      const gmatPickerWrap = document.createElement('div');
+      gmatPickerWrap.className = 'di-gmat-picker';
+
+      const sel = document.createElement('select');
+      sel.className = 'di-team-pill di-select-pill';
+      // Opción vacía + ALVARO + MARTIN
+      ['', ...GESTION_MATERIALES].forEach(name => {
+        const o = document.createElement('option');
+        o.value = name;
+        o.textContent = name || '— sin asignar —';
+        if (gmat && gmat.name === name) o.selected = true;
+        sel.appendChild(o);
+      });
+      if (gmat) {
+        sel.style.background = colorFor(gmat.name);
+        sel.style.color = textColorFor(gmat.name);
+        sel.style.fontWeight = '600';
+      }
+      sel.addEventListener('change', (e) => {
+        const newName = e.target.value || null;
+        snapshotDayBeforeEdit(d);
+        if (!state.data[String(d)]) state.data[String(d)] = [];
+        // Si ya había un G.MAT asignado, lo reemplazo o lo quito
+        if (gmat) {
+          if (!newName) {
+            // Quitar el slot del G.MAT
+            state.data[String(d)].splice(gmat.slotIdx, 1);
+            if (state.data[String(d)].length === 0) delete state.data[String(d)];
+          } else {
+            // Reemplazar el nombre en el mismo slot/side
+            state.data[String(d)][gmat.slotIdx][gmat.sideIdx] = newName;
+          }
+        } else if (newName) {
+          // Agregar nuevo slot G.MAT
+          state.data[String(d)].push([newName, null]);
+        }
+        saveMonthData(state.year, state.month, state.data);
+        rerenderActiveView();
+        if (state.view === 'month') renderDetail();
+        else if (state.view === 'day') renderDayView();
+        showToast(newName ? `📦 G.MAT: ${newName}` : 'G.MAT quitado');
+      });
+      gmatPickerWrap.appendChild(sel);
+      gmatSection.appendChild(gmatPickerWrap);
+
+      const hint = document.createElement('div');
+      hint.className = 'di-gmat-hint';
+      hint.textContent = 'Alterna Alvaro/Martín cada finde (asignado automáticamente al generar).';
+      gmatSection.appendChild(hint);
+
+      block.appendChild(gmatSection);
+    }
   }
 
   return block;
