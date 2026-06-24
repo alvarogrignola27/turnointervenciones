@@ -445,6 +445,26 @@ body.role-viewer .hdr::after {
 }
 body.role-viewer .hdr { position: relative; }
 
+/* En modo viewer ocultamos los 4 botones de abajo (Generar/Marcar/Personalizar/Datos)
+   para que el equipo solo pueda ver el calendario y los filtros. El acceso al menú
+   se hace con el candado discreto del header. */
+body.role-viewer .footer-actions { display: none !important; }
+
+/* Candado para desbloquear modo editor (solo visible en viewer) */
+.viewer-unlock-btn {
+  display: none;
+  background: #fef3c7; color: #92400e;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  width: 32px; height: 32px;
+  font-size: 14px; cursor: pointer;
+  margin-left: 4px;
+  padding: 0;
+  line-height: 1;
+}
+body.role-viewer .viewer-unlock-btn { display: inline-flex; align-items: center; justify-content: center; }
+.viewer-unlock-btn:active { transform: scale(0.95); }
+
 /* Selector "copiar color de…" en cada fila del modal de colores */
 .colors-copy-from {
   font-size: 11px;

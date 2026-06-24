@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '59';
+const APP_VERSION = '60';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -5840,7 +5840,20 @@ function wireUp() {
   document.querySelector('#absences-modal .modal-backdrop').addEventListener('click', closeAbsencesModal);
   document.getElementById('absence-add-btn').addEventListener('click', addAbsenceFromForm);
 
-  // === Botón de actualización de versión (Service Worker) ===
+  // === Candado discreto en el header (solo visible en viewer) ===
+  // Dispara el mismo flujo que el botón "Cambiar a modo editor" del menú Datos,
+  // pero accesible desde el header — útil cuando los 4 botones de abajo están
+  // ocultos por estar en modo viewer.
+  const unlockBtn = document.getElementById('viewer-unlock-btn');
+  if (unlockBtn) {
+    unlockBtn.addEventListener('click', () => {
+      if (!isViewer()) {
+        // No debería pasar porque el botón está oculto, pero por las dudas
+        return;
+      }
+      toggleUserRole();
+    });
+  }
   // Hay 2 botones: el banner arriba de todo (más visible) y el de Datos.
   // Ambos hacen lo mismo: enviar SKIP_WAITING al SW, que dispara controllerchange
   // y recarga la página con la versión nueva.

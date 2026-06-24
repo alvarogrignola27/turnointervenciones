@@ -159,6 +159,13 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v60
+- **🔒 Modo viewer ahora oculta los 4 botones de abajo (Generar/Marcar/Personalizar/Datos)**: cuando el dispositivo está en modo "solo lectura", la barra inferior con los 4 botones de acciones desaparece completamente. Solo queda visible el calendario, los filtros, el toggle de vista (Mes/Semana/Día) y el botón HOY. Más espacio útil y cero posibilidad de tocar acciones de edición sin querer.
+- **🔓 Candado discreto en el header**: como ya no hay botón "Datos" en modo viewer, agregué un candado **🔒** chiquito amarillo al lado de las flechas del header. Al tocarlo se dispara el prompt de contraseña para volver a modo editor. Solo aparece en modo viewer; en modo admin queda oculto.
+
+### v59
+- Contraseña `Ecif2026#` configurada en `data.js` para desbloquear modo editor desde viewer.
+
 ### v58
 - **🔑 Contraseña para desbloquear el modo editor**: en `data.js` ahora hay 2 constantes nuevas:
   - `DEFAULT_ROLE` → `'admin'` (default) o `'viewer'`. Define el rol que arrancan los dispositivos NUEVOS al instalar la app por primera vez. Si vas a desplegar en los celulares del equipo, ponelo en `'viewer'`.
