@@ -159,6 +159,12 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v61
+- **📊 Footer compacto en modo viewer**: como en v60 se ocultaban los 4 botones de abajo en modo viewer, no quedaba forma de ver la versión actual ni de forzar una actualización. Agregué un footer fijo abajo del calendario que aparece SOLO en modo viewer, con:
+  - **Versión X** a la izquierda (sincronizada con `APP_VERSION` actual).
+  - **🔄 Buscar actualización** a la derecha — dispara `checkForUpdate()`: borra el caché, desregistra el SW y recarga con la versión nueva del servidor.
+- **🐛 Bug del duplicado en feria arreglado**: en feria + "Gestionar equipos" activo, JUAN DIAZ LOZA / JUAN PABLO GODOY / MARTIN / ALVARO aparecían DOS veces — una en la sección **📦 GESTIÓN** (lectura) y otra en **✨ EXTRAS** (editable). Confundía. **Fix**: la sección Gestión se oculta cuando estás en modo edición (porque ya tenés la misma info en Extras, además editable). En modo lectura, Gestión sigue apareciendo como antes (es la única forma de ver esa info ahí).
+
 ### v60
 - **🔒 Modo viewer ahora oculta los 4 botones de abajo (Generar/Marcar/Personalizar/Datos)**: cuando el dispositivo está en modo "solo lectura", la barra inferior con los 4 botones de acciones desaparece completamente. Solo queda visible el calendario, los filtros, el toggle de vista (Mes/Semana/Día) y el botón HOY. Más espacio útil y cero posibilidad de tocar acciones de edición sin querer.
 - **🔓 Candado discreto en el header**: como ya no hay botón "Datos" en modo viewer, agregué un candado **🔒** chiquito amarillo al lado de las flechas del header. Al tocarlo se dispara el prompt de contraseña para volver a modo editor. Solo aparece en modo viewer; en modo admin queda oculto.

@@ -465,6 +465,32 @@ body.role-viewer .footer-actions { display: none !important; }
 body.role-viewer .viewer-unlock-btn { display: inline-flex; align-items: center; justify-content: center; }
 .viewer-unlock-btn:active { transform: scale(0.95); }
 
+/* Footer compacto que aparece SOLO en modo viewer (los 4 botones grandes están ocultos) */
+.viewer-footer {
+  display: none;
+  align-items: center; justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f5f5f7;
+  border-top: 1px solid #e5e5ea;
+  font-size: 11px; color: #6c6c70;
+  position: fixed; bottom: 0; left: 0; right: 0;
+  z-index: 50;
+}
+body.role-viewer .viewer-footer { display: flex; }
+.viewer-footer-version { font-weight: 600; }
+.viewer-footer-btn {
+  background: #fff; color: #1f3a68;
+  border: 1px solid #c9d4e8;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer;
+}
+.viewer-footer-btn:active { transform: scale(0.97); }
+/* Padding extra al body en viewer para que el footer no tape el calendario */
+body.role-viewer { padding-bottom: 44px; }
+
 /* Selector "copiar color de…" en cada fila del modal de colores */
 .colors-copy-from {
   font-size: 11px;

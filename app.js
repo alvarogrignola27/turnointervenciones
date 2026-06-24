@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '60';
+const APP_VERSION = '61';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -3742,11 +3742,12 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     block.appendChild(makeRepsSection(apoyoReps, 'Reemplazos del apoyo'));
   }
 
-  // ===== Sección "GESTIÓN" (siempre visible en modo lectura): lista las personas
+  // ===== Sección "GESTIÓN" (visible en modo LECTURA): lista las personas
   //       que están en el día más allá del equipo de intervención y apoyo.
   //       Incluye G.MAT (Alvaro/Martín en sáb/dom no-feria) y extras (en feria).
-  //       Si no hay nadie en esa categoría, la sección no aparece. =====
-  {
+  //       En modo edición la ocultamos: ahí ya se muestra la sección "Extras"
+  //       editable abajo, y duplicar la misma info confunde. =====
+  if (!(editableUI && state.editingDay)) {
     const gestionPeople = [];
     const usedSlots = new Set();
     if (members) {
@@ -5847,13 +5848,19 @@ function wireUp() {
   const unlockBtn = document.getElementById('viewer-unlock-btn');
   if (unlockBtn) {
     unlockBtn.addEventListener('click', () => {
-      if (!isViewer()) {
-        // No debería pasar porque el botón está oculto, pero por las dudas
-        return;
-      }
+      if (!isViewer()) return;
       toggleUserRole();
     });
   }
+
+  // Footer compacto en modo viewer: botón "🔄 Buscar actualización"
+  const viewerForceUpdate = document.getElementById('viewer-force-update');
+  if (viewerForceUpdate) {
+    viewerForceUpdate.addEventListener('click', () => checkForUpdate());
+  }
+  // Sincronizar la versión que muestra el footer compacto
+  const viewerVersionEl = document.getElementById('viewer-version');
+  if (viewerVersionEl) viewerVersionEl.textContent = APP_VERSION;
   // Hay 2 botones: el banner arriba de todo (más visible) y el de Datos.
   // Ambos hacen lo mismo: enviar SKIP_WAITING al SW, que dispara controllerchange
   // y recarga la página con la versión nueva.
