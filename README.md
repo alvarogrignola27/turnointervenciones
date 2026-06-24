@@ -159,6 +159,14 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v58
+- **🔑 Contraseña para desbloquear el modo editor**: en `data.js` ahora hay 2 constantes nuevas:
+  - `DEFAULT_ROLE` → `'admin'` (default) o `'viewer'`. Define el rol que arrancan los dispositivos NUEVOS al instalar la app por primera vez. Si vas a desplegar en los celulares del equipo, ponelo en `'viewer'`.
+  - `ADMIN_UNLOCK_PASSWORD` → vacía por default. Si la completás (ej: `'turnos2026'`), pasar de viewer → admin va a pedir esa contraseña en cada dispositivo donde alguien intente desbloquear. Bajar de admin → viewer NUNCA pide contraseña (cualquiera puede "auto-restringirse").
+- **🔓 Botón cambia dinámicamente**: cuando estás en viewer y hay password configurada, el botón del menú dice **"🔓 Desbloquear modo editor (pide contraseña)"**. Si no hay password, dice simplemente **"🔓 Cambiar a modo editor"**.
+- **Si meten password incorrecta**: aparece alerta `❌ Contraseña incorrecta. El dispositivo sigue en modo solo lectura.` y el rol no cambia.
+- ⚠️ Sigue siendo **soft security** — alguien con DevTools puede leer la contraseña en `data.js`. Es una traba para uso normal, no para usuarios mañosos. Para seguridad real necesitarías usuarios separados en Firebase con reglas de permisos.
+
 ### v57
 - **🐛 Bug del cambio de rol arreglado**: en v56 la sección "Rol del dispositivo" no se veía porque tenía un `data-section="role"` que no coincidía con ningún tab del menú. Ahora está **adentro de la sección Datos** del menú (Datos → ☁️ DATOS Y NUBE + 👤 ROL DEL DISPOSITIVO), bien visible al final con su botón "🔒 Cambiar a modo solo lectura" y la explicación de qué hace cada modo.
 - **🎨 Selector "↩ copiar color de…" en el modal de Colores**: en cada fila del modal de colores, al lado del input de color, ahora hay un dropdown con todas las otras personas. Al elegir una, esa persona toma el **mismo color exacto** que la elegida. Ejemplo: Celina selecciona "Cabeza" → Celina queda del mismo verde que Cabeza para que sea claro quién la está cubriendo durante una ausencia / reemplazo prolongado. Funciona tanto en modo global como en modo mes.

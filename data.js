@@ -25,6 +25,25 @@ const AUTO_CONNECT_FIREBASE = {
   password: '',  // ← Poner acá tu password de Firebase
 };
 
+// ════════════════════════════════════════════════════════════
+// ROL POR DEFECTO Y CONTRASEÑA DE ADMIN
+// ════════════════════════════════════════════════════════════
+// Cuando un dispositivo NUEVO instala la app, arranca con este rol.
+// - 'admin'  → puede editar todo (es lo normal para tu dispositivo).
+// - 'viewer' → solo lectura (recomendado si vas a instalar en los celulares
+//   del resto del equipo, así ellos no pueden modificar nada sin querer).
+const DEFAULT_ROLE = 'admin';
+
+// Contraseña para pasar de 'viewer' → 'admin'. Si está vacía (''), cualquier
+// usuario puede cambiar el rol libremente. Si la completás, el dispositivo
+// pedirá esta clave cada vez que alguien intente desbloquear el modo editor.
+// (Bajar de admin → viewer NUNCA pide contraseña, cualquiera puede hacerlo.)
+//
+// ⚠️ Esto NO es seguridad criptográfica: alguien con DevTools puede leer la
+//    contraseña en este archivo. Es una traba para que el equipo no toque
+//    cosas sin querer, no protección contra usuarios mañosos.
+const ADMIN_UNLOCK_PASSWORD = 'Ecif2026#'; // ← ej: 'turnos2026'
+
 const ROSTER = [
   'Cabeza', 'Campi', 'Capdevila', 'Celina', 'Diaz', 'Echague',
   'Frias', 'Gomez', 'Hidalgo', 'Ibañez', 'Laporta', 'Martinez',

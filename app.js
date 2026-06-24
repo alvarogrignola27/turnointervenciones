@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '57';
+const APP_VERSION = '59';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -51,17 +51,40 @@ const ABSENCES_KEY = 'turnos:absences';
 // 'viewer' es solo lectura. Default 'admin' para no romper instalaciones previas.
 const USER_ROLE_KEY = 'turnos:user_role';
 function loadUserRole() {
-  return localStorage.getItem(USER_ROLE_KEY) === 'viewer' ? 'viewer' : 'admin';
+  // Si ya hay un rol guardado, usarlo. Si no, usar el DEFAULT_ROLE de data.js.
+  const stored = localStorage.getItem(USER_ROLE_KEY);
+  if (stored === 'viewer' || stored === 'admin') return stored;
+  // Primera vez en este dispositivo: dejar el default y persistirlo
+  const def = (typeof DEFAULT_ROLE !== 'undefined' && DEFAULT_ROLE === 'viewer') ? 'viewer' : 'admin';
+  localStorage.setItem(USER_ROLE_KEY, def);
+  return def;
 }
 function saveUserRole(role) {
   if (role === 'viewer') localStorage.setItem(USER_ROLE_KEY, 'viewer');
-  else localStorage.removeItem(USER_ROLE_KEY);
+  else localStorage.setItem(USER_ROLE_KEY, 'admin');
   scheduleCloudPush();
 }
 function isViewer() { return loadUserRole() === 'viewer'; }
 function toggleUserRole() {
   const cur = loadUserRole();
   const next = cur === 'admin' ? 'viewer' : 'admin';
+
+  // PROTECCIÓN: pasar de viewer → admin requiere la contraseña ADMIN_UNLOCK_PASSWORD
+  // si está configurada. Bajar de admin → viewer NUNCA pide nada.
+  if (next === 'admin' && typeof ADMIN_UNLOCK_PASSWORD !== 'undefined' && ADMIN_UNLOCK_PASSWORD) {
+    const tries = (function ask() {
+      const input = prompt('🔑 Ingresá la contraseña para desbloquear el modo editor:');
+      if (input === null) return null; // canceló
+      if (input === ADMIN_UNLOCK_PASSWORD) return true;
+      return false;
+    })();
+    if (tries === null) return; // canceló
+    if (tries === false) {
+      alert('❌ Contraseña incorrecta. El dispositivo sigue en modo solo lectura.');
+      return;
+    }
+  }
+
   const label = next === 'viewer' ? 'solo lectura (viewer)' : 'editor (admin)';
   if (!confirm(`¿Cambiar este dispositivo a modo "${label}"?\n\n` +
     (next === 'viewer'
@@ -82,9 +105,14 @@ function updateRoleBadge() {
   if (lbl) lbl.textContent = isViewer() ? '👀 Modo solo lectura' : '✏️ Modo editor';
   const btn = document.querySelector('[data-action="toggle-role"]');
   if (btn) {
-    btn.innerHTML = isViewer()
-      ? '🔓 Cambiar a modo editor'
-      : '🔒 Cambiar a modo solo lectura';
+    const hasPwd = (typeof ADMIN_UNLOCK_PASSWORD !== 'undefined' && ADMIN_UNLOCK_PASSWORD);
+    if (isViewer()) {
+      btn.innerHTML = hasPwd
+        ? '🔓 Desbloquear modo editor (pide contraseña)'
+        : '🔓 Cambiar a modo editor';
+    } else {
+      btn.innerHTML = '🔒 Cambiar a modo solo lectura';
+    }
   }
 }
 const TEAM_HISTORY_KEY = 'turnos:gen_team_history';
