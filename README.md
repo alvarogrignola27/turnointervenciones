@@ -159,6 +159,11 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v57
+- **🐛 Bug del cambio de rol arreglado**: en v56 la sección "Rol del dispositivo" no se veía porque tenía un `data-section="role"` que no coincidía con ningún tab del menú. Ahora está **adentro de la sección Datos** del menú (Datos → ☁️ DATOS Y NUBE + 👤 ROL DEL DISPOSITIVO), bien visible al final con su botón "🔒 Cambiar a modo solo lectura" y la explicación de qué hace cada modo.
+- **🎨 Selector "↩ copiar color de…" en el modal de Colores**: en cada fila del modal de colores, al lado del input de color, ahora hay un dropdown con todas las otras personas. Al elegir una, esa persona toma el **mismo color exacto** que la elegida. Ejemplo: Celina selecciona "Cabeza" → Celina queda del mismo verde que Cabeza para que sea claro quién la está cubriendo durante una ausencia / reemplazo prolongado. Funciona tanto en modo global como en modo mes.
+- **📋 Botón "Replicar colores a próximos meses"**: en el modal de Colores, cuando estás en modo mes y tenés colores especiales configurados, aparece abajo un bloque azul con 3 botones: **→ 1 mes**, **→ 2 meses**, **→ 3 meses**. Tocás cualquiera y los overrides de color de ese mes se copian a los meses siguientes consecutivos. Confirma antes con la lista de meses afectados y avisa que sobrescribe los colores especiales que esos meses ya tengan.
+
 ### v56
 - **🖼️ Export sin leyenda de equipos**: la sección "🤝 EQUIPOS" se removió del export como imagen. Ahora la grilla del calendario y los reemplazos/ausencias ocupan más espacio, queda más grande y legible.
 - **🔌 Auto-conexión a Firebase con credenciales embebidas**: nueva constante `AUTO_CONNECT_FIREBASE` en `data.js` (vacía por default). Si la completás con tu email y password antes de subir el repo, todos los dispositivos que abran el link se conectan SOLOS a la base de datos compartida — sin tener que configurar manualmente. La descarga inicial de la nube sigue siendo bloqueante (no pisa datos). Si dejás las credenciales vacías, sigue funcionando como antes (config manual). ⚠️ Tener en cuenta que cualquiera con acceso al código fuente verá las credenciales — solo usar para herramientas internas.

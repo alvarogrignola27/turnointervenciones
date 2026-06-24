@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '56';
+const APP_VERSION = '57';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -4701,6 +4701,37 @@ function renderColorsSettings() {
         renderColorsSettings();
       });
 
+      // Selector "Copiar color de..." — permite que esta persona tome el color
+      // de cualquier otra. Útil cuando alguien reemplaza a otra por X meses.
+      const copyFromSel = document.createElement('select');
+      copyFromSel.className = 'colors-copy-from';
+      copyFromSel.title = `Tomar el color de otra persona`;
+      const optBlank = document.createElement('option');
+      optBlank.value = ''; optBlank.textContent = '↩ copiar color de…';
+      copyFromSel.appendChild(optBlank);
+      [...ROSTER, ...OTROS].filter(n => n !== name).forEach(other => {
+        const o = document.createElement('option');
+        o.value = other; o.textContent = other;
+        copyFromSel.appendChild(o);
+      });
+      copyFromSel.addEventListener('change', (e) => {
+        const src = e.target.value;
+        if (!src) return;
+        const srcColor = colorFor(src);
+        if (isMonthMode) {
+          const mc = loadPersonColorsMonth(state.year, state.month);
+          mc[name] = srcColor;
+          savePersonColorsMonth(state.year, state.month, mc);
+        } else {
+          const c = loadPersonColors();
+          c[name] = srcColor;
+          savePersonColors(c);
+        }
+        rerenderActiveView();
+        renderColorsSettings();
+        showToast(`✓ ${name} ahora usa el color de ${src}`);
+      });
+
       const resetBtn = document.createElement('button');
       resetBtn.className = 'colors-reset-one';
       resetBtn.textContent = '↺';
@@ -4725,10 +4756,47 @@ function renderColorsSettings() {
 
       row.appendChild(preview);
       row.appendChild(label);
+      row.appendChild(copyFromSel);
       row.appendChild(resetBtn);
       list.appendChild(row);
     });
   });
+
+  // Acción "Replicar a los próximos meses" — sólo en modo mes y si hay overrides.
+  // Copia los overrides mensuales del mes actual a los próximos N meses (1, 2 o 3).
+  if (isMonthMode && Object.keys(monthColors).length > 0) {
+    const repWrap = document.createElement('div');
+    repWrap.className = 'colors-replicate-wrap';
+    repWrap.innerHTML = `
+      <div class="colors-replicate-title">📋 Replicar los colores especiales de ${monthLabel} a los próximos meses</div>
+      <div class="colors-replicate-row">
+        <button class="colors-replicate-btn" data-months="1">→ 1 mes (${MES_NAMES[(state.month % 12)]} ${state.month === 12 ? state.year+1 : state.year})</button>
+        <button class="colors-replicate-btn" data-months="2">→ 2 meses</button>
+        <button class="colors-replicate-btn" data-months="3">→ 3 meses</button>
+      </div>
+    `;
+    list.appendChild(repWrap);
+    repWrap.querySelectorAll('.colors-replicate-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const n = parseInt(btn.dataset.months, 10);
+        const targetLabels = [];
+        let yy = state.year, mm = state.month;
+        for (let i = 0; i < n; i++) {
+          mm++; if (mm > 12) { mm = 1; yy++; }
+          targetLabels.push(`${MES_NAMES[mm-1]} ${yy}`);
+        }
+        if (!confirm(`¿Replicar los colores especiales de ${monthLabel} a:\n\n  • ${targetLabels.join('\n  • ')}\n\nLos colores especiales que esos meses ya tengan se SOBREESCRIBEN.`)) return;
+        // Hacer la copia
+        yy = state.year; mm = state.month;
+        for (let i = 0; i < n; i++) {
+          mm++; if (mm > 12) { mm = 1; yy++; }
+          savePersonColorsMonth(yy, mm, { ...monthColors });
+        }
+        rerenderActiveView();
+        showToast(`✓ Colores replicados a ${n} mes${n > 1 ? 'es' : ''}`);
+      });
+    });
+  }
 }
 
 // ---------- Configuración del generador (storage) ----------
