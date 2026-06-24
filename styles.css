@@ -549,6 +549,18 @@ body.role-viewer { padding-bottom: 44px; }
   cursor: pointer;
 }
 .colors-replicate-btn:active { transform: scale(0.97); }
+
+/* v63: variante para replicar a meses pasados — color distinto (gris azulado)
+   para que visualmente quede claro que es "hacia atrás" */
+.colors-replicate-back-btn {
+  flex: 1; min-width: 90px;
+  padding: 8px 10px;
+  background: #6c757d; color: #fff;
+  border: none; border-radius: 6px;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer;
+}
+.colors-replicate-back-btn:active { transform: scale(0.97); }
 .di-edit-btn {
   background: #fff; color: #1f3a68;
   border: 1px solid #c9d4e8;

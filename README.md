@@ -159,6 +159,10 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v63
+- **🐛 Bug del color del nombre en tiles con override de color**: cuando le cambiabas el color a Capdevila, Gomez, Milisenda o Diaz (por ejemplo Gomez tomando el color claro de Sallas), el nombre seguía saliendo blanco e ilegible. La causa era un shortcut hardcodeado `WHITE_TEXT` que SIEMPRE devolvía blanco para esos 4 nombres sin mirar el color real del fondo. Ahora el color del texto se calcula siempre por luminosidad del fondo aplicado, así un Gomez con fondo claro tiene texto oscuro y un Gomez con su color violeta default sigue teniendo texto blanco.
+- **⬅️ Replicar colores a meses pasados**: en el modal de Personalizar colores, además del bloque "📋 Replicar a los próximos meses", ahora hay un segundo bloque "📋 Replicar a los meses pasados" con botones ← 1 / ← 2 / ← 3. Misma lógica que el forward pero hacia atrás. Útil cuando armás los colores del mes actual y querés que meses anteriores ya cargados los hereden.
+
 ### v62
 - **🐛 Sección "Otros" duplicada en vista Día — eliminada**: en la vista Día (mobile y PC), abajo del card del día aparecían dos secciones legacy ("Gestión de materiales" y "Otros") que volvían a renderizar los mismos slots ya mostrados arriba en 📦 Gestión. Eliminadas ambas. Ahora la vista Día es idéntica a la sección detalle del Mes.
 - **✏️ Sección 📦 Gestión ahora es editable**: antes era solo lectura (pills coloreadas). Ahora, al entrar a "Gestionar equipos":

@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '62';
+const APP_VERSION = '63';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -1353,7 +1353,12 @@ function colorFor(name) {
   return custom[name] || COLORS[name] || '#E5E5EA';
 }
 function textColorFor(name) {
-  if (WHITE_TEXT.has(name)) return '#FFFFFF';
+  // v63: removimos el shortcut "WHITE_TEXT" hardcodeado que devolvía blanco
+  // para Capdevila/Gomez/Milisenda/Diaz sin mirar el color real. Eso causaba
+  // que al cambiarles el color a uno claro (ej: Gomez tomando el color de
+  // Sallas), el nombre siguiera saliendo blanco e ilegible.
+  // Ahora siempre calculamos el color del texto desde la luminosidad del
+  // fondo real, así respetamos los overrides mensuales y globales.
   const c = colorFor(name);
   if (c.startsWith('#')) {
     const r = parseInt(c.slice(1, 3), 16);
@@ -4669,7 +4674,8 @@ function renderColorsSettings() {
       preview.className = 'colors-preview';
       preview.style.background = currentColor;
       preview.style.color = (function(){
-        if (WHITE_TEXT.has(name)) return '#FFFFFF';
+        // v63: mismo fix que textColorFor — siempre calculamos por luminosidad
+        // para respetar el color realmente aplicado (default o override).
         const c = currentColor;
         if (c.startsWith('#')) {
           const r = parseInt(c.slice(1, 3), 16);
@@ -4800,6 +4806,44 @@ function renderColorsSettings() {
         }
         rerenderActiveView();
         showToast(`✓ Colores replicados a ${n} mes${n > 1 ? 'es' : ''}`);
+      });
+    });
+
+    // v63: misma acción pero hacia los meses PASADOS.
+    // Útil cuando armás colores nuevos en el mes corriente y querés que los
+    // meses anteriores (ya cargados) también tomen esos overrides.
+    const repBackWrap = document.createElement('div');
+    repBackWrap.className = 'colors-replicate-wrap';
+    // calcular labels del mes anterior para el botón "1 mes"
+    const prevMonth = state.month === 1 ? 12 : state.month - 1;
+    const prevYear = state.month === 1 ? state.year - 1 : state.year;
+    repBackWrap.innerHTML = `
+      <div class="colors-replicate-title">📋 Replicar los colores especiales de ${monthLabel} a los meses pasados</div>
+      <div class="colors-replicate-row">
+        <button class="colors-replicate-back-btn" data-months="1">← 1 mes (${MES_NAMES[prevMonth-1]} ${prevYear})</button>
+        <button class="colors-replicate-back-btn" data-months="2">← 2 meses</button>
+        <button class="colors-replicate-back-btn" data-months="3">← 3 meses</button>
+      </div>
+    `;
+    list.appendChild(repBackWrap);
+    repBackWrap.querySelectorAll('.colors-replicate-back-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const n = parseInt(btn.dataset.months, 10);
+        const targetLabels = [];
+        let yy = state.year, mm = state.month;
+        for (let i = 0; i < n; i++) {
+          mm--; if (mm < 1) { mm = 12; yy--; }
+          targetLabels.push(`${MES_NAMES[mm-1]} ${yy}`);
+        }
+        if (!confirm(`¿Replicar los colores especiales de ${monthLabel} a:\n\n  • ${targetLabels.join('\n  • ')}\n\nLos colores especiales que esos meses ya tengan se SOBREESCRIBEN.`)) return;
+        // Hacer la copia hacia atrás
+        yy = state.year; mm = state.month;
+        for (let i = 0; i < n; i++) {
+          mm--; if (mm < 1) { mm = 12; yy--; }
+          savePersonColorsMonth(yy, mm, { ...monthColors });
+        }
+        rerenderActiveView();
+        showToast(`✓ Colores replicados a ${n} mes${n > 1 ? 'es' : ''} pasado${n > 1 ? 's' : ''}`);
       });
     });
   }
