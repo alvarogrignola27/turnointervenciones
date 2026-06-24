@@ -100,14 +100,19 @@ const ALL_OPTIONS = [...ROSTER, ...OTROS];
 // Equipos por defecto que va a usar el generador automático.
 // Soporte para hasta 3 personas por equipo (a + b + opcional c).
 // El usuario puede editar este listado desde la pantalla "Generar mes".
+// v64: maxDays cambió de 9 (sin tope práctico) a un TEMPLATE BALANCEADO
+// donde 3 equipos tienen cupo 5 y 4 equipos tienen cupo 4 — total 31, que
+// es exactamente lo que tienen los meses largos. Con esto cada equipo hace
+// 4 o 5 días al mes (mínimo 3 en casos excepcionales por feriados / feria).
+// La rotación automática se encarga de turnar quiénes tienen 5 cada mes.
 const DEFAULT_TEAMS = [
-  { a: 'Frias',     b: 'Echague',                  maxDays: 9 },
-  { a: 'Hidalgo',   b: 'Laporta',                  maxDays: 9 },
-  { a: 'Capdevila', b: 'Gomez',                    maxDays: 9 },
-  { a: 'Campi',     b: 'Montilla',                 maxDays: 9 },
-  { a: 'Sallas',    b: 'Ibañez',   c: 'Martinez',  maxDays: 9 },
-  { a: 'Cabeza',    b: 'Celina',                   maxDays: 9 },
-  { a: 'Milisenda', b: 'Diaz',                     maxDays: 9 }
+  { a: 'Frias',     b: 'Echague',                  maxDays: 5 },
+  { a: 'Hidalgo',   b: 'Laporta',                  maxDays: 5 },
+  { a: 'Capdevila', b: 'Gomez',                    maxDays: 5 },
+  { a: 'Campi',     b: 'Montilla',                 maxDays: 4 },
+  { a: 'Sallas',    b: 'Ibañez',   c: 'Martinez',  maxDays: 4 },
+  { a: 'Cabeza',    b: 'Celina',                   maxDays: 4 },
+  { a: 'Milisenda', b: 'Diaz',                     maxDays: 4 }
 ];
 
 // Color de equipo asignado a cada persona (configurable desde el menú)

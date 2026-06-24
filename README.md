@@ -159,6 +159,13 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v64
+- **🎯 Cupos por equipo más realistas (máx 5, mín 3, target 4)**: hasta v63 los defaults venían con `maxDays: 9` (sin tope práctico) y los equipos quedaban con cupos desbalanceados. Ahora:
+  - **Nuevos defaults**: 3 equipos con cupo 5 y 4 equipos con cupo 4 = 31 (cubre exactamente un mes largo). En el largo plazo, con rotación automática activada, todos los equipos van turnándose entre cupo 5 y cupo 4.
+  - **Botón "⚖️ Auto-balancear cupos para este mes"**: arriba del listado de equipos en el modal del generador. Ajusta los maxDays para que sumen exactamente los días del mes y todos los equipos tengan 4 o 5 días (diferencia máxima de 1). Funciona para cualquier cantidad de equipos: ej. con 7 equipos hace 4×7=28 en febrero no-bisiesto, 5×2+4×5=30 en abril, 5×3+4×4=31 en marzo, etc.
+  - **Validación visual**: si tipeás un valor fuera del rango recomendado 3-5, el input se pinta en ámbar para que lo veas.
+  - **Default de "+ Agregar equipo"** bajado de 9 a 4.
+
 ### v63
 - **🐛 Bug del color del nombre en tiles con override de color**: cuando le cambiabas el color a Capdevila, Gomez, Milisenda o Diaz (por ejemplo Gomez tomando el color claro de Sallas), el nombre seguía saliendo blanco e ilegible. La causa era un shortcut hardcodeado `WHITE_TEXT` que SIEMPRE devolvía blanco para esos 4 nombres sin mirar el color real del fondo. Ahora el color del texto se calcula siempre por luminosidad del fondo aplicado, así un Gomez con fondo claro tiene texto oscuro y un Gomez con su color violeta default sigue teniendo texto blanco.
 - **⬅️ Replicar colores a meses pasados**: en el modal de Personalizar colores, además del bloque "📋 Replicar a los próximos meses", ahora hay un segundo bloque "📋 Replicar a los meses pasados" con botones ← 1 / ← 2 / ← 3. Misma lógica que el forward pero hacia atrás. Útil cuando armás los colores del mes actual y querés que meses anteriores ya cargados los hereden.

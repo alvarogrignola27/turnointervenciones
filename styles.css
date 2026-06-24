@@ -1259,6 +1259,27 @@ body.role-viewer { padding-bottom: 44px; }
   border-radius: 7px; font-size: 13px;
   padding: 0 6px; text-align: center; font-weight: 600;
 }
+/* v64: input fuera del rango recomendado 3-5 → resaltado en ámbar */
+.gen-team-row .max-days.out-of-range {
+  background: #fff7ed;
+  border-color: #fb923c;
+  color: #c2410c;
+}
+/* v64: botón auto-balancear */
+.gen-balance-btn {
+  width: 100%;
+  margin: 6px 0 4px;
+  background: #1f3a68;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.gen-balance-btn:active { transform: scale(0.98); }
+.gen-balance-btn:hover { background: #2d5a9e; }
 .gen-team-row .max-days-label {
   font-size: 10px; color: #6c6c70; font-weight: 600;
   display: block; margin-top: 1px; text-align: center;

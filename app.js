@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '63';
+const APP_VERSION = '64';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -4547,16 +4547,26 @@ function renderGenSettings() {
     maxInp.type = 'number';
     maxInp.className = 'max-days';
     maxInp.min = '1'; maxInp.max = '31';
-    maxInp.value = team.maxDays || 9;
+    maxInp.value = team.maxDays || 4;
+    // v64: rango recomendado 3-5 (max 5, mín 3 en casos excepcionales)
+    maxInp.title = 'Cupo mensual del equipo (recomendado: 3 a 5)';
+    // Aplicar clase visual si está fuera del rango recomendado
+    const checkMaxRange = () => {
+      const v = parseInt(maxInp.value, 10) || 0;
+      maxInp.classList.toggle('out-of-range', v > 5 || v < 3);
+    };
+    checkMaxRange();
     maxInp.addEventListener('change', (e) => {
-      cfg.teams[idx].maxDays = parseInt(e.target.value) || 9;
+      cfg.teams[idx].maxDays = parseInt(e.target.value) || 4;
       saveGenConfig(cfg);
       updateGenDayCounter();
+      checkMaxRange();
     });
     // Live update mientras tipea
     maxInp.addEventListener('input', (e) => {
       cfg.teams[idx].maxDays = parseInt(e.target.value) || 0;
       updateGenDayCounter();
+      checkMaxRange();
     });
     const lbl = document.createElement('span');
     lbl.className = 'max-days-label';
@@ -5791,9 +5801,40 @@ function wireUp() {
   document.querySelector('#gen-modal .modal-backdrop').addEventListener('click', closeGenSettings);
   document.getElementById('gen-add-team').addEventListener('click', () => {
     const cfg = loadGenConfig();
-    cfg.teams.push({ a: null, b: null, maxDays: 9 });
+    cfg.teams.push({ a: null, b: null, maxDays: 4 });
     saveGenConfig(cfg);
     renderGenSettings();
+  });
+  // v64: botón "Auto-balancear cupos para este mes"
+  document.getElementById('gen-auto-balance').addEventListener('click', () => {
+    const cfg = loadGenConfig();
+    if (!cfg.teams.length) return;
+    const n = cfg.teams.length;
+    const daysInMonth = new Date(state.year, state.month, 0).getDate();
+    const monthName = MES_NAMES[state.month - 1];
+    // Distribuir daysInMonth en n equipos: cada uno tiene base = floor(D/n)
+    // y los primeros (D mod n) reciben +1.
+    // Resultado: todos tienen base o base+1, diferencia máxima de 1 día.
+    const base = Math.floor(daysInMonth / n);
+    const extra = daysInMonth % n;
+    // Si la base queda por debajo de 3 (caso extremo con muchísimos equipos),
+    // avisamos pero igual aplicamos.
+    if (base < 3 && !confirm(`Con ${n} equipos para ${daysInMonth} días, algunos quedarían con apenas ${base} días (menos que el mínimo recomendado de 3). ¿Aplicar igual?`)) return;
+    if (base + (extra > 0 ? 1 : 0) > 5 && !confirm(`Con ${n} equipos para ${daysInMonth} días, algunos quedarían con ${base + 1} días (más del máximo recomendado de 5). ¿Aplicar igual?`)) return;
+    // Aplicar: los primeros `extra` equipos toman base+1, el resto base.
+    // No reordeno la lista — solo asigno valores en orden. La rotación
+    // automática se encarga de turnar quién tiene cupo alto entre meses.
+    cfg.teams.forEach((t, i) => {
+      t.maxDays = base + (i < extra ? 1 : 0);
+    });
+    saveGenConfig(cfg);
+    renderGenSettings();
+    const high = base + 1, low = base;
+    const highCount = extra, lowCount = n - extra;
+    let resumen;
+    if (extra === 0) resumen = `${n} equipos × ${base} días = ${daysInMonth}`;
+    else resumen = `${highCount} equipo${highCount>1?'s':''} × ${high} + ${lowCount} equipo${lowCount>1?'s':''} × ${low} = ${daysInMonth}`;
+    showToast(`⚖️ Cupos balanceados para ${monthName}: ${resumen}`);
   });
   document.getElementById('gen-auto-rotate-toggle').addEventListener('change', (e) => {
     saveAutoRotate(e.target.checked);
