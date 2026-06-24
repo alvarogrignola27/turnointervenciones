@@ -159,6 +159,10 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v65
+- **❓ Pregunta de salvaguarda antes de generar el mes**: ahora al darle a "Generar mes" aparece un confirm grande **"YA BALANCEASTE LOS EQUIPOS??"** que recuerda el rango recomendado (máx 5, mín 3) y muestra los cupos totales actuales vs los días del mes. Si los cupos no cuadran con los días, agrega una advertencia con el delta exacto y un tip para usar "⚖️ Auto-balancear para este mes". Si el usuario cancela, abre directamente el modal del generador.
+- El prompt **NO aparece** en regeneraciones (botón "🔀 Probar otra distribución") ni en meses de feria judicial (enero/julio), donde no aplica.
+
 ### v64
 - **🎯 Cupos por equipo más realistas (máx 5, mín 3, target 4)**: hasta v63 los defaults venían con `maxDays: 9` (sin tope práctico) y los equipos quedaban con cupos desbalanceados. Ahora:
   - **Nuevos defaults**: 3 equipos con cupo 5 y 4 equipos con cupo 4 = 31 (cubre exactamente un mes largo). En el largo plazo, con rotación automática activada, todos los equipos van turnándose entre cupo 5 y cupo 4.

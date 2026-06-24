@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '64';
+const APP_VERSION = '65';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -5157,6 +5157,31 @@ function generateMonth(opts = {}) {
   if (m === 1 || m === 7) {
     alert(`${MES_NAMES[m-1]} es mes de feria judicial. La generación automática no se aplica porque los equipos rotan de forma diferente.\n\nPodés cargar los turnos manualmente o marcar los días con feria judicial desde el panel del día.`);
     return;
+  }
+
+  // v65: pregunta de salvaguarda — confirmar que se balancearon los cupos antes
+  // de generar. Se saltea en regeneraciones (shuffleOffset > 0) y cuando el caller
+  // explícitamente pasa skipBalanceConfirm: true (por ejemplo flujos internos).
+  if (!shuffleOffset && !opts.skipBalanceConfirm) {
+    const monthName = MES_NAMES[m - 1];
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const totalMax = teams.reduce((s, t) => s + (t.maxDays || 0), 0);
+    let msg = `❓ YA BALANCEASTE LOS EQUIPOS??\n\n` +
+      `Antes de generar ${monthName} ${y}, asegurate de que los cupos máximos\n` +
+      `por equipo estén balanceados para este mes (máx 5, mín 3 por equipo).\n\n` +
+      `📊 ${monthName} tiene ${daysInMonth} días — total de cupos actuales: ${totalMax}.`;
+    if (totalMax !== daysInMonth) {
+      msg += totalMax < daysInMonth
+        ? `\n⚠️ Faltan ${daysInMonth - totalMax} cupo(s).`
+        : `\n⚠️ Sobran ${totalMax - daysInMonth} cupo(s).`;
+      msg += `\n\nTip: tocá el botón "⚖️ Auto-balancear para este mes"\nen el modal del generador y los ajusta automáticamente.`;
+    }
+    msg += `\n\n¿Continuar con la generación?`;
+    if (!confirm(msg)) {
+      // Si dijo que no, abrir directo el modal del generador para que pueda balancear
+      openGenSettings();
+      return;
+    }
   }
 
   // === CHECK 1: el mes anterior tiene que tener datos (continuidad) ===
