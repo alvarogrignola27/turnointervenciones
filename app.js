@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '61';
+const APP_VERSION = '62';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -1422,6 +1422,18 @@ let _suppressNextPush = false; // Para no rebotar al aplicar datos remotos
 // Se setea en true después de que initFirebaseSync hace el pull inicial bloqueante.
 let _initialSyncDone = false;
 
+// v62: flag más estricto. Se pone en true SOLO si el pull inicial REALMENTE
+// trajo datos o confirmó que la nube está vacía sin errores. Si hubo cualquier
+// error de red durante el pull, queda en false → los pushes quedan bloqueados
+// para evitar pisar la nube con datos locales potencialmente desactualizados.
+let _initialPullSucceeded = false;
+
+// v62: timestamp del último "Guardar calendario como maestro". Cuando un
+// dispositivo nuevo se conecta y ve que la nube tiene un master_timestamp más
+// nuevo que el local, NUNCA pushea hasta haberlo aplicado. Esto protege contra
+// el caso "dispositivo viejo se reconecta y pisa la nube".
+const MASTER_PUSH_KEY = 'turnos:masterPushTs';
+
 function resetPersonColors() {
   _personColorsCache = {};
   localStorage.removeItem(PERSON_COLORS_KEY);
@@ -1538,6 +1550,7 @@ async function initFirebaseSync() {
     // datos buenos que ya están en la nube. Si la nube tiene datos: aplicarlos
     // primero. Si está vacía: nada que pullear, igual marcamos initialSyncDone.
     setSyncInlineStatus('connecting', '🟡 Descargando datos iniciales de la nube...');
+    let pullOk = false;
     try {
       const initSnap = await _fbDb.ref(`users/${_fbUser.uid}/data`).once('value');
       const initData = initSnap.val();
@@ -1545,19 +1558,37 @@ async function initFirebaseSync() {
         // Hay datos remotos válidos → aplicarlos antes de habilitar pushes
         applyRemoteData(initData);
         localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(initData._timestamp));
+        // v62: si la nube tiene master timestamp, guardarlo localmente
+        if (initData._masterTimestamp) {
+          localStorage.setItem(MASTER_PUSH_KEY, String(initData._masterTimestamp));
+        }
       }
       // Si no hay datos remotos, queda el local intacto (probablemente sea el
       // primer dispositivo del usuario y va a poblar la nube cuando edite algo)
+      pullOk = true;
     } catch (pullErr) {
-      console.warn('Initial pull failed (continuing anyway):', pullErr);
+      console.warn('Initial pull failed:', pullErr);
+      pullOk = false;
     }
 
-    // Recién ahora habilitamos pushes y el listener para cambios incrementales
+    // v62: solo habilitamos pushes si el pull REALMENTE terminó OK. Si falló,
+    // dejamos _initialPullSucceeded en false → scheduleCloudPush ignora todo.
+    // Esto evita el escenario donde el pull falla por red y el push posterior
+    // pisa la nube con datos locales obsoletos.
+    _initialPullSucceeded = pullOk;
     _initialSyncDone = true;
     setupRemoteListener();
-    setSyncStatus('connected');
-    setSyncInlineStatus('connected', '🟢 Conectado como ' + _fbUser.email);
-    return true;
+    if (pullOk) {
+      setSyncStatus('connected');
+      setSyncInlineStatus('connected', '🟢 Conectado como ' + _fbUser.email);
+    } else {
+      setSyncStatus('error', '🔴 Pull inicial falló');
+      setSyncInlineStatus('error',
+        '🔴 Conectado pero el pull inicial de la nube falló.\n' +
+        'Los cambios locales NO se van a subir hasta resolver esto.\n' +
+        'Tocá "Reintentar conexión" cuando tengas internet estable.');
+    }
+    return pullOk;
   } catch (e) {
     console.error('Firebase init error:', e);
     const errCode = e.code || 'error';
@@ -1591,6 +1622,18 @@ function setupRemoteListener() {
     if (data._timestamp <= lastSync) return; // Datos viejos, ignorar
     applyRemoteData(data);
     localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(data._timestamp));
+    // v62: si la nube envió un master timestamp, guardarlo localmente
+    if (data._masterTimestamp) {
+      localStorage.setItem(MASTER_PUSH_KEY, String(data._masterTimestamp));
+    }
+    // v62: si el listener recibió datos, el canal de lectura funciona →
+    // habilitamos pushes (si estaban bloqueados por pull fallido)
+    if (!_initialPullSucceeded) {
+      console.log('[sync] Pull fallido recuperado vía listener — pushes re-habilitados');
+      _initialPullSucceeded = true;
+      setSyncStatus('connected');
+      setSyncInlineStatus('connected', '🟢 Reconectado y sincronizando');
+    }
   }, (err) => {
     console.error('Firebase listener error:', err);
     setSyncStatus('error', `🔴 ${err.message}`);
@@ -1666,15 +1709,22 @@ function scheduleCloudPush() {
   // CRÍTICO: no pushear nada hasta que el primer pull haya terminado.
   // Esto previene que un dispositivo nuevo pise la nube con su estado local vacío.
   if (!_initialSyncDone) return;
+  // v62: además, si el pull inicial FALLÓ (no solo si no terminó), no
+  // pusheamos automáticamente. El usuario puede forzar el push con el
+  // botón "📤 Guardar como maestro" si está seguro.
+  if (!_initialPullSucceeded) return;
   if (_syncTimer) clearTimeout(_syncTimer);
   setSyncStatus('syncing');
   _syncTimer = setTimeout(() => pushToCloud(), 1500);
 }
 
-async function pushToCloud() {
+async function pushToCloud(opts = {}) {
   if (!_fbUser || !_fbDb) return;
   // Doble salvaguarda: tampoco pusheamos si initial sync no terminó
   if (!_initialSyncDone) return;
+  // v62: bloquear pushes automáticos si el pull falló. opts.force=true permite
+  // saltear esta guarda (lo usa el botón explícito "Guardar como maestro").
+  if (!_initialPullSucceeded && !opts.force) return;
   const data = {};
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
@@ -1686,10 +1736,22 @@ async function pushToCloud() {
     }
   }
   data._timestamp = Date.now();
+  // v62: si se pidió como master push, guardar también _masterTimestamp
+  if (opts.asMaster) {
+    data._masterTimestamp = data._timestamp;
+    localStorage.setItem(MASTER_PUSH_KEY, String(data._timestamp));
+  } else {
+    // Mantener el master timestamp anterior si existe (no se pierde con pushes normales)
+    const existingMaster = localStorage.getItem(MASTER_PUSH_KEY);
+    if (existingMaster) data._masterTimestamp = parseInt(existingMaster, 10);
+  }
   try {
     await _fbDb.ref(`users/${_fbUser.uid}/data`).set(data);
     localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(data._timestamp));
     setSyncStatus('connected');
+    // v62: después de un push exitoso explícito (force), marcamos pull como OK
+    // así los próximos pushes automáticos vuelven a funcionar.
+    if (opts.force) _initialPullSucceeded = true;
   } catch (e) {
     console.error('Push to cloud failed:', e);
     setSyncStatus('error', `🔴 ${e.message}`);
@@ -1730,12 +1792,48 @@ async function forcePushToCloud() {
   if (!confirm('⬆️ Esto va a REEMPLAZAR todos los datos en la nube con los que tenés localmente. ¿Continuar?')) return;
   setSyncInlineStatus('working', '⬆️ Subiendo datos locales a la nube...');
   try {
-    await pushToCloud();
+    // force=true salta la guarda de pull-fallido
+    await pushToCloud({ force: true });
     setSyncInlineStatus('ok', '✅ Datos subidos a la nube correctamente.');
     showToast('⬆️ Subida completada');
   } catch (e) {
     console.error('Force push error:', e);
     setSyncInlineStatus('error', `🔴 Error subiendo: ${e.message}`);
+  }
+}
+
+// v62: Guardar el calendario actual como MAESTRO en la nube.
+// Marca la subida con un timestamp especial _masterTimestamp que protege contra
+// futuros dispositivos que se conecten con datos viejos: el sistema sabe que
+// este es "EL calendario bueno" y los nuevos siempre lo descargan primero.
+async function saveCalendarAsMaster() {
+  if (!_fbUser || !_fbDb) {
+    alert('Primero tenés que conectar Firebase desde Datos → Sincronización en la nube.');
+    return;
+  }
+  const msg =
+    '🚀 GUARDAR CALENDARIO COMO MAESTRO\n\n' +
+    'Esto va a hacer 3 cosas:\n\n' +
+    '1️⃣ Subir TODO el calendario actual a la nube como versión oficial.\n' +
+    '2️⃣ Marcar este momento como "punto seguro" para que ningún\n' +
+    '    dispositivo nuevo pueda pisarlo con datos viejos.\n' +
+    '3️⃣ Todos los celulares y PCs que abran el link después,\n' +
+    '    van a recibir este calendario al sincronizar.\n\n' +
+    '⚠️ Solo usalo cuando estés SEGURO de que el calendario\n' +
+    '   actual está como vos querés.\n\n' +
+    '¿Continuar?';
+  if (!confirm(msg)) return;
+  setSyncInlineStatus('working', '🚀 Guardando calendario maestro en la nube...');
+  try {
+    // force=true salta la guarda de pull-fallido; asMaster=true marca el timestamp especial
+    await pushToCloud({ force: true, asMaster: true });
+    const ts = new Date().toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+    setSyncInlineStatus('ok', `✅ Calendario maestro guardado el ${ts}.\nDispositivos nuevos van a descargar esta versión.`);
+    showToast('🚀 Calendario maestro guardado');
+  } catch (e) {
+    console.error('Save as master error:', e);
+    setSyncInlineStatus('error', `🔴 Error guardando como maestro: ${e.message}`);
+    alert('No se pudo guardar como maestro: ' + e.message);
   }
 }
 
@@ -1745,6 +1843,7 @@ async function disconnectSync() {
   }
   _fbApp = null; _fbAuth = null; _fbDb = null; _fbUser = null;
   _initialSyncDone = false; // Forzar pull inicial otra vez la próxima conexión
+  _initialPullSucceeded = false; // v62: idem
   saveFirebaseConfig(null);
   localStorage.removeItem(FIREBASE_LAST_SYNC_KEY);
   setSyncStatus('idle');
@@ -3039,121 +3138,9 @@ function renderDayView() {
   // Bloque "Equipo de intervención + Apoyo" (mismo helper que en panel del Mes)
   card.appendChild(buildDayInfoBlock(y, m, d));
 
-  // Otras filas (Gestión de Materiales, oficios, etc.)
-  const teamRes = findTeamSlot(slots);
-  const teamSlot = teamRes ? teamRes.slot : null;
-
-  // Detectar el slot del 3er miembro usando findTeamMembers (mismo helper que
-  // usa buildDayInfoBlock) — así si la config no lo detecta, el fallback por
-  // ROSTER lo encuentra igual y NO termina como "OTROS".
-  let thirdMemberSlotIdx = -1;
-  const _teamMembers = findTeamMembers(slots);
-  if (_teamMembers && _teamMembers.thirdSlotIdx !== null) {
-    thirdMemberSlotIdx = _teamMembers.thirdSlotIdx;
-  }
-
-  if (slots && slots.length > 0) {
-    const isCurrentMonth = (y === state.year && m === state.month);
-    // Categorizar slots restantes en: gestion-materiales / otros
-    const gestionIndices = [];
-    const otherIndices = [];
-    slots.forEach((s, i) => {
-      if (teamSlot && teamsEqual(s, teamSlot)) return;
-      if (i === thirdMemberSlotIdx) return;
-      // Si el slot tiene a alguien de gestión de materiales (ALVARO o MARTIN), va a esa sección
-      const namesInSlot = [s[0], s[1]].filter(Boolean);
-      const hasGestion = namesInSlot.some(n => GESTION_MATERIALES.includes(n));
-      const onlyGestionOrEmpty = namesInSlot.every(n => GESTION_MATERIALES.includes(n));
-      if (hasGestion && onlyGestionOrEmpty) {
-        gestionIndices.push(i);
-      } else {
-        otherIndices.push(i);
-      }
-    });
-
-    // Sección GESTIÓN DE MATERIALES
-    if (gestionIndices.length > 0) {
-      const gSec = document.createElement('div');
-      gSec.className = 'dv-section dv-section-gestion';
-      const lbl = document.createElement('div');
-      lbl.className = 'dv-section-label';
-      lbl.textContent = '📦 Gestión de materiales';
-      gSec.appendChild(lbl);
-      gestionIndices.forEach(slotIdx => {
-        const slot = slots[slotIdx];
-        const row = document.createElement('div');
-        row.className = 'dv-row';
-        // Para gestión usamos un pill personalizado con dropdown restringido a ALVARO/MARTIN
-        [0, 1].forEach(sideIdx => {
-          const name = slot[sideIdx];
-          // Sólo mostramos el lado que tiene nombre (los slots de gestión suelen ser de 1 persona)
-          if (!name && sideIdx === 1) return;
-          if (isCurrentMonth) {
-            const sel = document.createElement('select');
-            sel.className = 'di-team-pill di-team-pill-select dv-row-pill';
-            if (name) {
-              sel.style.background = colorFor(name);
-              sel.style.color = textColorFor(name);
-            } else {
-              sel.classList.add('empty');
-            }
-            const empty = document.createElement('option');
-            empty.value = ''; empty.textContent = '—';
-            sel.appendChild(empty);
-            GESTION_MATERIALES.forEach(opt => {
-              const o = document.createElement('option');
-              o.value = opt; o.textContent = opt;
-              if (opt === name) o.selected = true;
-              sel.appendChild(o);
-            });
-            sel.addEventListener('change', (e) => {
-              updateSlotName(d, slotIdx, sideIdx, e.target.value || null);
-            });
-            row.appendChild(sel);
-          } else {
-            const pill = document.createElement('div');
-            pill.className = 'di-team-pill dv-row-pill';
-            if (name) {
-              pill.textContent = name;
-              pill.style.background = colorFor(name);
-              pill.style.color = textColorFor(name);
-            } else {
-              pill.classList.add('empty');
-              pill.textContent = '—';
-            }
-            row.appendChild(pill);
-          }
-        });
-        gSec.appendChild(row);
-      });
-      card.appendChild(gSec);
-    }
-
-    // Sección OTROS (oficios, etc.)
-    if (otherIndices.length > 0) {
-      const otherSec = document.createElement('div');
-      otherSec.className = 'dv-section';
-      const lbl = document.createElement('div');
-      lbl.className = 'dv-section-label';
-      lbl.textContent = 'Otros';
-      otherSec.appendChild(lbl);
-      otherIndices.forEach((slotIdx) => {
-        const slot = slots[slotIdx];
-        const row = document.createElement('div');
-        row.className = 'dv-row';
-        const pills = renderSlotPills(slot, {
-          editable: isCurrentMonth,
-          slotIdx,
-          className: 'dv-row-pill',
-          abbrev: false,
-          onChange: (sIdx, sideIdx, newName) => updateSlotName(d, sIdx, sideIdx, newName),
-        });
-        pills.forEach(p => row.appendChild(p));
-        otherSec.appendChild(row);
-      });
-      card.appendChild(otherSec);
-    }
-  }
+  // Nota v62: las secciones "Gestión de materiales" y "Otros" se removieron
+  // del Day view porque duplicaban lo que ya renderiza buildDayInfoBlock más
+  // arriba (sección 📦 Gestión). Toda la edición se hace ahora desde ahí.
 
   // El panel "Gestionar día" se removió en v47 — sus secciones (Extras, Replicar, Marcadores)
   // están ahora integradas en el botón "Gestionar equipos" arriba del card y los botones
@@ -3742,98 +3729,66 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     block.appendChild(makeRepsSection(apoyoReps, 'Reemplazos del apoyo'));
   }
 
-  // ===== Sección "GESTIÓN" (visible en modo LECTURA): lista las personas
-  //       que están en el día más allá del equipo de intervención y apoyo.
-  //       Incluye G.MAT (Alvaro/Martín en sáb/dom no-feria) y extras (en feria).
-  //       En modo edición la ocultamos: ahí ya se muestra la sección "Extras"
-  //       editable abajo, y duplicar la misma info confunde. =====
-  if (!(editableUI && state.editingDay)) {
-    const gestionPeople = [];
+  // ===== Sección "📦 GESTIÓN" — unificada (v62)
+  // Lista las personas que están en el día más allá del equipo de
+  // intervención y apoyo (incluye G.MAT en sáb/dom no-feria y extras en feria).
+  // En MODO LECTURA: pills coloreadas, no editables.
+  // En MODO EDICIÓN (Gestionar equipos activo): dropdowns editables con × para
+  // quitar + botón "+ Agregar" para sumar más. Reemplaza a la sección "Extras"
+  // separada que existía antes en feria. =====
+  {
+    const gestionItems = [];
     const usedSlots = new Set();
     if (members) {
       usedSlots.add(members.mainSlotIdx);
       if (members.thirdSlotIdx !== null) usedSlots.add(members.thirdSlotIdx);
     }
     if (apoyo && apoyo.isFeria) usedSlots.add(1);
-    // Recolectar nombres en slots no usados
+    // Recolectar slots no usados con sus índices exactos (para edición)
     slots.forEach((s, i) => {
       if (usedSlots.has(i) || !s) return;
-      [s[0], s[1]].forEach(n => { if (n) gestionPeople.push(n); });
+      [0, 1].forEach(sideIdx => {
+        const name = s[sideIdx];
+        if (name) gestionItems.push({ name, slotIdx: i, sideIdx });
+      });
     });
-    if (gestionPeople.length > 0) {
+
+    const isEditMode = editableUI && state.editingDay;
+    // Mostramos la sección si hay personas asignadas, o si estamos en edit mode
+    // (para que se vea el botón "+ Agregar" aunque esté vacío).
+    if (gestionItems.length > 0 || isEditMode) {
       const gestSec = document.createElement('div');
       gestSec.className = 'di-section di-section-gestion';
       const gestLbl = document.createElement('div');
       gestLbl.className = 'di-label';
       gestLbl.textContent = '📦 Gestión';
       gestSec.appendChild(gestLbl);
-      const gestList = document.createElement('div');
-      gestList.className = 'di-gestion-list';
-      gestionPeople.forEach(name => {
-        const pill = document.createElement('div');
-        pill.className = 'di-team-pill di-gestion-pill';
-        pill.style.background = colorFor(name);
-        pill.style.color = textColorFor(name);
-        pill.textContent = name;
-        gestList.appendChild(pill);
-      });
-      gestSec.appendChild(gestList);
-      block.appendChild(gestSec);
-    }
-  }
 
-  // ===== Cuando el botón "Gestionar equipos" está activo (state.editingDay):
-  //       mostramos abajo Reemplazos + Gestión de Materiales (este último solo
-  //       en sábado/domingo no-feria, ya que ahí no aplica). =====
-  if (editableUI && state.editingDay) {
-    // --- Sección EXTRAS (solo en FERIA): muestra todos los slots adicionales más
-    //     allá del equipo y el apoyo. Cada extra es editableUI (dropdown) y borrable (×).
-    //     Se ofrece "+ Agregar extra" para sumar más personas (típico en feria con 5-6).
-    if (isFeriaJud(y, m, d)) {
-      const extrasSection = document.createElement('div');
-      extrasSection.className = 'di-edit-extra-section';
-      const extrasLabel = document.createElement('div');
-      extrasLabel.className = 'manage-section-label';
-
-      // Recolectar TODAS las personas en slots 2+ (no solo OTROS — todas).
-      // En feria, slot 0 = intervención, slot 1 = apoyo, slot 2+ = extras.
-      const allExtras = [];
-      for (let si = 2; si < slots.length; si++) {
-        const s = slots[si];
-        if (!s) continue;
-        for (let sideIdx = 0; sideIdx < 2; sideIdx++) {
-          if (s[sideIdx]) allExtras.push({ name: s[sideIdx], slotIdx: si, sideIdx });
-        }
-      }
-      extrasLabel.textContent = `✨ Extras${allExtras.length > 0 ? ` (${allExtras.length})` : ''}`;
-      extrasSection.appendChild(extrasLabel);
-
-      // Lista de extras existentes: cada uno como dropdown editableUI + ×
-      if (allExtras.length > 0) {
-        const extrasList = document.createElement('div');
-        extrasList.className = 'di-extras-edit-list';
-        allExtras.forEach(ex => {
+      if (isEditMode) {
+        // Modo edición: lista de dropdowns + ×, más botón "+ Agregar"
+        const gestList = document.createElement('div');
+        gestList.className = 'di-extras-edit-list';
+        gestionItems.forEach(item => {
           const row = document.createElement('div');
           row.className = 'di-extra-edit-row';
 
           const sel = document.createElement('select');
           sel.className = 'di-team-pill di-select-pill';
-          sel.style.background = colorFor(ex.name);
-          sel.style.color = textColorFor(ex.name);
+          sel.style.background = colorFor(item.name);
+          sel.style.color = textColorFor(item.name);
           sel.style.fontWeight = '600';
-          // En feria, dropdown completo (Equipos + Otros) para poder elegir cualquiera
-          populateNamesDropdown(sel, ex.name, true);
+          // Dropdown completo (Equipos + Otros) para poder elegir cualquiera
+          populateNamesDropdown(sel, item.name, true);
           sel.addEventListener('change', (e) => {
             const newName = e.target.value || null;
             snapshotDayBeforeEdit(d);
-            if (!state.data[String(d)] || !state.data[String(d)][ex.slotIdx]) return;
+            if (!state.data[String(d)] || !state.data[String(d)][item.slotIdx]) return;
             if (newName === null) {
-              // Borrar este lado del slot
-              state.data[String(d)][ex.slotIdx][ex.sideIdx] = null;
-              const s = state.data[String(d)][ex.slotIdx];
-              if (!s[0] && !s[1]) state.data[String(d)].splice(ex.slotIdx, 1);
+              state.data[String(d)][item.slotIdx][item.sideIdx] = null;
+              const s = state.data[String(d)][item.slotIdx];
+              if (!s[0] && !s[1]) state.data[String(d)].splice(item.slotIdx, 1);
             } else {
-              state.data[String(d)][ex.slotIdx][ex.sideIdx] = newName;
+              state.data[String(d)][item.slotIdx][item.sideIdx] = newName;
             }
             cleanupDay(d);
             saveMonthData(state.year, state.month, state.data);
@@ -3846,37 +3801,59 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
           const del = document.createElement('button');
           del.className = 'di-pill-delete';
           del.textContent = '×';
-          del.title = `Quitar a ${ex.name}`;
+          del.title = `Quitar a ${item.name} de Gestión`;
           del.addEventListener('click', () => {
-            if (!confirm(`¿Quitar a ${ex.name}?`)) return;
+            if (!confirm(`¿Quitar a ${item.name} de Gestión?`)) return;
             snapshotDayBeforeEdit(d);
-            if (state.data[String(d)] && state.data[String(d)][ex.slotIdx]) {
-              state.data[String(d)][ex.slotIdx][ex.sideIdx] = null;
-              const s = state.data[String(d)][ex.slotIdx];
-              if (!s[0] && !s[1]) state.data[String(d)].splice(ex.slotIdx, 1);
+            if (state.data[String(d)] && state.data[String(d)][item.slotIdx]) {
+              state.data[String(d)][item.slotIdx][item.sideIdx] = null;
+              const s = state.data[String(d)][item.slotIdx];
+              if (!s[0] && !s[1]) state.data[String(d)].splice(item.slotIdx, 1);
             }
             cleanupDay(d);
             saveMonthData(state.year, state.month, state.data);
             rerenderActiveView();
             if (state.view === 'month') renderDetail();
             else if (state.view === 'day') renderDayView();
-            showToast(`✓ ${ex.name} quitado`);
+            showToast(`✓ ${item.name} quitado`);
           });
           row.appendChild(del);
-          extrasList.appendChild(row);
+          gestList.appendChild(row);
         });
-        extrasSection.appendChild(extrasList);
+        gestSec.appendChild(gestList);
+
+        // Botón "+ Agregar" — usa la misma modal que ya existía para extras
+        const addBtn = document.createElement('button');
+        addBtn.className = 'manage-item';
+        addBtn.innerHTML = '+ Agregar a Gestión';
+        addBtn.addEventListener('click', () => openAddExtraForm(d));
+        gestSec.appendChild(addBtn);
+      } else {
+        // Modo lectura: pills coloreadas como hasta v61
+        const gestList = document.createElement('div');
+        gestList.className = 'di-gestion-list';
+        gestionItems.forEach(item => {
+          const pill = document.createElement('div');
+          pill.className = 'di-team-pill di-gestion-pill';
+          pill.style.background = colorFor(item.name);
+          pill.style.color = textColorFor(item.name);
+          pill.textContent = item.name;
+          gestList.appendChild(pill);
+        });
+        gestSec.appendChild(gestList);
       }
-
-      // Botón "+ Agregar extra" — abre modal con ROSTER + OTROS
-      const addExtraBtn = document.createElement('button');
-      addExtraBtn.className = 'manage-item';
-      addExtraBtn.innerHTML = '+ Agregar extra';
-      addExtraBtn.addEventListener('click', () => openAddExtraForm(d));
-      extrasSection.appendChild(addExtraBtn);
-
-      block.appendChild(extrasSection);
+      block.appendChild(gestSec);
     }
+  }
+
+  // ===== Cuando el botón "Gestionar equipos" está activo (state.editingDay):
+  //       mostramos abajo Reemplazos + Gestión de Materiales (este último solo
+  //       en sábado/domingo no-feria, ya que ahí no aplica). =====
+  if (editableUI && state.editingDay) {
+    // Nota v62: la sección "Extras" separada (solo feria) se removió porque
+    // ahora la sección 📦 Gestión de arriba ya muestra y permite editar todos
+    // los slots adicionales (extras de feria + G.MAT en sáb/dom no-feria),
+    // con su propio botón "+ Agregar a Gestión".
 
     // --- Sección REEMPLAZOS ---
     const repsSection = document.createElement('div');
@@ -5758,6 +5735,7 @@ function wireUp() {
       else if (a === 'mark-month-feria') markWholeMonthAsFeriaJud();
       else if (a === 'mark-range-feria') markRangeAsFeriaJud();
       else if (a === 'sync-settings') openSyncSettings();
+      else if (a === 'save-as-master') saveCalendarAsMaster();
       else if (a === 'check-update') checkForUpdate();
       else if (a === 'install') triggerInstall();
       else if (a === 'toggle-role') toggleUserRole();
@@ -5935,6 +5913,8 @@ function wireUp() {
   });
   document.getElementById('sync-force-pull').addEventListener('click', forcePullFromCloud);
   document.getElementById('sync-force-push').addEventListener('click', forcePushToCloud);
+  const syncMasterBtn = document.getElementById('sync-save-as-master');
+  if (syncMasterBtn) syncMasterBtn.addEventListener('click', saveCalendarAsMaster);
   document.getElementById('import-file').addEventListener('change', (e) => {
     if (e.target.files[0]) importData(e.target.files[0]);
     e.target.value = '';

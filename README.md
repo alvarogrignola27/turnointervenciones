@@ -159,6 +159,19 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v62
+- **🐛 Sección "Otros" duplicada en vista Día — eliminada**: en la vista Día (mobile y PC), abajo del card del día aparecían dos secciones legacy ("Gestión de materiales" y "Otros") que volvían a renderizar los mismos slots ya mostrados arriba en 📦 Gestión. Eliminadas ambas. Ahora la vista Día es idéntica a la sección detalle del Mes.
+- **✏️ Sección 📦 Gestión ahora es editable**: antes era solo lectura (pills coloreadas). Ahora, al entrar a "Gestionar equipos":
+  - Cada nombre se convierte en un dropdown editable (con Equipos + Otros agrupados).
+  - Aparece un **×** al lado de cada pill para quitar a esa persona.
+  - Aparece un botón **"+ Agregar a Gestión"** abajo que abre el selector con todo el roster + OTROS.
+  - La sección "✨ Extras" separada (que solo aparecía en feria) se removió porque ahora 📦 Gestión hace lo mismo y para feria + no-feria (G.MAT en sáb/dom).
+- **🚀 Botón "Guardar calendario como maestro en la nube"**: nueva acción explícita en el menú Datos y dentro del modal de Sincronización. Cuando termines de armar el calendario, tocando este botón:
+  1. Sube TODO el estado local a Firebase con un timestamp especial `_masterTimestamp`.
+  2. Los dispositivos nuevos que se conecten van a descargar esta versión y NO van a poder pisarla con sus datos viejos en el escenario de race.
+  3. Mostrá un confirm con 3 puntos antes de ejecutar, para que sea imposible apretarlo sin querer.
+- **🛡️ Sync más robusto contra "dispositivo nuevo pisa la nube"**: nueva flag `_initialPullSucceeded` (más estricta que `_initialSyncDone` de v60). Solo es `true` si el pull inicial terminó SIN errores. Si la conexión a Firebase tiene cualquier hiccup (timeout, sin internet momentáneo, etc.), los pushes automáticos quedan BLOQUEADOS hasta que el listener confirme que la lectura funciona o el usuario fuerce el push manualmente. Antes con v60 si el pull tiraba excepción, el catch silencioso seguía adelante y habilitaba pushes igual — ese era el agujero.
+
 ### v61
 - **📊 Footer compacto en modo viewer**: como en v60 se ocultaban los 4 botones de abajo en modo viewer, no quedaba forma de ver la versión actual ni de forzar una actualización. Agregué un footer fijo abajo del calendario que aparece SOLO en modo viewer, con:
   - **Versión X** a la izquierda (sincronizada con `APP_VERSION` actual).
