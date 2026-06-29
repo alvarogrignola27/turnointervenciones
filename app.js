@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '66';
+const APP_VERSION = '67';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -2111,13 +2111,32 @@ function countDaysByTeamInCurrentMonth() {
     if (!slot || slot.length === 0) continue;
     const main = slot[0];
     if (!main) continue;
-    const idx = teams.findIndex(t =>
-      (t.a === main[0] && t.b === main[1]) ||
-      (t.a === main[1] && t.b === main[0])
-    );
+    const idx = teamIdxForSlotFlexible(main, teams);
     if (idx >= 0) counts[idx]++;
   }
   return { teams, counts };
+}
+
+// v67: helper flexible para identificar a qué equipo "pertenece" un slot.
+// Solución al bug donde meses pasados con reemplazos o config de equipos
+// distinta daban 0 en estadísticas por equipo.
+// Estrategia: cuenta cuántos miembros del equipo aparecen en el slot
+// (a, b o c). El equipo con MÁS coincidencias gana. Empates → primer equipo
+// en orden de definición. Si ningún equipo tiene match → -1.
+function teamIdxForSlotFlexible(slot, teams) {
+  if (!slot || (!slot[0] && !slot[1])) return -1;
+  let bestIdx = -1, bestScore = 0;
+  teams.forEach((t, i) => {
+    const members = [t.a, t.b, t.c].filter(Boolean);
+    let score = 0;
+    if (slot[0] && members.includes(slot[0])) score++;
+    if (slot[1] && members.includes(slot[1])) score++;
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = i;
+    }
+  });
+  return bestIdx;
 }
 
 // Cuenta días por equipo en un rango de meses (inclusive)
@@ -2134,10 +2153,7 @@ function countDaysByTeamInRange(fromY, fromM, toY, toM) {
       if (!slot || slot.length === 0) continue;
       const main = slot[0];
       if (!main) continue;
-      const idx = teams.findIndex(t =>
-        (t.a === main[0] && t.b === main[1]) ||
-        (t.a === main[1] && t.b === main[0])
-      );
+      const idx = teamIdxForSlotFlexible(main, teams);
       if (idx >= 0) counts[idx]++;
     }
     m++;
@@ -5252,18 +5268,29 @@ function generateMonth(opts = {}) {
   // Si el mes anterior es feria (enero o julio), recolectar los equipos que
   // trabajaron en su última semana. Esos equipos deben descansar en la PRIMERA
   // semana del mes actual (ej: febrero después de enero, agosto después de julio).
+  // v67: ahora detecta por INTEGRANTE INDIVIDUAL. En feria los slots son personas
+  // sueltas o reemplazos que rara vez forman el par exacto del equipo. Si CUALQUIER
+  // miembro (a, b o c) del equipo aparece en CUALQUIER slot de la última semana
+  // de enero/julio, ese equipo descansa la primera semana del nuevo mes.
   const postFeriaRestTeams = new Set();
   if (prevM === 1 || prevM === 7) {
     const prevDim = new Date(prevY, prevM, 0).getDate();
     const startD = Math.max(1, prevDim - 6);
+    // Pre-construir un mapa nombre→teamIdx para no recorrer todos los equipos
+    // por cada nombre (Frias en feria puede aparecer 5 veces, multiplica el costo).
+    const nameToTeam = {};
+    teams.forEach((t, tIdx) => {
+      [t.a, t.b, t.c].filter(Boolean).forEach(name => { nameToTeam[name] = tIdx; });
+    });
     for (let dd = startD; dd <= prevDim; dd++) {
       const daySlots = prevData[String(dd)] || [];
       daySlots.forEach(slot => {
-        if (!slot || !slot[0] || !slot[1]) return;
-        const tIdx = teams.findIndex(t =>
-          (t.a === slot[0] && t.b === slot[1]) || (t.a === slot[1] && t.b === slot[0])
-        );
-        if (tIdx >= 0) postFeriaRestTeams.add(tIdx);
+        if (!slot) return;
+        [slot[0], slot[1]].forEach(name => {
+          if (!name) return;
+          const tIdx = nameToTeam[name];
+          if (tIdx !== undefined) postFeriaRestTeams.add(tIdx);
+        });
       });
     }
   }
@@ -5536,6 +5563,11 @@ function generateMonth(opts = {}) {
       recentWeekends.slice(-WEEKEND_RECENT_MIN_GAP).forEach(i => hardExclude.add(i));
       teamsBlockedByBirthday([wk[5], wk[6]]).forEach(i => hardExclude.add(i));
       teamsBlockedByAbsence([wk[5], wk[6]]).forEach(i => hardExclude.add(i));
+      // v67: en la PRIMERA semana después de feria, los equipos cuyos integrantes
+      // trabajaron en la última semana de enero/julio también descansan del weekend.
+      if (weekIdx === 0) {
+        postFeriaRestTeams.forEach(i => hardExclude.add(i));
+      }
 
       // Buscar siguiente equipo en rotación que cumpla
       let attempts = 0;

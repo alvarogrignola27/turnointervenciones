@@ -16,7 +16,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=66">
+  <link rel="stylesheet" href="styles.css?v=67">
   <!-- Firebase SDK (compat) - se conecta solo si está configurado -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -105,7 +105,7 @@
     <!-- Footer compacto que SOLO se muestra en modo viewer (cuando los 4 botones de arriba están ocultos).
          Permite ver la versión y forzar la actualización sin perder el acceso al menú Datos. -->
     <div class="viewer-footer" id="viewer-footer">
-      <span class="viewer-footer-version">Versión <span id="viewer-version">66</span></span>
+      <span class="viewer-footer-version">Versión <span id="viewer-version">67</span></span>
       <button class="viewer-footer-btn" id="viewer-force-update">🔄 Buscar actualización</button>
     </div>
 
@@ -155,7 +155,7 @@
       <div class="menu-version">
         <div class="version-badge ok" id="version-badge">
           <span class="version-dot">●</span>
-          <span class="version-label">Versión <span id="app-version">66</span> · actualizada</span>
+          <span class="version-label">Versión <span id="app-version">67</span> · actualizada</span>
         </div>
         <button class="version-update-btn hidden" id="version-update-btn">
           🔴 Hay una versión nueva — Tocar para actualizar
@@ -343,8 +343,8 @@
     </div>
   </div>
 
-  <script src="data.js?v=66"></script>
-  <script src="app.js?v=66"></script>
+  <script src="data.js?v=67"></script>
+  <script src="app.js?v=67"></script>
   <script>
     // === Detección de actualizaciones del Service Worker ===
     // Mantiene una referencia al SW "esperando" (instalado pero no activo todavía).

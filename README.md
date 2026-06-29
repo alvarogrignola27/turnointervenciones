@@ -159,6 +159,10 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v67
+- **🐛 Stats POR EQUIPO en meses pasados arreglado**: los meses con reemplazos, config de equipos distinta o feria judicial daban 0 en la sección POR EQUIPO porque el algoritmo exigía un match EXACTO del par (a, b) en slot[0]. Ahora detecta el equipo por mejor coincidencia: cuenta cuántos miembros del equipo (a, b o c) están presentes en el slot principal, y elige el equipo con más matches. Un día con Frias reemplazado por Cabeza (`[Cabeza, Echague]`) ahora cuenta correctamente como día del equipo Frias+Echague (ancla = Echague). Meses de feria también muestran datos (cuando alguien del equipo trabaja solo).
+- **🛡️ Regla post-feria por INTEGRANTE individual**: cuando se genera Febrero o Agosto (después de Enero/Julio de feria), el algoritmo ahora detecta correctamente qué equipos descansan la primera semana. Antes solo detectaba pares EXACTOS de equipo en los slots, pero en feria los integrantes aparecen sueltos o con reemplazos y casi nunca formaban el par exacto. Ahora: si CUALQUIER miembro del equipo (a, b, c) trabajó en CUALQUIER slot de los últimos 7 días de feria, ese equipo descansa toda la primera semana del nuevo mes (Lun-Mar / Mié-Jue / Vie / Sáb-Dom).
+
 ### v66
 - **🔄 Rotación FIFO crítica de cupos altos**: implementa la regla pedida por el uso real — un equipo que hace 5 días en un mes NO puede volver a hacer 5 hasta que los OTROS 6 equipos hayan hecho su turno. Ejemplo: si Sallas hace 5 en Agosto, en Septiembre y Octubre quedan otros equipos al frente de la cola, y recién en Noviembre/Diciembre Sallas vuelve a ser candidato a cupo alto.
   - **Cómo funciona**: el historial reconstruido desde los meses persistidos ahora trackea `lastHighMonth` por equipo (el último mes-año en que hizo ≥5 días). En `computeRotatedMaxes`, los equipos se ordenan por `(lastHighMonth ASC, totalDays ASC, idx ASC)` antes de repartir el template descendente. Los que hace más tiempo no hacen cupo alto van primero.
