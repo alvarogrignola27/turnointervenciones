@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '69';
+const APP_VERSION = '71';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -4410,30 +4410,52 @@ function buildExportCanvas(y, m, data, opts = {}) {
   const cellsTotal = firstDow + dim;
   const numRows = Math.ceil(cellsTotal / 7);
 
-  // Detectar el máximo de slots-con-gente en cualquier día del mes
-  // (para dimensionar la altura de las celdas en modo showAll).
-  let maxSlots = 1;
-  if (showAll) {
-    for (let d = 1; d <= dim; d++) {
-      const slots = data[String(d)] || [];
-      // Contar slots no-vacíos
-      const used = slots.filter(s => s && (s[0] || s[1])).length;
-      if (used > maxSlots) maxSlots = used;
-    }
+  // v70: tiles G.MAT (Alvaro/Martin solos) son MÁS CHICOS que los normales.
+  // Esto refleja visualmente que G.MAT no es intervención principal.
+  const isGmatSlot = (slot) => {
+    if (!slot) return false;
+    const a = slot[0], b = slot[1];
+    if (a && b) return false; // 2 personas → no es G.MAT
+    const name = a || b;
+    return name === 'ALVARO' || name === 'MARTIN';
+  };
+
+  // Tamaños base — v70: optimizados para que el calendario entre en una
+  // hoja OFICIO HORIZONTAL (ratio ~1.65:1, ~14"×8.5"). Reducimos paddings
+  // y altura de tiles vs v69.
+  const tileH = 50;        // tile normal (equipo de intervención/apoyo)
+  const tileGmatH = 32;    // tile G.MAT (Alvaro/Martin solos) — ~64% del normal
+  const tileGap = 4;       // gap entre tiles de un mismo día
+  const dayLabelH = 32;    // espacio para el número del día arriba
+  const cellPadV = 6;      // padding vertical interno de la celda
+
+  // Calcular altura del CONTENIDO de cada día (suma de tiles + gaps).
+  // Luego usar el máximo como altura uniforme de celda → grilla pareja.
+  const slotsForDay = (d) => {
+    const all = data[String(d)] || [];
+    return showAll
+      ? all.filter(s => s && (s[0] || s[1]))
+      : (all[0] && (all[0][0] || all[0][1]) ? [all[0]] : []);
+  };
+  let maxContentH = tileH; // mínimo: 1 tile normal
+  for (let d = 1; d <= dim; d++) {
+    const slots = slotsForDay(d);
+    if (slots.length === 0) continue;
+    let h = 0;
+    slots.forEach((s, i) => {
+      h += isGmatSlot(s) ? tileGmatH : tileH;
+      if (i > 0) h += tileGap;
+    });
+    if (h > maxContentH) maxContentH = h;
   }
 
-  // Dimensiones: el tile interno mide ~70px de alto; el día arriba ~40px.
-  const tileH = 60;
-  const tileGap = 6;
-  const dayLabelH = 44;
-  const cellPaddingV = 12;
-  const cellW = 220;
-  const cellH = dayLabelH + cellPaddingV + (tileH * maxSlots) + (tileGap * Math.max(0, maxSlots - 1)) + cellPaddingV;
-  const padX = 30, padY = 30;
-  const headerH = 110;
-  const dayHeaderH = 50;
+  const cellH = dayLabelH + cellPadV + maxContentH + cellPadV;
+  const cellW = 290;       // ancho de columna
+  const padX = 24, padY = 22;
+  const headerH = 84;
+  const dayHeaderH = 36;
   const W = padX * 2 + cellW * 7;
-  const H = padY * 2 + headerH + dayHeaderH + cellH * numRows + 60;
+  const H = padY * 2 + headerH + dayHeaderH + cellH * numRows + 36;
 
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
@@ -4445,7 +4467,7 @@ function buildExportCanvas(y, m, data, opts = {}) {
 
   // === Header: nombre del mes + año ===
   ctx.fillStyle = '#1f3a68';
-  ctx.font = 'bold 56px system-ui, -apple-system, sans-serif';
+  ctx.font = 'bold 46px system-ui, -apple-system, sans-serif';
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
   const title = `${monthName.toUpperCase()} ${y}` + (isFeria ? ' · FERIA JUDICIAL' : '');
@@ -4453,8 +4475,7 @@ function buildExportCanvas(y, m, data, opts = {}) {
 
   // === Cabecera de días (Lun, Mar, Mié, ...) ===
   const dayNames = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
-  ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
-  ctx.fillStyle = '#6c6c70';
+  ctx.font = 'bold 18px system-ui, -apple-system, sans-serif';
   const dayHeaderY = padY + headerH;
   for (let c = 0; c < 7; c++) {
     const isWeekend = c >= 5;
@@ -4490,51 +4511,46 @@ function buildExportCanvas(y, m, data, opts = {}) {
 
     // Número del día (esquina superior izquierda)
     ctx.fillStyle = isWeekendCell ? '#b91c1c' : '#1c1c1e';
-    ctx.font = 'bold 32px system-ui, -apple-system, sans-serif';
+    ctx.font = 'bold 26px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText(String(d), x + 12, yPos + 10);
+    ctx.fillText(String(d), x + 10, yPos + 6);
 
     // === TILES: uno por slot no-vacío del día ===
-    // En modo showAll, renderizamos todos los slots. Sin showAll, solo slot[0].
-    const slots = data[String(d)] || [];
-    const slotsToRender = showAll
-      ? slots.filter(s => s && (s[0] || s[1]))
-      : (slots[0] && (slots[0][0] || slots[0][1]) ? [slots[0]] : []);
+    const slotsToRender = slotsForDay(d);
 
-    let tileY = yPos + dayLabelH + cellPaddingV;
+    let tileY = yPos + dayLabelH + cellPadV;
     slotsToRender.forEach((slot, idx) => {
       const a = slot[0], b = slot[1];
-      drawSlotTile(ctx, x + 8, tileY, cellW - 16, tileH, a, b);
-      tileY += tileH + tileGap;
+      const isGmat = isGmatSlot(slot);
+      const thisTileH = isGmat ? tileGmatH : tileH;
+      drawSlotTile(ctx, x + 6, tileY, cellW - 12, thisTileH, a, b, { isGmat });
+      tileY += thisTileH + tileGap;
     });
   }
 
   // === Footer ===
   ctx.fillStyle = '#9ca3af';
-  ctx.font = '18px system-ui, -apple-system, sans-serif';
+  ctx.font = '14px system-ui, -apple-system, sans-serif';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`Turnos de Intervenciones · v${APP_VERSION}`, W - padX, H - 30);
+  ctx.fillText(`Turnos de Intervenciones · v${APP_VERSION}`, W - padX, H - 18);
 
   return canvas;
 }
 
 // Dibuja un tile (pill) con uno o dos nombres adentro.
-// Si hay 2 nombres con colores distintos, divide el tile verticalmente.
-// Si los colores coinciden o solo hay un nombre, dibuja un tile sólido.
-function drawSlotTile(ctx, x, y, w, h, a, b) {
+// opts.isGmat=true → tile más bajo, con prefijo "G.MAT" antes del nombre.
+function drawSlotTile(ctx, x, y, w, h, a, b, opts = {}) {
   if (!a && !b) return;
-  // Si ambos nombres existen Y tienen colores DIFERENTES, dividimos visualmente.
-  // Esto cubre el caso típico de feria donde slot tiene 2 personas de equipos distintos.
+  const isGmat = !!opts.isGmat;
   const colorA = a ? colorFor(a) : null;
   const colorB = b ? colorFor(b) : null;
-  const isSplit = a && b && colorA !== colorB;
+  // En G.MAT solo hay 1 persona, no aplica split
+  const isSplit = !isGmat && a && b && colorA !== colorB;
 
   if (isSplit) {
-    // Mitad superior: nombre A, mitad inferior: nombre B
-    const r = 12;
-    // Trazo del rect general para el clip
+    const r = 10;
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -4548,35 +4564,35 @@ function drawSlotTile(ctx, x, y, w, h, a, b) {
     ctx.quadraticCurveTo(x, y, x + r, y);
     ctx.closePath();
     ctx.clip();
-    // Pintar mitad A
     ctx.fillStyle = colorA;
     ctx.fillRect(x, y, w, h / 2);
-    // Pintar mitad B
     ctx.fillStyle = colorB;
     ctx.fillRect(x, y + h / 2, w, h / 2);
     ctx.restore();
-    // Texto
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+    ctx.font = 'bold 17px system-ui, -apple-system, sans-serif';
     ctx.fillStyle = textColorFor(a);
     ctx.fillText(a, x + w / 2, y + h / 4);
     ctx.fillStyle = textColorFor(b);
     ctx.fillText(b, x + w / 2, y + (h * 3) / 4);
   } else {
-    // Tile sólido: color del primer nombre presente
     const refName = a || b;
     ctx.fillStyle = colorFor(refName);
-    roundedRect(ctx, x, y, w, h, 12, true);
+    roundedRect(ctx, x, y, w, h, isGmat ? 8 : 10, true);
     ctx.fillStyle = textColorFor(refName);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    if (a && b) {
-      ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
-      ctx.fillText(a, x + w / 2, y + h / 2 - 13);
-      ctx.fillText(b, x + w / 2, y + h / 2 + 13);
+    if (isGmat) {
+      // Tile G.MAT: "G.MAT" + nombre en una sola línea, fuente más chica
+      ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
+      ctx.fillText(`G.MAT · ${refName}`, x + w / 2, y + h / 2);
+    } else if (a && b) {
+      ctx.font = 'bold 17px system-ui, -apple-system, sans-serif';
+      ctx.fillText(a, x + w / 2, y + h / 2 - 10);
+      ctx.fillText(b, x + w / 2, y + h / 2 + 10);
     } else {
-      ctx.font = 'bold 26px system-ui, -apple-system, sans-serif';
+      ctx.font = 'bold 20px system-ui, -apple-system, sans-serif';
       ctx.fillText(refName, x + w / 2, y + h / 2);
     }
   }
@@ -4625,9 +4641,12 @@ function printExportImage() {
   const monthName = MES_NAMES[state.month - 1];
   w.document.write(`<!DOCTYPE html><html><head><title>Turnos ${monthName} ${state.year}</title>
 <style>
-  body { margin: 0; padding: 20px; background: #fff; }
+  body { margin: 0; padding: 16px; background: #fff; }
   img { width: 100%; max-width: 100%; height: auto; display: block; }
-  @media print { body { padding: 0; } @page { margin: 10mm; } }
+  @media print {
+    body { padding: 0; }
+    @page { size: legal landscape; margin: 6mm; }
+  }
 </style></head><body><img src="${dataUrl}"><script>window.onload = () => setTimeout(() => window.print(), 300);</script></body></html>`);
   w.document.close();
 }
@@ -6151,7 +6170,26 @@ function wireUp() {
         localStorage.setItem(SHUFFLE_KEY, String(next));
         generateMonth({ shuffleOffset: next + 1 });
       }
-      else if (a === 'export-image') exportAndShareMonth();
+      // v71: tercera opción de generación — variante aleatoria.
+      // Útil cuando ni la generación inicial ni "Probar otra distribución"
+      // dan un resultado que convenza, y se necesita explorar una alternativa
+      // más distinta. Usa un shuffleOffset random (no incremental) que se
+      // ASEGURA de ser distinto del último valor usado.
+      else if (a === 'regenerate-random') {
+        const SHUFFLE_KEY = 'turnos:gen_shuffle_offset';
+        const cur = parseInt(localStorage.getItem(SHUFFLE_KEY) || '0', 10);
+        let next;
+        let tries = 0;
+        do {
+          next = Math.floor(Math.random() * 7);
+          tries++;
+        } while (next === cur && tries < 10);
+        localStorage.setItem(SHUFFLE_KEY, String(next));
+        generateMonth({ shuffleOffset: next + 1 });
+      }
+      // v68: handler único para exportar imagen (openExportImage usa canvas puro,
+      // sin dependencias externas). El antiguo exportAndShareMonth requería
+      // html2canvas que no se carga siempre. Ya no se usa.
       else if (a === 'stats') openStatsSettings();
       else if (a === 'absences') openAbsencesModal();
       else if (a === 'gen-settings') openGenSettings();

@@ -159,6 +159,14 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v71
+- **🎰 Tercera opción de generación — "Variante al azar"**: nuevo botón en Datos → Generación. A diferencia de "🔀 Probar otra distribución" (que incrementa el shuffle offset secuencialmente), este botón usa un offset aleatorio que se asegura de ser distinto al actual. Sirve cuando ninguna de las dos primeras distribuciones convence y se necesita una variante más distinta.
+- **🎨 Botones del modal Generar — mejoras visuales mucho más marcadas**: cada card de equipo ahora tiene fondo blanco con borde gris azulado visible y sombra suave (antes eran fondos grises planos sin contorno). Hover effect que levanta la card. Selects y inputs con borde definido + focus ring azul. Botón × rediseñado en card blanco con borde rojo claro. Botón + para 3ra persona con dashed azul. Diferencias claras al pasar el mouse.
+
+### v70
+- **📐 Exportar imagen para oficio horizontal**: las dimensiones del canvas se redujeron para que el calendario entre cómodo en una hoja oficio (Legal) en formato horizontal al imprimir. Reducidos paddings, headers y altura de tiles vs v69. El stylesheet del print modal ahora declara `@page { size: legal landscape }` para que el navegador use directamente esa configuración al guardar el PDF.
+- **🛠️ G.MAT con tile compacto + prefijo**: cuando un slot contiene a ALVARO o MARTIN solos (gestión de materiales), el tile ahora se renderiza más bajo (~32px vs ~50px del normal) y con el prefijo `G.MAT · ALVARO` (o `G.MAT · MARTIN`). Esto refleja visualmente que la gestión no es intervención principal y libera espacio para mostrar más tiles cuando hace falta.
+
 ### v69
 - **🎨 Exportar imagen: soporte multi-tile para feria**: en feria (Enero/Julio) los días tienen 2-3 personas extras además del equipo principal, cada una con su color. v68 solo mostraba el slot principal — quedaba incompleto. Ahora:
   - Nuevo **toggle "🎨 Mostrar todos los turnos del día"** en el modal de exportar.

@@ -1245,26 +1245,61 @@ body.role-viewer { padding-bottom: 44px; }
 .sync-status-indicator.syncing { color: #1f3a68; background: #d0e4ff; }
 .sync-status-indicator.error { color: #8a2020; background: #fde0e0; }
 .gen-team-row {
-  background: #f5f6f8; border-radius: 10px; padding: 8px;
+  background: #fff;
+  border: 1px solid #e1e4ec;
+  border-radius: 12px;
+  padding: 10px;
   display: grid;
   grid-template-columns: 1fr 1fr auto auto;
-  gap: 6px; align-items: center;
+  gap: 8px; align-items: center;
+  box-shadow: 0 1px 3px rgba(31,58,104,0.06);
+  transition: all 0.15s ease;
+}
+.gen-team-row:hover {
+  border-color: #c8d2e4;
+  box-shadow: 0 2px 8px rgba(31,58,104,0.10);
 }
 .gen-team-row select {
-  height: 36px; padding: 0 8px;
-  background: #fff; border: 1px solid transparent;
-  border-radius: 7px; font-size: 13px; font-weight: 600;
+  height: 38px; padding: 0 10px;
+  background: #f7f9fc;
+  border: 1.5px solid #dde3ed;
+  border-radius: 8px;
+  font-size: 13px; font-weight: 600;
+  color: #1c1c1e;
+  cursor: pointer;
   -webkit-appearance: none; appearance: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%236c6c70' d='M6 8L0 0h12z'/></svg>");
-  background-repeat: no-repeat; background-position: right 8px center;
-  padding-right: 22px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%231f3a68' d='M6 8L0 0h12z'/></svg>");
+  background-repeat: no-repeat; background-position: right 10px center;
+  padding-right: 26px;
   min-width: 0;
+  transition: all 0.15s ease;
+}
+.gen-team-row select:hover {
+  background-color: #fff;
+  border-color: #1f3a68;
+}
+.gen-team-row select:focus {
+  outline: none;
+  border-color: #1f3a68;
+  background-color: #fff;
+  box-shadow: 0 0 0 3px rgba(31,58,104,0.15);
 }
 .gen-team-row .max-days {
-  width: 54px; height: 36px;
-  background: #fff; border: 1px solid transparent;
-  border-radius: 7px; font-size: 13px;
-  padding: 0 6px; text-align: center; font-weight: 600;
+  width: 58px; height: 38px;
+  background: #f7f9fc;
+  border: 1.5px solid #dde3ed;
+  border-radius: 8px;
+  font-size: 14px;
+  padding: 0 6px; text-align: center; font-weight: 700;
+  color: #1f3a68;
+  transition: all 0.15s ease;
+}
+.gen-team-row .max-days:hover { border-color: #1f3a68; }
+.gen-team-row .max-days:focus {
+  outline: none;
+  border-color: #1f3a68;
+  background-color: #fff;
+  box-shadow: 0 0 0 3px rgba(31,58,104,0.15);
 }
 /* v64: input fuera del rango recomendado 3-5 → resaltado en ámbar */
 .gen-team-row .max-days.out-of-range {
@@ -1339,24 +1374,44 @@ body.role-viewer { padding-bottom: 44px; }
   background: #fff;
 }
 .gen-team-row .max-days-label {
-  font-size: 10px; color: #6c6c70; font-weight: 600;
-  display: block; margin-top: 1px; text-align: center;
+  font-size: 10px; color: #6c6c70; font-weight: 700;
+  display: block; margin-top: 2px; text-align: center;
+  letter-spacing: 0.3px;
 }
 .gen-team-row .gen-del {
-  width: 30px; height: 30px;
-  background: #fff; border: none; border-radius: 6px;
-  color: #c0392b; font-size: 18px;
+  width: 34px; height: 34px;
+  background: #fff;
+  border: 1.5px solid #fed7d7;
+  border-radius: 8px;
+  color: #c0392b; font-size: 20px; font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
+.gen-team-row .gen-del:hover {
+  background: #fee;
+  border-color: #c0392b;
+  transform: scale(1.05);
+}
+.gen-team-row .gen-del:active { transform: scale(0.95); }
 
 /* Soporte para 3ra persona en el equipo */
 .gen-team-row {
   grid-template-columns: 1fr 1fr auto auto auto;
 }
 .gen-third-add {
-  width: 32px; height: 36px;
-  background: #fff; border: 1.5px dashed #c7c7cc;
-  border-radius: 7px; color: #6c6c70;
-  font-size: 18px; font-weight: 600;
+  width: 36px; height: 38px;
+  background: #fff;
+  border: 1.5px dashed #c3cfe3;
+  border-radius: 8px;
+  color: #1f3a68;
+  font-size: 20px; font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.gen-third-add:hover {
+  background: #eef2fa;
+  border-color: #1f3a68;
+  border-style: solid;
 }
 .gen-third-wrap {
   display: flex; gap: 2px; align-items: center;
