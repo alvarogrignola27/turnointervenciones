@@ -159,6 +159,14 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v69
+- **🎨 Exportar imagen: soporte multi-tile para feria**: en feria (Enero/Julio) los días tienen 2-3 personas extras además del equipo principal, cada una con su color. v68 solo mostraba el slot principal — quedaba incompleto. Ahora:
+  - Nuevo **toggle "🎨 Mostrar todos los turnos del día"** en el modal de exportar.
+  - **Default ON en feria** (Enero/Julio), **OFF en meses regulares** (donde típicamente alcanza con la intervención principal).
+  - Cuando está ON, cada día renderiza un tile vertical por cada slot no-vacío, con el color del nombre principal.
+  - **Tiles dividos en 2 colores** cuando un slot tiene 2 personas de equipos distintos (ej: `[Frias, Sallas]` se ve mitad azul / mitad naranja).
+  - **Altura de celda adaptativa**: se ajusta al máximo de slots en uso en el mes para que ningún tile quede chico.
+
 ### v68
 - **🐛 Rotación de findes post-feria arreglado**: el bug que reportaste — Milisenda/Diaz hizo findes 4-5 jul (feria) y Campi/Montilla 11-12 jul, y al generar agosto esos mismos equipos quedaban primeros en la cola. Causa: el algoritmo excluía enero y julio (feria) del rebuild de historial COMPLETAMENTE, así que los findes de feria no contaban como "findes recientes" y los equipos volvían a aparecer al principio.
   - **Fix**: ahora enero/julio se procesan parcialmente — sus findes SÍ se registran en `recentWeekends` (con detección flexible de equipo por miembros), pero NO se cuentan días totales ni `lastHighMonth` (que solo aplican a meses regulares). Esto incluso usa la regla "6 findes hard exclude" del weekend gap: los equipos que hicieron finde en feria pasan a estar bloqueados los primeros 6 findes del mes post-feria.

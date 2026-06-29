@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '68';
+const APP_VERSION = '69';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -4368,6 +4368,12 @@ function exportData() {
 function openExportImage() {
   const modal = document.getElementById('export-image-modal');
   modal.classList.remove('hidden');
+  // Default del toggle: ON si es mes de feria (donde hay 2-3 extras),
+  // OFF en meses regulares (que típicamente solo tienen intervención + apoyo).
+  const toggle = document.getElementById('export-image-show-all');
+  const isFeria = (state.month === 1 || state.month === 7);
+  toggle.checked = isFeria;
+  toggle.onchange = renderExportImage;
   renderExportImage();
   document.getElementById('export-image-modal-close').onclick = () => modal.classList.add('hidden');
   document.querySelector('#export-image-modal .modal-backdrop').onclick = () => modal.classList.add('hidden');
@@ -4378,8 +4384,8 @@ function openExportImage() {
 function renderExportImage() {
   const preview = document.getElementById('export-image-preview');
   preview.innerHTML = '';
-  const canvas = buildExportCanvas(state.year, state.month, state.data);
-  // Reescalamos el canvas para que entre en la preview (responsive)
+  const showAll = document.getElementById('export-image-show-all').checked;
+  const canvas = buildExportCanvas(state.year, state.month, state.data, { showAll });
   canvas.style.maxWidth = '100%';
   canvas.style.height = 'auto';
   canvas.style.borderRadius = '12px';
@@ -4390,23 +4396,44 @@ function renderExportImage() {
 
 // Construye un canvas con el calendario del mes en formato póster.
 // Layout: header con mes/año + grid de 7 columnas (Lun-Dom).
-// Cada celda: día arriba (grande), equipo de intervención abajo (GRANDE con color).
-function buildExportCanvas(y, m, data) {
+// Cada celda: día arriba + N tiles apilados con los slots del día.
+//   showAll=false → solo slot[0] (intervención principal). Modo "regular".
+//   showAll=true  → TODOS los slots no-vacíos. Modo "feria/completo".
+// La altura de las celdas se adapta al máximo de slots usados en el mes
+// para que ningún tile quede chico.
+function buildExportCanvas(y, m, data, opts = {}) {
+  const showAll = !!opts.showAll;
   const monthName = MES_NAMES[m - 1];
   const isFeria = (m === 1 || m === 7);
   const dim = new Date(y, m, 0).getDate();
-  // Determinar primera columna del día 1 (Lun=0 ... Dom=6)
   const firstDow = (new Date(y, m - 1, 1).getDay() + 6) % 7;
   const cellsTotal = firstDow + dim;
   const numRows = Math.ceil(cellsTotal / 7);
 
-  // Tamaños (alta resolución para que se vea nítido al hacer zoom o imprimir).
-  const cellW = 220, cellH = 160;
+  // Detectar el máximo de slots-con-gente en cualquier día del mes
+  // (para dimensionar la altura de las celdas en modo showAll).
+  let maxSlots = 1;
+  if (showAll) {
+    for (let d = 1; d <= dim; d++) {
+      const slots = data[String(d)] || [];
+      // Contar slots no-vacíos
+      const used = slots.filter(s => s && (s[0] || s[1])).length;
+      if (used > maxSlots) maxSlots = used;
+    }
+  }
+
+  // Dimensiones: el tile interno mide ~70px de alto; el día arriba ~40px.
+  const tileH = 60;
+  const tileGap = 6;
+  const dayLabelH = 44;
+  const cellPaddingV = 12;
+  const cellW = 220;
+  const cellH = dayLabelH + cellPaddingV + (tileH * maxSlots) + (tileGap * Math.max(0, maxSlots - 1)) + cellPaddingV;
   const padX = 30, padY = 30;
   const headerH = 110;
   const dayHeaderH = 50;
   const W = padX * 2 + cellW * 7;
-  const H = padY * 2 + headerH + dayHeaderH + cellH * numRows + 60; // 60 = footer
+  const H = padY * 2 + headerH + dayHeaderH + cellH * numRows + 60;
 
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
@@ -4447,17 +4474,15 @@ function buildExportCanvas(y, m, data) {
     const x = padX + col * cellW;
     const yPos = gridY + row * cellH;
 
-    // Borde gris suave entre celdas
     ctx.strokeStyle = '#e5e7eb';
     ctx.lineWidth = 1;
     ctx.strokeRect(x, yPos, cellW, cellH);
 
-    if (i < firstDow) continue; // celdas vacías al inicio del mes
+    if (i < firstDow) continue;
     const d = i - firstDow + 1;
     const dt = new Date(y, m - 1, d);
     const isWeekendCell = dt.getDay() === 0 || dt.getDay() === 6;
 
-    // Fondo suave para findes
     if (isWeekendCell) {
       ctx.fillStyle = '#fffbfb';
       ctx.fillRect(x + 1, yPos + 1, cellW - 2, cellH - 2);
@@ -4470,36 +4495,22 @@ function buildExportCanvas(y, m, data) {
     ctx.textBaseline = 'top';
     ctx.fillText(String(d), x + 12, yPos + 10);
 
-    // Equipo de intervención (slot 0): pill GRANDE con color
+    // === TILES: uno por slot no-vacío del día ===
+    // En modo showAll, renderizamos todos los slots. Sin showAll, solo slot[0].
     const slots = data[String(d)] || [];
-    const mainSlot = slots[0];
-    if (mainSlot && (mainSlot[0] || mainSlot[1])) {
-      const a = mainSlot[0], b = mainSlot[1];
-      // Color del fondo basado en el nombre principal
-      const bgColor = a ? colorFor(a) : '#e5e7eb';
-      const txtColor = a ? textColorFor(a) : '#1c1c1e';
-      // Caja del equipo
-      const boxX = x + 8, boxY = yPos + 60;
-      const boxW = cellW - 16, boxH = cellH - 70;
-      // Rect con esquinas redondeadas
-      ctx.fillStyle = bgColor;
-      roundedRect(ctx, boxX, boxY, boxW, boxH, 14, true);
-      // Nombres apilados
-      ctx.fillStyle = txtColor;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      if (a && b) {
-        ctx.font = 'bold 26px system-ui, -apple-system, sans-serif';
-        ctx.fillText(a, boxX + boxW / 2, boxY + boxH / 2 - 16);
-        ctx.fillText(b, boxX + boxW / 2, boxY + boxH / 2 + 16);
-      } else {
-        ctx.font = 'bold 28px system-ui, -apple-system, sans-serif';
-        ctx.fillText(a || b, boxX + boxW / 2, boxY + boxH / 2);
-      }
-    }
+    const slotsToRender = showAll
+      ? slots.filter(s => s && (s[0] || s[1]))
+      : (slots[0] && (slots[0][0] || slots[0][1]) ? [slots[0]] : []);
+
+    let tileY = yPos + dayLabelH + cellPaddingV;
+    slotsToRender.forEach((slot, idx) => {
+      const a = slot[0], b = slot[1];
+      drawSlotTile(ctx, x + 8, tileY, cellW - 16, tileH, a, b);
+      tileY += tileH + tileGap;
+    });
   }
 
-  // === Footer pequeño con créditos y versión ===
+  // === Footer ===
   ctx.fillStyle = '#9ca3af';
   ctx.font = '18px system-ui, -apple-system, sans-serif';
   ctx.textAlign = 'right';
@@ -4507,6 +4518,68 @@ function buildExportCanvas(y, m, data) {
   ctx.fillText(`Turnos de Intervenciones · v${APP_VERSION}`, W - padX, H - 30);
 
   return canvas;
+}
+
+// Dibuja un tile (pill) con uno o dos nombres adentro.
+// Si hay 2 nombres con colores distintos, divide el tile verticalmente.
+// Si los colores coinciden o solo hay un nombre, dibuja un tile sólido.
+function drawSlotTile(ctx, x, y, w, h, a, b) {
+  if (!a && !b) return;
+  // Si ambos nombres existen Y tienen colores DIFERENTES, dividimos visualmente.
+  // Esto cubre el caso típico de feria donde slot tiene 2 personas de equipos distintos.
+  const colorA = a ? colorFor(a) : null;
+  const colorB = b ? colorFor(b) : null;
+  const isSplit = a && b && colorA !== colorB;
+
+  if (isSplit) {
+    // Mitad superior: nombre A, mitad inferior: nombre B
+    const r = 12;
+    // Trazo del rect general para el clip
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.clip();
+    // Pintar mitad A
+    ctx.fillStyle = colorA;
+    ctx.fillRect(x, y, w, h / 2);
+    // Pintar mitad B
+    ctx.fillStyle = colorB;
+    ctx.fillRect(x, y + h / 2, w, h / 2);
+    ctx.restore();
+    // Texto
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+    ctx.fillStyle = textColorFor(a);
+    ctx.fillText(a, x + w / 2, y + h / 4);
+    ctx.fillStyle = textColorFor(b);
+    ctx.fillText(b, x + w / 2, y + (h * 3) / 4);
+  } else {
+    // Tile sólido: color del primer nombre presente
+    const refName = a || b;
+    ctx.fillStyle = colorFor(refName);
+    roundedRect(ctx, x, y, w, h, 12, true);
+    ctx.fillStyle = textColorFor(refName);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if (a && b) {
+      ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+      ctx.fillText(a, x + w / 2, y + h / 2 - 13);
+      ctx.fillText(b, x + w / 2, y + h / 2 + 13);
+    } else {
+      ctx.font = 'bold 26px system-ui, -apple-system, sans-serif';
+      ctx.fillText(refName, x + w / 2, y + h / 2);
+    }
+  }
 }
 
 function roundedRect(ctx, x, y, w, h, r, fill) {
