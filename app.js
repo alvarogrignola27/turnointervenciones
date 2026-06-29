@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '71';
+const APP_VERSION = '72';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -5572,32 +5572,39 @@ function generateMonth(opts = {}) {
   const histDays = teams.map((_, i) => (teamHistory[teamKeys[i]]?.totalDays || 0));
   const unassignedDays = [];
 
-  // Si el mes anterior es feria (enero o julio), recolectar los equipos que
-  // trabajaron en su última semana. Esos equipos deben descansar en la PRIMERA
-  // semana del mes actual (ej: febrero después de enero, agosto después de julio).
-  // v67: ahora detecta por INTEGRANTE INDIVIDUAL. En feria los slots son personas
-  // sueltas o reemplazos que rara vez forman el par exacto del equipo. Si CUALQUIER
-  // miembro (a, b o c) del equipo aparece en CUALQUIER slot de la última semana
-  // de enero/julio, ese equipo descansa la primera semana del nuevo mes.
-  const postFeriaRestTeams = new Set();
+  // Si el mes anterior es feria (enero o julio), recolectar cuánto trabajó
+  // cada equipo en la última semana. Esto se usa en la selección del PRIMER
+  // finde post-feria como un SCORE (no un hard exclude binario):
+  // - Equipos que NO trabajaron en feria → score más bajo → más probable de ser elegido
+  // - Equipos que trabajaron mucho → score alto → quedan al fondo de la cola
+  // v72: cambio del Set binario (v67) al array de scores. El bug era que en
+  // feria casi todos los equipos trabajan algo, así que el Set bloqueaba a
+  // CASI TODOS, y el fallback ignoraba la regla.
+  const postFeriaRestTeams = new Set(); // mantengo para Lun-Mar / Mié-Jue / Vie de la 1ra semana
+  const feriaWorkDays = new Array(teams.length).fill(0);
   if (prevM === 1 || prevM === 7) {
     const prevDim = new Date(prevY, prevM, 0).getDate();
     const startD = Math.max(1, prevDim - 6);
-    // Pre-construir un mapa nombre→teamIdx para no recorrer todos los equipos
-    // por cada nombre (Frias en feria puede aparecer 5 veces, multiplica el costo).
     const nameToTeam = {};
     teams.forEach((t, tIdx) => {
       [t.a, t.b, t.c].filter(Boolean).forEach(name => { nameToTeam[name] = tIdx; });
     });
     for (let dd = startD; dd <= prevDim; dd++) {
       const daySlots = prevData[String(dd)] || [];
+      // Para feriaWorkDays contamos 1 día por equipo por día, aunque aparezcan
+      // en varios slots — un día = un día.
+      const teamsThisDay = new Set();
       daySlots.forEach(slot => {
         if (!slot) return;
         [slot[0], slot[1]].forEach(name => {
           if (!name) return;
           const tIdx = nameToTeam[name];
-          if (tIdx !== undefined) postFeriaRestTeams.add(tIdx);
+          if (tIdx !== undefined) teamsThisDay.add(tIdx);
         });
+      });
+      teamsThisDay.forEach(t => {
+        postFeriaRestTeams.add(t);
+        feriaWorkDays[t]++;
       });
     }
   }
@@ -5863,61 +5870,88 @@ function generateMonth(opts = {}) {
     if ((hasSat || hasSun) && !(weekIdx === 0 && preAssignedSlotType === 'satSun')) {
       const realCount = (hasSat && !isSkipDay(y, m, wk[5]) ? 1 : 0) +
                         (hasSun && !isSkipDay(y, m, wk[6]) ? 1 : 0);
-      // HARD: no los últimos 6 findes + bloqueo por cumpleaños
-      // (eran solo el finde anterior; ahora son hasta 6 atrás para que no se repita
-      // tan rápido y la rotación sea pareja entre los 7 equipos)
-      const hardExclude = new Set(used);
-      recentWeekends.slice(-WEEKEND_RECENT_MIN_GAP).forEach(i => hardExclude.add(i));
-      teamsBlockedByBirthday([wk[5], wk[6]]).forEach(i => hardExclude.add(i));
-      teamsBlockedByAbsence([wk[5], wk[6]]).forEach(i => hardExclude.add(i));
-      // v67: en la PRIMERA semana después de feria, los equipos cuyos integrantes
-      // trabajaron en la última semana de enero/julio también descansan del weekend.
-      if (weekIdx === 0) {
-        postFeriaRestTeams.forEach(i => hardExclude.add(i));
+
+      // v72: para el PRIMER finde POST-FERIA usamos selección por SCORE en vez
+      // de round-robin. Esto garantiza que respetemos la regla "equipos que
+      // trabajaron en feria descansan" sin que el fallback la rompa.
+      const isPostFeriaFirstWeekend = (weekIdx === 0 && (prevM === 1 || prevM === 7));
+
+      if (isPostFeriaFirstWeekend) {
+        const bdBlocked = teamsBlockedByBirthday([wk[5], wk[6]]);
+        const absBlocked = teamsBlockedByAbsence([wk[5], wk[6]]);
+        const last6 = recentWeekends.slice(-WEEKEND_RECENT_MIN_GAP);
+        const candidates = [];
+        for (let i = 0; i < teams.length; i++) {
+          if (used.has(i)) continue;
+          if (bdBlocked.has(i)) continue;
+          if (absBlocked.has(i)) continue;
+          if (!canUse(i, realCount)) continue;
+          // Score (menor = mejor candidato):
+          //   +100 si está en últimos 6 findes (hizo finde reciente)
+          //   +10  si está en historial reciente de findes (de meses anteriores)
+          //   + feriaWorkDays * 5 (cuánto trabajó en feria)
+          //   + (idx para deshacer empates de forma estable)
+          const inLast6 = last6.includes(i);
+          const inRecent = recentWeekends.includes(i);
+          const score = (inLast6 ? 100 : 0) + (inRecent ? 10 : 0) + (feriaWorkDays[i] * 5) + i * 0.01;
+          candidates.push({ i, score });
+        }
+        candidates.sort((a, b) => a.score - b.score);
+        if (candidates.length > 0) {
+          thisWeekendTeam = candidates[0].i;
+          weekendIdx++; // avanzar para el siguiente finde
+        }
+      } else {
+        // Lógica normal para findes que NO son el primero post-feria
+        const hardExclude = new Set(used);
+        recentWeekends.slice(-WEEKEND_RECENT_MIN_GAP).forEach(i => hardExclude.add(i));
+        teamsBlockedByBirthday([wk[5], wk[6]]).forEach(i => hardExclude.add(i));
+        teamsBlockedByAbsence([wk[5], wk[6]]).forEach(i => hardExclude.add(i));
+
+        // Buscar siguiente equipo en rotación que cumpla
+        let attempts = 0;
+        while (attempts < teams.length * 2) {
+          const candidate = weekendIdx % teams.length;
+          if (canUse(candidate, realCount) && !hardExclude.has(candidate)) {
+            thisWeekendTeam = candidate;
+            break;
+          }
+          weekendIdx++;
+          attempts++;
+        }
+        // Fallback 1: relajar a últimos 3 findes (no los 6) si quedan pocos equipos
+        if (thisWeekendTeam < 0) {
+          const softExclude = new Set(used);
+          recentWeekends.slice(-3).forEach(i => softExclude.add(i));
+          teamsBlockedByBirthday([wk[5], wk[6]]).forEach(i => softExclude.add(i));
+          teamsBlockedByAbsence([wk[5], wk[6]]).forEach(i => softExclude.add(i));
+          attempts = 0;
+          while (attempts < teams.length * 2) {
+            const candidate = weekendIdx % teams.length;
+            if (canUse(candidate, realCount) && !softExclude.has(candidate)) {
+              thisWeekendTeam = candidate;
+              break;
+            }
+            weekendIdx++;
+            attempts++;
+          }
+        }
+        // Fallback 2: ignorar restricción de findes recientes si no queda otra
+        if (thisWeekendTeam < 0) {
+          attempts = 0;
+          while (attempts < teams.length * 2) {
+            const candidate = weekendIdx % teams.length;
+            if (canUse(candidate, realCount) && !used.has(candidate)) {
+              thisWeekendTeam = candidate;
+              break;
+            }
+            weekendIdx++;
+            attempts++;
+          }
+        }
       }
 
-      // Buscar siguiente equipo en rotación que cumpla
-      let attempts = 0;
-      while (attempts < teams.length * 2) {
-        const candidate = weekendIdx % teams.length;
-        if (canUse(candidate, realCount) && !hardExclude.has(candidate)) {
-          thisWeekendTeam = candidate;
-          break;
-        }
-        weekendIdx++;
-        attempts++;
-      }
-      // Fallback 1: relajar a últimos 3 findes (no los 6) si quedan pocos equipos
-      if (thisWeekendTeam < 0) {
-        const softExclude = new Set(used);
-        recentWeekends.slice(-3).forEach(i => softExclude.add(i));
-        teamsBlockedByBirthday([wk[5], wk[6]]).forEach(i => softExclude.add(i));
-        teamsBlockedByAbsence([wk[5], wk[6]]).forEach(i => softExclude.add(i));
-        attempts = 0;
-        while (attempts < teams.length * 2) {
-          const candidate = weekendIdx % teams.length;
-          if (canUse(candidate, realCount) && !softExclude.has(candidate)) {
-            thisWeekendTeam = candidate;
-            break;
-          }
-          weekendIdx++;
-          attempts++;
-        }
-      }
-      // Fallback 2: ignorar restricción de findes recientes si no queda otra
-      if (thisWeekendTeam < 0) {
-        attempts = 0;
-        while (attempts < teams.length * 2) {
-          const candidate = weekendIdx % teams.length;
-          if (canUse(candidate, realCount) && !used.has(candidate)) {
-            thisWeekendTeam = candidate;
-            break;
-          }
-          weekendIdx++;
-          attempts++;
-        }
-      }
-      // Último recurso: el menos usado
+      // Último recurso compartido: el menos usado (para ambos paths)
       if (thisWeekendTeam < 0) thisWeekendTeam = pickBest(used, realCount, null);
 
       // Asignar (con posible split si no hay 1 equipo para 2 días)

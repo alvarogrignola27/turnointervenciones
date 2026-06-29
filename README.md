@@ -159,6 +159,12 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v72
+- **🐛 Bug crítico arreglado — el primer finde post-feria repetía equipos de feria**: el escenario que reportaste — Milisenda/Diaz hizo el sáb 4-5 jul (primer finde de feria) y volvía a hacer el sáb 1 ago (primer finde post-feria), o Capdevila aparecía cuando había trabajado el lunes de la última semana de feria.
+  - **Causa**: el set `postFeriaRestTeams` se aplicaba como HARD exclude solo en el primer pass. En feria casi todos los equipos trabajan algo, así que casi todos quedaban excluidos. El algoritmo caía al SOFT fallback que NO respetaba post-feria, y elegía libremente entre los equipos que SÍ habían trabajado en feria.
+  - **Solución**: el primer finde post-feria ahora usa un algoritmo **score-based** dedicado en vez del round-robin tradicional. Cada equipo recibe un score: +100 si está en los últimos 6 findes, +10 si está en el historial reciente de findes, + (días que trabajó en la última semana de feria × 5). El equipo con menor score gana. Esto naturalmente prefiere equipos que: no hicieron finde reciente, no aparecen en el historial de findes, y/o no trabajaron mucho en feria.
+  - **Verificado** con tu escenario (julio 2026 feria + junio 2026): las 3 generaciones (normal, shuffle, random) eligen al equipo Sallas/Ibañez para el sáb 1 ago — no había hecho findes recientes ni había sido protagonista en feria. Milisenda recién aparece en el sáb 22 ago.
+
 ### v71
 - **🎰 Tercera opción de generación — "Variante al azar"**: nuevo botón en Datos → Generación. A diferencia de "🔀 Probar otra distribución" (que incrementa el shuffle offset secuencialmente), este botón usa un offset aleatorio que se asegura de ser distinto al actual. Sirve cuando ninguna de las dos primeras distribuciones convence y se necesita una variante más distinta.
 - **🎨 Botones del modal Generar — mejoras visuales mucho más marcadas**: cada card de equipo ahora tiene fondo blanco con borde gris azulado visible y sombra suave (antes eran fondos grises planos sin contorno). Hover effect que levanta la card. Selects y inputs con borde definido + focus ring azul. Botón × rediseñado en card blanco con borde rojo claro. Botón + para 3ra persona con dashed azul. Diferencias claras al pasar el mouse.
