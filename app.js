@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '65';
+const APP_VERSION = '66';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -4951,6 +4951,9 @@ function rebuildHistoryFromMonths(excludeY, excludeM) {
     try { data = JSON.parse(localStorage.getItem(key) || '{}'); }
     catch { return; }
     const dim = new Date(y, m, 0).getDate();
+    // v66: contar días POR EQUIPO en este mes específico, para detectar
+    // si alguno hizo >= 5 días (cupo alto) y registrar el lastHighMonth.
+    const monthCountByTeam = {};
     for (let d = 1; d <= dim; d++) {
       const slot = data[String(d)] && data[String(d)][0];
       if (!slot || !slot[0] || !slot[1]) continue;
@@ -4959,8 +4962,9 @@ function rebuildHistoryFromMonths(excludeY, excludeM) {
 
       // Sumar al historial total
       const k = teamKeys[teamIdx];
-      if (!teamHistory[k]) teamHistory[k] = { totalDays: 0 };
+      if (!teamHistory[k]) teamHistory[k] = { totalDays: 0, lastHighMonth: 0 };
       teamHistory[k].totalDays++;
+      monthCountByTeam[k] = (monthCountByTeam[k] || 0) + 1;
 
       // Si es sábado, agregar a recentWeekends y avanzar weekendIdx
       const dt = new Date(y, m - 1, d);
@@ -4969,6 +4973,16 @@ function rebuildHistoryFromMonths(excludeY, excludeM) {
         weekendIdx++;
       }
     }
+    // v66: tras contar todo el mes, ver qué equipos hicieron 5+ días en él.
+    // Como monthKeys está ordenado ascendente, sobreescribir lastHighMonth
+    // garantiza que quede el mes MÁS RECIENTE en que ese equipo hizo cupo alto.
+    const monthIdx = y * 12 + m;
+    Object.keys(monthCountByTeam).forEach(k => {
+      if (monthCountByTeam[k] >= 5) {
+        if (!teamHistory[k]) teamHistory[k] = { totalDays: 0, lastHighMonth: 0 };
+        teamHistory[k].lastHighMonth = monthIdx;
+      }
+    });
     // Escaneo paralelo: encontrar el último ALVARO/MARTIN que hizo G.MAT en sábado.
     // (Como monthKeys está ordenado, el último que se encuentre es el más reciente.)
     for (let d = 1; d <= dim; d++) {
@@ -5013,28 +5027,40 @@ function saveAutoRotate(on) {
 }
 
 // Calcula los maxDays "rotados" para este mes:
-// - Toma los maxDays que definió el usuario (template de cupos)
-// - Los reasigna ordenando los equipos por su historial total ascendente
-//   (equipos con menos días totales reciben los maxDays más altos)
-// - Así, en el largo plazo, todos los equipos van rotando entre cupos altos y bajos
+// - Toma los maxDays que definió el usuario (template de cupos, ej: [5,5,5,4,4,4,4])
+// - Reordena los equipos con una cola FIFO de "último mes que hizo cupo alto (5+ días)"
+//   y reparte el template (orden descendente) sobre esa cola.
+// - Regla v66: un equipo que hizo 5 días este último mes recibe el cupo más bajo
+//   posible este mes, y solo vuelve a recibir 5 cuando los OTROS 6 equipos hayan
+//   tenido su turno de hacer 5. Garantiza máxima rotación entre meses.
+// - Tiebreakers: en empate de lastHighMonth, los menos usados totales primero;
+//   en empate de eso, índice ascendente (estable, determinista).
 function computeRotatedMaxes(teams, teamHistory, teamKeys) {
   const userMaxes = teams.map(t => t.maxDays || 0);
   // Template ordenado descendente (e.g., [5, 5, 5, 4, 4, 4, 4])
   const template = [...userMaxes].sort((a, b) => b - a);
 
-  // Historial total de días por equipo
-  const histDays = teams.map((_, i) => (teamHistory[teamKeys[i]]?.totalDays || 0));
+  // Para cada equipo: (lastHighMonth, totalDays, idx)
+  const sortKey = teams.map((_, i) => {
+    const h = teamHistory[teamKeys[i]];
+    return {
+      i,
+      lastHigh: h?.lastHighMonth || 0,
+      total: h?.totalDays || 0,
+    };
+  });
 
-  // Índices ordenados por historial ascendente (menos usados primero)
-  // En caso de empate, los índices más bajos van primero (estable, determinista)
-  const sortedIdx = histDays
-    .map((d, i) => ({ i, d }))
-    .sort((a, b) => a.d - b.d || a.i - b.i)
-    .map(x => x.i);
+  // Orden: lastHigh ASC (los que hace más tiempo no hacen 5, primero) →
+  // total ASC (en empate, el menos usado primero) → idx ASC (estable)
+  sortKey.sort((a, b) =>
+    a.lastHigh - b.lastHigh ||
+    a.total - b.total ||
+    a.i - b.i
+  );
 
   const result = new Array(teams.length);
-  sortedIdx.forEach((teamIdx, position) => {
-    result[teamIdx] = template[position];
+  sortKey.forEach((entry, position) => {
+    result[entry.i] = template[position];
   });
   return result;
 }

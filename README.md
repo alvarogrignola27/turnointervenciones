@@ -159,6 +159,12 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v66
+- **🔄 Rotación FIFO crítica de cupos altos**: implementa la regla pedida por el uso real — un equipo que hace 5 días en un mes NO puede volver a hacer 5 hasta que los OTROS 6 equipos hayan hecho su turno. Ejemplo: si Sallas hace 5 en Agosto, en Septiembre y Octubre quedan otros equipos al frente de la cola, y recién en Noviembre/Diciembre Sallas vuelve a ser candidato a cupo alto.
+  - **Cómo funciona**: el historial reconstruido desde los meses persistidos ahora trackea `lastHighMonth` por equipo (el último mes-año en que hizo ≥5 días). En `computeRotatedMaxes`, los equipos se ordenan por `(lastHighMonth ASC, totalDays ASC, idx ASC)` antes de repartir el template descendente. Los que hace más tiempo no hacen cupo alto van primero.
+  - **Verificación matemática**: con 7 equipos cycling a través de 2-3 cincos/mes, cada equipo aparece cada ~2.7 meses en promedio, y la regla "≥6 equipos distintos entre dos cincos del mismo equipo" se cumple para todas las parejas en un test sobre 5 meses (Ago→Dic).
+- **Confirmación del weekend gap**: la regla "un equipo que hace finde espera mínimo 6 findes antes de volver" (`WEEKEND_RECENT_MIN_GAP=6`) ya estaba en v60 y sigue activa. Con 7 equipos esto fuerza un ciclo perfecto de 7 semanas. Si los 6 últimos están bloqueados por cumpleaños o ausencias, hay fallback a 3 findes; en último recurso ignora la restricción (caso muy raro).
+
 ### v65
 - **❓ Pregunta de salvaguarda antes de generar el mes**: ahora al darle a "Generar mes" aparece un confirm grande **"YA BALANCEASTE LOS EQUIPOS??"** que recuerda el rango recomendado (máx 5, mín 3) y muestra los cupos totales actuales vs los días del mes. Si los cupos no cuadran con los días, agrega una advertencia con el delta exacto y un tip para usar "⚖️ Auto-balancear para este mes". Si el usuario cancela, abre directamente el modal del generador.
 - El prompt **NO aparece** en regeneraciones (botón "🔀 Probar otra distribución") ni en meses de feria judicial (enero/julio), donde no aplica.
