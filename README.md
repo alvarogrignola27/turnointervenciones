@@ -159,6 +159,22 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v68
+- **🐛 Rotación de findes post-feria arreglado**: el bug que reportaste — Milisenda/Diaz hizo findes 4-5 jul (feria) y Campi/Montilla 11-12 jul, y al generar agosto esos mismos equipos quedaban primeros en la cola. Causa: el algoritmo excluía enero y julio (feria) del rebuild de historial COMPLETAMENTE, así que los findes de feria no contaban como "findes recientes" y los equipos volvían a aparecer al principio.
+  - **Fix**: ahora enero/julio se procesan parcialmente — sus findes SÍ se registran en `recentWeekends` (con detección flexible de equipo por miembros), pero NO se cuentan días totales ni `lastHighMonth` (que solo aplican a meses regulares). Esto incluso usa la regla "6 findes hard exclude" del weekend gap: los equipos que hicieron finde en feria pasan a estar bloqueados los primeros 6 findes del mes post-feria.
+- **📸 Exportar mes a imagen / PDF (para WhatsApp)**: nueva acción en Datos. Renderiza el calendario del mes en un canvas grande tipo póster con:
+  - Título grande con mes y año (`AGOSTO 2026`)
+  - Cabecera Lun-Dom (sábado y domingo con fondo rojo suave)
+  - Cada día: número grande + equipo de intervención GRANDE con su color (visible desde lejos en una foto)
+  - Botón "📥 Descargar imagen (PNG)" — perfecto para mandar por WhatsApp como foto
+  - Botón "📄 Imprimir / PDF" — abre el diálogo de impresión del navegador para guardarlo como PDF
+  - Sin librerías externas (canvas API puro)
+- **🎨 Modal del Generador más prolijo**:
+  - Botón "⚖️ Auto-balancear" con gradient azul + sombra + hover lift
+  - Card "🔄 Rotación automática" con fondo gradient suave y borde
+  - "+ Agregar equipo" con borde dashed más estético y hover effect
+  - "Guardar y generar" / "Restaurar default" rediseñados con efectos visuales
+
 ### v67
 - **🐛 Stats POR EQUIPO en meses pasados arreglado**: los meses con reemplazos, config de equipos distinta o feria judicial daban 0 en la sección POR EQUIPO porque el algoritmo exigía un match EXACTO del par (a, b) en slot[0]. Ahora detecta el equipo por mejor coincidencia: cuenta cuántos miembros del equipo (a, b o c) están presentes en el slot principal, y elige el equipo con más matches. Un día con Frias reemplazado por Cabeza (`[Cabeza, Echague]`) ahora cuenta correctamente como día del equipo Frias+Echague (ancla = Echague). Meses de feria también muestran datos (cuando alguien del equipo trabaja solo).
 - **🛡️ Regla post-feria por INTEGRANTE individual**: cuando se genera Febrero o Agosto (después de Enero/Julio de feria), el algoritmo ahora detecta correctamente qué equipos descansan la primera semana. Antes solo detectaba pares EXACTOS de equipo en los slots, pero en feria los integrantes aparecen sueltos o con reemplazos y casi nunca formaban el par exacto. Ahora: si CUALQUIER miembro del equipo (a, b, c) trabajó en CUALQUIER slot de los últimos 7 días de feria, ese equipo descansa toda la primera semana del nuevo mes (Lun-Mar / Mié-Jue / Vie / Sáb-Dom).

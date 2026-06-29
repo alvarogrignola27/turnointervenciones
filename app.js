@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '67';
+const APP_VERSION = '68';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -4362,6 +4362,203 @@ function exportData() {
   showToast('Datos exportados');
 }
 
+// v68: Exportar mes a imagen (PNG) o PDF para compartir por WhatsApp.
+// Renderiza el mes en un canvas grande con los equipos de intervención bien
+// visibles. Usa Canvas API pura (sin libs externas) para mantenerlo liviano.
+function openExportImage() {
+  const modal = document.getElementById('export-image-modal');
+  modal.classList.remove('hidden');
+  renderExportImage();
+  document.getElementById('export-image-modal-close').onclick = () => modal.classList.add('hidden');
+  document.querySelector('#export-image-modal .modal-backdrop').onclick = () => modal.classList.add('hidden');
+  document.getElementById('export-image-png').onclick = downloadExportImage;
+  document.getElementById('export-image-pdf').onclick = printExportImage;
+}
+
+function renderExportImage() {
+  const preview = document.getElementById('export-image-preview');
+  preview.innerHTML = '';
+  const canvas = buildExportCanvas(state.year, state.month, state.data);
+  // Reescalamos el canvas para que entre en la preview (responsive)
+  canvas.style.maxWidth = '100%';
+  canvas.style.height = 'auto';
+  canvas.style.borderRadius = '12px';
+  canvas.style.boxShadow = '0 4px 16px rgba(0,0,0,0.12)';
+  canvas.id = 'export-image-canvas';
+  preview.appendChild(canvas);
+}
+
+// Construye un canvas con el calendario del mes en formato póster.
+// Layout: header con mes/año + grid de 7 columnas (Lun-Dom).
+// Cada celda: día arriba (grande), equipo de intervención abajo (GRANDE con color).
+function buildExportCanvas(y, m, data) {
+  const monthName = MES_NAMES[m - 1];
+  const isFeria = (m === 1 || m === 7);
+  const dim = new Date(y, m, 0).getDate();
+  // Determinar primera columna del día 1 (Lun=0 ... Dom=6)
+  const firstDow = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+  const cellsTotal = firstDow + dim;
+  const numRows = Math.ceil(cellsTotal / 7);
+
+  // Tamaños (alta resolución para que se vea nítido al hacer zoom o imprimir).
+  const cellW = 220, cellH = 160;
+  const padX = 30, padY = 30;
+  const headerH = 110;
+  const dayHeaderH = 50;
+  const W = padX * 2 + cellW * 7;
+  const H = padY * 2 + headerH + dayHeaderH + cellH * numRows + 60; // 60 = footer
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // Fondo blanco
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+
+  // === Header: nombre del mes + año ===
+  ctx.fillStyle = '#1f3a68';
+  ctx.font = 'bold 56px system-ui, -apple-system, sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  const title = `${monthName.toUpperCase()} ${y}` + (isFeria ? ' · FERIA JUDICIAL' : '');
+  ctx.fillText(title, W / 2, padY + headerH / 2);
+
+  // === Cabecera de días (Lun, Mar, Mié, ...) ===
+  const dayNames = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
+  ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = '#6c6c70';
+  const dayHeaderY = padY + headerH;
+  for (let c = 0; c < 7; c++) {
+    const isWeekend = c >= 5;
+    if (isWeekend) {
+      ctx.fillStyle = '#fef2f2';
+      ctx.fillRect(padX + c * cellW, dayHeaderY, cellW, dayHeaderH);
+    }
+    ctx.fillStyle = isWeekend ? '#b91c1c' : '#6c6c70';
+    ctx.fillText(dayNames[c], padX + c * cellW + cellW / 2, dayHeaderY + dayHeaderH / 2);
+  }
+
+  // === Celdas de los días ===
+  const gridY = dayHeaderY + dayHeaderH;
+  for (let i = 0; i < cellsTotal; i++) {
+    const row = Math.floor(i / 7);
+    const col = i % 7;
+    const x = padX + col * cellW;
+    const yPos = gridY + row * cellH;
+
+    // Borde gris suave entre celdas
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, yPos, cellW, cellH);
+
+    if (i < firstDow) continue; // celdas vacías al inicio del mes
+    const d = i - firstDow + 1;
+    const dt = new Date(y, m - 1, d);
+    const isWeekendCell = dt.getDay() === 0 || dt.getDay() === 6;
+
+    // Fondo suave para findes
+    if (isWeekendCell) {
+      ctx.fillStyle = '#fffbfb';
+      ctx.fillRect(x + 1, yPos + 1, cellW - 2, cellH - 2);
+    }
+
+    // Número del día (esquina superior izquierda)
+    ctx.fillStyle = isWeekendCell ? '#b91c1c' : '#1c1c1e';
+    ctx.font = 'bold 32px system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(String(d), x + 12, yPos + 10);
+
+    // Equipo de intervención (slot 0): pill GRANDE con color
+    const slots = data[String(d)] || [];
+    const mainSlot = slots[0];
+    if (mainSlot && (mainSlot[0] || mainSlot[1])) {
+      const a = mainSlot[0], b = mainSlot[1];
+      // Color del fondo basado en el nombre principal
+      const bgColor = a ? colorFor(a) : '#e5e7eb';
+      const txtColor = a ? textColorFor(a) : '#1c1c1e';
+      // Caja del equipo
+      const boxX = x + 8, boxY = yPos + 60;
+      const boxW = cellW - 16, boxH = cellH - 70;
+      // Rect con esquinas redondeadas
+      ctx.fillStyle = bgColor;
+      roundedRect(ctx, boxX, boxY, boxW, boxH, 14, true);
+      // Nombres apilados
+      ctx.fillStyle = txtColor;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      if (a && b) {
+        ctx.font = 'bold 26px system-ui, -apple-system, sans-serif';
+        ctx.fillText(a, boxX + boxW / 2, boxY + boxH / 2 - 16);
+        ctx.fillText(b, boxX + boxW / 2, boxY + boxH / 2 + 16);
+      } else {
+        ctx.font = 'bold 28px system-ui, -apple-system, sans-serif';
+        ctx.fillText(a || b, boxX + boxW / 2, boxY + boxH / 2);
+      }
+    }
+  }
+
+  // === Footer pequeño con créditos y versión ===
+  ctx.fillStyle = '#9ca3af';
+  ctx.font = '18px system-ui, -apple-system, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`Turnos de Intervenciones · v${APP_VERSION}`, W - padX, H - 30);
+
+  return canvas;
+}
+
+function roundedRect(ctx, x, y, w, h, r, fill) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  if (fill) ctx.fill();
+}
+
+function downloadExportImage() {
+  const canvas = document.getElementById('export-image-canvas');
+  if (!canvas) return;
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const monthName = MES_NAMES[state.month - 1].toLowerCase();
+    link.href = url;
+    link.download = `turnos-${monthName}-${state.year}.png`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast('📥 Imagen descargada');
+  }, 'image/png');
+}
+
+function printExportImage() {
+  const canvas = document.getElementById('export-image-canvas');
+  if (!canvas) return;
+  const dataUrl = canvas.toDataURL('image/png');
+  // Abrir nueva ventana SOLO con la imagen para imprimir
+  const w = window.open('', '_blank');
+  if (!w) {
+    alert('Tu navegador bloqueó la ventana de impresión. Permitir pop-ups e intentá de nuevo.');
+    return;
+  }
+  const monthName = MES_NAMES[state.month - 1];
+  w.document.write(`<!DOCTYPE html><html><head><title>Turnos ${monthName} ${state.year}</title>
+<style>
+  body { margin: 0; padding: 20px; background: #fff; }
+  img { width: 100%; max-width: 100%; height: auto; display: block; }
+  @media print { body { padding: 0; } @page { margin: 10mm; } }
+</style></head><body><img src="${dataUrl}"><script>window.onload = () => setTimeout(() => window.print(), 300);</script></body></html>`);
+  w.document.close();
+}
+
 function importData(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -4945,10 +5142,14 @@ function rebuildHistoryFromMonths(excludeY, excludeM) {
     if (match) {
       const yy = parseInt(match[1], 10);
       const mm = parseInt(match[2], 10);
-      // Excluir el mes que se está regenerando, y enero/julio (feria judicial)
-      // que tienen patrones distintos a la rotación normal.
+      // Excluir solo el mes que se está regenerando.
+      // v68: enero/julio (feria) AHORA SÍ se procesan pero solo para extraer
+      // los equipos que hicieron findes — su totalDays y lastHighMonth se omiten.
+      // Antes los excluíamos por completo, lo que dejaba al algoritmo "ciego"
+      // a los findes de feria y los mismos equipos volvían a salir primeros en
+      // el mes post-feria (ej: agosto pone a Milisenda y Campi en los primeros
+      // findes aunque acaban de hacer findes en julio de feria).
       if (yy === excludeY && mm === excludeM) continue;
-      if (mm === 1 || mm === 7) continue;
       monthKeys.push({ y: yy, m: mm, key });
     }
   }
@@ -4967,49 +5168,63 @@ function rebuildHistoryFromMonths(excludeY, excludeM) {
     try { data = JSON.parse(localStorage.getItem(key) || '{}'); }
     catch { return; }
     const dim = new Date(y, m, 0).getDate();
+    const isFeriaMonth = (m === 1 || m === 7);
     // v66: contar días POR EQUIPO en este mes específico, para detectar
     // si alguno hizo >= 5 días (cupo alto) y registrar el lastHighMonth.
+    // v68: en feria NO contamos totalDays (los slots tienen personas sueltas
+    // y no representa el trabajo del equipo de la misma forma).
     const monthCountByTeam = {};
     for (let d = 1; d <= dim; d++) {
+      const dt = new Date(y, m - 1, d);
+      const isSat = dt.getDay() === 6;
+
+      // === Para FINDES (sábados): siempre detectamos el equipo, incluso en feria ===
+      // v68: usamos el helper flexible para detectar el equipo aunque no haya par
+      // exacto (caso típico de feria con personas sueltas o reemplazos).
+      if (isSat) {
+        const slot = data[String(d)] && data[String(d)][0];
+        const teamIdx = slot ? teamIdxForSlotFlexible(slot, teams) : -1;
+        if (teamIdx >= 0) {
+          recentWeekends.push(teamIdx);
+          weekendIdx++;
+        }
+      }
+
+      // === Para counts de días y lastHighMonth: solo meses NO-feria ===
+      if (isFeriaMonth) continue;
       const slot = data[String(d)] && data[String(d)][0];
       if (!slot || !slot[0] || !slot[1]) continue;
       const teamIdx = findTeamIdxByNames(slot[0], slot[1]);
       if (teamIdx < 0) continue;
-
-      // Sumar al historial total
       const k = teamKeys[teamIdx];
       if (!teamHistory[k]) teamHistory[k] = { totalDays: 0, lastHighMonth: 0 };
       teamHistory[k].totalDays++;
       monthCountByTeam[k] = (monthCountByTeam[k] || 0) + 1;
-
-      // Si es sábado, agregar a recentWeekends y avanzar weekendIdx
-      const dt = new Date(y, m - 1, d);
-      if (dt.getDay() === 6) {
-        recentWeekends.push(teamIdx);
-        weekendIdx++;
-      }
     }
-    // v66: tras contar todo el mes, ver qué equipos hicieron 5+ días en él.
-    // Como monthKeys está ordenado ascendente, sobreescribir lastHighMonth
-    // garantiza que quede el mes MÁS RECIENTE en que ese equipo hizo cupo alto.
-    const monthIdx = y * 12 + m;
-    Object.keys(monthCountByTeam).forEach(k => {
-      if (monthCountByTeam[k] >= 5) {
-        if (!teamHistory[k]) teamHistory[k] = { totalDays: 0, lastHighMonth: 0 };
-        teamHistory[k].lastHighMonth = monthIdx;
-      }
-    });
+    // v66: tras contar todo el mes (si es regular), ver qué equipos hicieron 5+ días.
+    if (!isFeriaMonth) {
+      const monthIdx = y * 12 + m;
+      Object.keys(monthCountByTeam).forEach(k => {
+        if (monthCountByTeam[k] >= 5) {
+          if (!teamHistory[k]) teamHistory[k] = { totalDays: 0, lastHighMonth: 0 };
+          teamHistory[k].lastHighMonth = monthIdx;
+        }
+      });
+    }
     // Escaneo paralelo: encontrar el último ALVARO/MARTIN que hizo G.MAT en sábado.
     // (Como monthKeys está ordenado, el último que se encuentre es el más reciente.)
-    for (let d = 1; d <= dim; d++) {
-      const dt = new Date(y, m - 1, d);
-      if (dt.getDay() !== 6) continue;
-      const daySlots = data[String(d)] || [];
-      for (const s of daySlots) {
-        if (!s) continue;
-        const name = s[0] || s[1];
-        if (name === 'ALVARO' || name === 'MARTIN') {
-          lastGmat = name;
+    // v68: solo en meses NO-feria (en feria los G.MAT trabajan distinto y no aplica).
+    if (!isFeriaMonth) {
+      for (let d = 1; d <= dim; d++) {
+        const dt = new Date(y, m - 1, d);
+        if (dt.getDay() !== 6) continue;
+        const daySlots = data[String(d)] || [];
+        for (const s of daySlots) {
+          if (!s) continue;
+          const name = s[0] || s[1];
+          if (name === 'ALVARO' || name === 'MARTIN') {
+            lastGmat = name;
+          }
         }
       }
     }
@@ -5852,6 +6067,7 @@ function wireUp() {
         return;
       }
       if (a === 'export') exportData();
+      else if (a === 'export-image') openExportImage();
       else if (a === 'import') document.getElementById('import-file').click();
       else if (a === 'clear') clearCurrentMonth();
       else if (a === 'generate') generateMonth();
