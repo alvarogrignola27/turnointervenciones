@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '72';
+const APP_VERSION = '73';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -5871,10 +5871,16 @@ function generateMonth(opts = {}) {
       const realCount = (hasSat && !isSkipDay(y, m, wk[5]) ? 1 : 0) +
                         (hasSun && !isSkipDay(y, m, wk[6]) ? 1 : 0);
 
-      // v72: para el PRIMER finde POST-FERIA usamos selección por SCORE en vez
-      // de round-robin. Esto garantiza que respetemos la regla "equipos que
-      // trabajaron en feria descansan" sin que el fallback la rompa.
-      const isPostFeriaFirstWeekend = (weekIdx === 0 && (prevM === 1 || prevM === 7));
+      // v72: para los PRIMEROS findes POST-FERIA usamos selección por SCORE
+      // en vez de round-robin. Esto garantiza que se respete la regla
+      // "equipos que trabajaron en feria descansan" sin que el fallback
+      // la rompa cuando casi todos los equipos quedaban bloqueados.
+      // v73: extiende la cobertura a los PRIMEROS 2 FINDES (weekIdx <= 1)
+      // porque en meses que empiezan sábado/domingo (como agosto 2026 que
+      // empezó sábado), weekIdx 0 solo cubre el primer fin de semana, y el
+      // segundo finde (sáb 8) volvía al round-robin clásico, donde aparecían
+      // los equipos que justamente acababan de hacer findes en feria.
+      const isPostFeriaFirstWeekend = (weekIdx <= 1 && (prevM === 1 || prevM === 7));
 
       if (isPostFeriaFirstWeekend) {
         const bdBlocked = teamsBlockedByBirthday([wk[5], wk[6]]);

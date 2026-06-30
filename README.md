@@ -159,6 +159,11 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v73
+- **🐛 Bug post-feria — extendido a 2 findes**: el fix de v72 cubría solo el primer finde post-feria (weekIdx 0). En meses que empiezan en sábado (como agosto 2026), weekIdx 0 es solo Sáb 1 + Dom 2; el segundo finde (Sáb 8) volvía al round-robin clásico y ahí salían los equipos del primer finde de feria (Milisenda/Diaz) o del segundo (Campi/Montilla). Ahora el algoritmo score-based se aplica a los **PRIMEROS 2 FINDES** del mes post-feria (weekIdx ≤ 1). Verificado con el escenario real: ni Milisenda ni Campi aparecen en las primeras 2 semanas; salen recién en sáb 22.
+- **📸 Botón "Exportar mes a imagen / PDF" en el menú Generación**: además de seguir en "Datos y nube", ahora aparece directo en el menú Generación (justo después de "Variante al azar") para que esté más a mano cuando estás trabajando con el mes.
+- **🎨 Botones del modal Generar — estilo cat-btn (como los de abajo)**: "⚖️ Auto-balancear", "Guardar y generar", "+ Agregar equipo" y "Restaurar default" rediseñados con fondo negro + sombra grande + hover lift, para que combinen visualmente con los botones de la barra inferior (Generar/Marcar/Personalizar/Datos). Look mucho más consistente y "tactil".
+
 ### v72
 - **🐛 Bug crítico arreglado — el primer finde post-feria repetía equipos de feria**: el escenario que reportaste — Milisenda/Diaz hizo el sáb 4-5 jul (primer finde de feria) y volvía a hacer el sáb 1 ago (primer finde post-feria), o Capdevila aparecía cuando había trabajado el lunes de la última semana de feria.
   - **Causa**: el set `postFeriaRestTeams` se aplicaba como HARD exclude solo en el primer pass. En feria casi todos los equipos trabajan algo, así que casi todos quedaban excluidos. El algoritmo caía al SOFT fallback que NO respetaba post-feria, y elegía libremente entre los equipos que SÍ habían trabajado en feria.

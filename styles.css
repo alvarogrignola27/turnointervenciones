@@ -1307,26 +1307,27 @@ body.role-viewer { padding-bottom: 44px; }
   border-color: #fb923c;
   color: #c2410c;
 }
-/* v64: botón auto-balancear */
+/* v64: botón auto-balancear — v73 estilo cat-btn (negro + sombra) */
 .gen-balance-btn {
   width: calc(100% - 32px);
   margin: 6px 16px 4px;
-  background: linear-gradient(135deg, #1f3a68, #2d5a9e);
+  background: #1c1c1e;
   color: #fff;
   border: none;
-  border-radius: 12px;
-  padding: 12px 14px;
+  border-radius: 16px;
+  padding: 14px 14px;
   font-weight: 700;
   font-size: 13px;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(31,58,104,0.25);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   transition: all 0.15s ease;
 }
 .gen-balance-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(31,58,104,0.35);
+  background: #2d2d30;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.22);
 }
-.gen-balance-btn:active { transform: translateY(0); }
+.gen-balance-btn:active { transform: scale(0.96); }
 
 /* v68: Modal de exportar imagen */
 .export-image-card { max-width: 720px; }
@@ -1485,51 +1486,58 @@ body.role-viewer { padding-bottom: 44px; }
 }
 .gen-add-team {
   margin: 8px 16px; padding: 12px;
-  background: linear-gradient(135deg, rgba(31,58,104,0.04), rgba(45,90,158,0.08));
+  background: #fff;
   border: 1.5px dashed #b8c4dc;
-  border-radius: 12px; color: #1f3a68; font-size: 13px; font-weight: 700;
+  border-radius: 16px; color: #1c1c1e; font-size: 13px; font-weight: 700;
   cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
   transition: all 0.15s ease;
 }
 .gen-add-team:hover {
-  background: linear-gradient(135deg, rgba(31,58,104,0.08), rgba(45,90,158,0.15));
-  border-color: #1f3a68;
+  background: #f9fafc;
+  border-color: #1c1c1e;
+  border-style: solid;
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(31,58,104,0.12);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.10);
 }
-.gen-add-team:active { transform: translateY(0); }
+.gen-add-team:active { transform: scale(0.97); }
 
 .modal-footer {
   padding: 12px 16px 16px; display: flex; gap: 10px;
   border-top: 1px solid #f0f0f3;
   background: #fafafc;
 }
+/* v73: botones del modal estilo "cat-btn" (negros con sombra) — coinciden
+   con los botones de la barra inferior para look consistente */
 .modal-btn {
-  flex: 1; height: 46px; border: none; border-radius: 12px;
+  flex: 1; height: 50px; border: none; border-radius: 16px;
   font-size: 14px; font-weight: 700;
   cursor: pointer;
   transition: all 0.15s ease;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 .modal-btn.primary {
-  background: linear-gradient(135deg, #1f3a68, #2d5a9e);
+  background: #1c1c1e;
   color: #fff;
-  box-shadow: 0 2px 8px rgba(31,58,104,0.25);
 }
 .modal-btn.primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(31,58,104,0.35);
+  background: #2d2d30;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.22);
 }
-.modal-btn.primary:active { transform: translateY(0); }
+.modal-btn.primary:active { transform: translateY(0); transform: scale(0.96); }
 .modal-btn.secondary {
   background: #fff;
-  color: #1f3a68;
-  border: 1.5px solid #d4dde9;
+  color: #1c1c1e;
+  border: 1.5px solid #d4d4d8;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
 }
 .modal-btn.secondary:hover {
-  background: #f5f7fb;
-  border-color: #1f3a68;
+  border-color: #1c1c1e;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.10);
 }
-.modal-btn.secondary:active { transform: scale(0.98); }
+.modal-btn.secondary:active { transform: scale(0.97); }
 
 /* ========== Tile pill editable (cargo) ========== */
 .di-team-pill-select {

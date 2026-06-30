@@ -16,7 +16,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=72">
+  <link rel="stylesheet" href="styles.css?v=73">
   <!-- Firebase SDK (compat) - se conecta solo si está configurado -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -105,7 +105,7 @@
     <!-- Footer compacto que SOLO se muestra en modo viewer (cuando los 4 botones de arriba están ocultos).
          Permite ver la versión y forzar la actualización sin perder el acceso al menú Datos. -->
     <div class="viewer-footer" id="viewer-footer">
-      <span class="viewer-footer-version">Versión <span id="viewer-version">72</span></span>
+      <span class="viewer-footer-version">Versión <span id="viewer-version">73</span></span>
       <button class="viewer-footer-btn" id="viewer-force-update">🔄 Buscar actualización</button>
     </div>
 
@@ -115,6 +115,7 @@
         <button data-action="generate">🎲 Generar mes</button>
         <button data-action="regenerate">🔀 Probar otra distribución</button>
         <button data-action="regenerate-random">🎰 Variante al azar (3ra opción)</button>
+        <button data-action="export-image">📸 Exportar mes a imagen / PDF (para WhatsApp)</button>
         <button data-action="clear">🗑️ Borrar mes actual</button>
         <button data-action="gen-settings">⚙️ Configurar equipos del generador</button>
         <button data-action="stats">📊 Estadísticas</button>
@@ -157,7 +158,7 @@
       <div class="menu-version">
         <div class="version-badge ok" id="version-badge">
           <span class="version-dot">●</span>
-          <span class="version-label">Versión <span id="app-version">72</span> · actualizada</span>
+          <span class="version-label">Versión <span id="app-version">73</span> · actualizada</span>
         </div>
         <button class="version-update-btn hidden" id="version-update-btn">
           🔴 Hay una versión nueva — Tocar para actualizar
@@ -368,8 +369,8 @@
     </div>
   </div>
 
-  <script src="data.js?v=72"></script>
-  <script src="app.js?v=72"></script>
+  <script src="data.js?v=73"></script>
+  <script src="app.js?v=73"></script>
   <script>
     // === Detección de actualizaciones del Service Worker ===
     // Mantiene una referencia al SW "esperando" (instalado pero no activo todavía).
