@@ -159,6 +159,12 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v75
+- **🐛 Bug post-feria — última semana también bloqueada del primer finde**: el escenario que reportaste — Sallas trabajó martes 28 y miércoles 29 de julio (última semana de feria) y volvía a aparecer en sáb 1 y dom 2 de agosto. La regla de v74 solo bloqueaba equipos que hicieron FINDE en feria, no los que trabajaron la última semana en Lun-Vie.
+  - **Fix**: en el primer finde del mes post-feria (weekIdx === 0) ahora también se hard-excluyen los equipos que aparecen en `postFeriaRestTeams` (últimos 7 días de feria).
+  - **Fallback de 2 pases**: cuando todos los equipos hicieron algo en feria (caso extremo), primero busca candidatos que NO trabajaron la última semana; solo si no hay ninguno, relaja. Verificado: en el escenario donde todos hicieron finde en feria pero solo Milisenda no trabajó la última semana → Milisenda encabeza el primer finde, Sallas al siguiente.
+- **🎨 Tile del 3er integrante ya no sale más grande**: cuando un equipo tiene 3 miembros (ej: Sallas + Ibañez + Martinez), el 3er nombre iba en un slot separado como nombre solo y usaba fuente 20px, mientras que "Sallas + Ibañez" arriba usaba 17px. Ahora todos los tiles usan la misma 17px para consistencia visual.
+
 ### v74
 - **🐛 Regla post-feria refactorizada — bloqueo TOTAL para findes**: reemplaza los enfoques score-based de v72/v73 que fallaban con datos reales. Nueva regla estricta (como pediste):
   - Cualquier equipo que haya hecho **AL MENOS UN sábado o domingo** durante la feria (mes completo enero/julio, no solo última semana) queda **HARD-BLOQUEADO de findes en TODO el mes post-feria**.
