@@ -159,6 +159,13 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v74
+- **🐛 Regla post-feria refactorizada — bloqueo TOTAL para findes**: reemplaza los enfoques score-based de v72/v73 que fallaban con datos reales. Nueva regla estricta (como pediste):
+  - Cualquier equipo que haya hecho **AL MENOS UN sábado o domingo** durante la feria (mes completo enero/julio, no solo última semana) queda **HARD-BLOQUEADO de findes en TODO el mes post-feria**.
+  - Esos equipos vuelven a estar disponibles en el **segundo mes post-feria**, donde aparecen PRIMEROS en la cola porque son los que hace más tiempo no hacen finde regular.
+  - **Fallback inteligente**: si TODOS los equipos hicieron finde en feria (caso raro cuando hay muchos participantes por día), se relaja preservando la prioridad — los que hicieron MENOS días de finde en feria salen primero, y en empate el que hizo finde más antiguo.
+  - Verificado end-to-end: escenario "solo Milisenda + Campi hicieron findes en feria" → agosto sale con Sallas, Cabeza, Frias, Hidalgo, Capdevila (nunca Milisenda ni Campi); septiembre sale con **Milisenda primero, Campi segundo**, luego el resto.
+
 ### v73
 - **🐛 Bug post-feria — extendido a 2 findes**: el fix de v72 cubría solo el primer finde post-feria (weekIdx 0). En meses que empiezan en sábado (como agosto 2026), weekIdx 0 es solo Sáb 1 + Dom 2; el segundo finde (Sáb 8) volvía al round-robin clásico y ahí salían los equipos del primer finde de feria (Milisenda/Diaz) o del segundo (Campi/Montilla). Ahora el algoritmo score-based se aplica a los **PRIMEROS 2 FINDES** del mes post-feria (weekIdx ≤ 1). Verificado con el escenario real: ni Milisenda ni Campi aparecen en las primeras 2 semanas; salen recién en sáb 22.
 - **📸 Botón "Exportar mes a imagen / PDF" en el menú Generación**: además de seguir en "Datos y nube", ahora aparece directo en el menú Generación (justo después de "Variante al azar") para que esté más a mano cuando estás trabajando con el mes.
