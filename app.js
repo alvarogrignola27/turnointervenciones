@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '75';
+const APP_VERSION = '76';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -5603,24 +5603,31 @@ function generateMonth(opts = {}) {
     });
 
     // --- feriaWeekendTeams + feriaWeekendCount: TODOS los sábados y domingos ---
+    // v76: se detecta SOLO por slot[0] (el slot principal del día).
+    // Distinción crítica (regla de Alvarito):
+    //   - feriaWeekendTeams: los DOS miembros de slot[0] son del MISMO equipo
+    //     (protagonista absoluto). Ej: sáb 4 slot[0]=[Milisenda,Diaz] → Milisenda
+    //     team es protagonista → HARD BLOCK todo el mes post-feria.
+    //   - feriaWeekendCount: cuántas veces un miembro cualquiera del equipo
+    //     apareció en slot[0] de un finde. Usado para priorizar en el fallback.
+    // Los slots[0] mezclados (ej: [Sallas,Hidalgo]) NO marcan protagonista
+    // — se cuentan solo como apariciones parciales.
     for (let dd = 1; dd <= prevDim; dd++) {
       const dt = new Date(prevY, prevM - 1, dd);
       const dow = dt.getDay();
       if (dow !== 0 && dow !== 6) continue;
       const daySlots = prevData[String(dd)] || [];
-      const teamsThisDay = new Set();
-      daySlots.forEach(slot => {
-        if (!slot) return;
-        [slot[0], slot[1]].forEach(name => {
-          if (!name) return;
-          const tIdx = nameToTeam[name];
-          if (tIdx !== undefined) teamsThisDay.add(tIdx);
-        });
-      });
-      teamsThisDay.forEach(t => {
-        feriaWeekendTeams.add(t);
-        feriaWeekendCount[t]++;
-      });
+      const mainSlot = daySlots[0];
+      if (!mainSlot) continue;
+      const tA = mainSlot[0] ? nameToTeam[mainSlot[0]] : undefined;
+      const tB = mainSlot[1] ? nameToTeam[mainSlot[1]] : undefined;
+      // Protagonista absoluto: ambos miembros del MISMO equipo
+      if (tA !== undefined && tA === tB) {
+        feriaWeekendTeams.add(tA);
+      }
+      // Contadores: apariciones parciales
+      if (tA !== undefined) feriaWeekendCount[tA]++;
+      if (tB !== undefined && tB !== tA) feriaWeekendCount[tB]++;
     }
 
     // --- postFeriaRestTeams: últimos 7 días de feria (para descanso Lun-Vie) ---
@@ -5954,11 +5961,13 @@ function generateMonth(opts = {}) {
           attempts++;
         }
       }
-      // Fallback 2: TODOS los equipos hicieron finde en feria (caso raro pero
-      // posible cuando la feria tiene muchos participantes por día).
-      // v75: PRIMERO buscamos candidatos que NO trabajaron la última semana
-      // de feria (postFeriaRestTeams). Si hay alguno, gana el que menos
-      // findes hizo. Si no hay ninguno, relajamos y elegimos igual por score.
+      // Fallback 2: los hard/soft excludes no dieron candidato (típico cuando
+      // TODOS o casi todos aparecieron en algún finde de feria). Usamos
+      // fallback en cascada:
+      //   Pass A: candidatos NO en feriaWeekendTeams NI en postFeriaRestTeams
+      //   Pass B: candidatos NO en feriaWeekendTeams (permite postFeriaRest)
+      //   Pass C: elegir cualquiera por score
+      // Nunca liberamos completamente feriaWeekendTeams hasta el último pass.
       if (thisWeekendTeam < 0) {
         const bdBlocked2 = teamsBlockedByBirthday([wk[5], wk[6]]);
         const absBlocked2 = teamsBlockedByAbsence([wk[5], wk[6]]);
@@ -5968,25 +5977,39 @@ function generateMonth(opts = {}) {
           if (absBlocked2.has(i)) return null;
           if (!canUse(i, realCount)) return null;
           const lastPos = recentWeekends.lastIndexOf(i);
-          const distanceFromEnd = lastPos < 0 ? 9999 : (recentWeekends.length - 1 - lastPos);
+          // Cap distancia a teams.length para evitar que un equipo que
+          // "nunca fue slot[0]" (lastPos = -1) domine con distance 9999.
+          const rawDistance = lastPos < 0 ? teams.length : (recentWeekends.length - 1 - lastPos);
+          const distanceFromEnd = Math.min(rawDistance, teams.length);
           return { i, score: feriaWeekendCount[i] * 1000 - distanceFromEnd + i * 0.01 };
         };
 
-        // Pass A: solo equipos que NO trabajaron la última semana de feria
+        // Pass A: NO feriaWeekendTeams + NO postFeriaRestTeams (solo primer finde)
         if (weekIdx === 0) {
           const strictCandidates = [];
           for (let i = 0; i < teams.length; i++) {
-            if (postFeriaRestTeams.has(i)) continue; // excluir estrictamente
+            if (feriaWeekendTeams.has(i)) continue;
+            if (postFeriaRestTeams.has(i)) continue;
             const c = buildCandidate(i);
             if (c) strictCandidates.push(c);
           }
           strictCandidates.sort((a, b) => a.score - b.score);
-          if (strictCandidates.length > 0) {
-            thisWeekendTeam = strictCandidates[0].i;
-          }
+          if (strictCandidates.length > 0) thisWeekendTeam = strictCandidates[0].i;
         }
 
-        // Pass B: si Pass A no encontró (o no era weekIdx 0), relajar
+        // Pass B: NO feriaWeekendTeams (permite postFeriaRest)
+        if (thisWeekendTeam < 0) {
+          const midCandidates = [];
+          for (let i = 0; i < teams.length; i++) {
+            if (feriaWeekendTeams.has(i)) continue;
+            const c = buildCandidate(i);
+            if (c) midCandidates.push(c);
+          }
+          midCandidates.sort((a, b) => a.score - b.score);
+          if (midCandidates.length > 0) thisWeekendTeam = midCandidates[0].i;
+        }
+
+        // Pass C: relajar todo, elegir por score
         if (thisWeekendTeam < 0) {
           const candidates = [];
           for (let i = 0; i < teams.length; i++) {
@@ -5994,9 +6017,7 @@ function generateMonth(opts = {}) {
             if (c) candidates.push(c);
           }
           candidates.sort((a, b) => a.score - b.score);
-          if (candidates.length > 0) {
-            thisWeekendTeam = candidates[0].i;
-          }
+          if (candidates.length > 0) thisWeekendTeam = candidates[0].i;
         }
       }
 

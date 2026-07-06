@@ -159,6 +159,17 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v76
+- **🐛 Bug post-feria — finalmente resuelto**: en las versiones anteriores `feriaWeekendTeams` marcaba a demasiados equipos porque en feria los slots del finde tienen personas mezcladas de teams distintos (ej: slot[0] = "Sallas + Hidalgo" son miembros de teams diferentes). Con TODOS los equipos "marcados", el fallback aflojaba y elegía cualquiera, incluyendo a Milisenda o Campi que fueron protagonistas absolutos.
+  - **Fix — detección precisa de protagonistas**: `feriaWeekendTeams` ahora requiere que los DOS miembros de `slot[0]` del finde sean del **MISMO equipo** (ej: Milisenda+Diaz o Campi+Montilla). Los slots mixtos ya no marcan protagonista.
+  - **Fallback en 3 pases** cuando todos los elegibles están agotados:
+    - Pass A: NO en feriaWeekendTeams NI en postFeriaRestTeams
+    - Pass B: NO en feriaWeekendTeams (permite postFeriaRest, útil cuando toda la última semana estuvo ocupada)
+    - Pass C: relajar todo, elegir por score
+  - `feriaWeekendCount` como score de desempate: cuenta apariciones parciales de cada equipo en slot[0] de findes de feria. El que apareció menos veces gana.
+  - Distance from end capeada a `teams.length` para que equipos nunca vistos en recentWeekends no dominen artificialmente.
+  - **Verificado con el escenario real de las capturas**: Milisenda y Campi NO aparecen en ningún finde de agosto; vuelven primero en septiembre (Milisenda sáb 5, Campi sáb 19).
+
 ### v75
 - **🐛 Bug post-feria — última semana también bloqueada del primer finde**: el escenario que reportaste — Sallas trabajó martes 28 y miércoles 29 de julio (última semana de feria) y volvía a aparecer en sáb 1 y dom 2 de agosto. La regla de v74 solo bloqueaba equipos que hicieron FINDE en feria, no los que trabajaron la última semana en Lun-Vie.
   - **Fix**: en el primer finde del mes post-feria (weekIdx === 0) ahora también se hard-excluyen los equipos que aparecen en `postFeriaRestTeams` (últimos 7 días de feria).
