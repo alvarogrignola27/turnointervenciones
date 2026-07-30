@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '78';
+const APP_VERSION = '79';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -5704,6 +5704,9 @@ function generateMonth(opts = {}) {
   const teamKeys = teams.map(t => teamKey(t));
   const histDays = teams.map((_, i) => (teamHistory[teamKeys[i]]?.totalDays || 0));
   const unassignedDays = [];
+  // v78: registro de los slots donde hubo que aflojar alguna regla para no dejar
+  // el día vacío. Se le muestra al usuario al terminar de generar.
+  const relaxLog = [];
 
   // Si el mes anterior es feria (enero o julio), recolectar cuánto trabajó
   // cada equipo en la última semana. Esto se usa en la selección del PRIMER
@@ -5901,12 +5904,15 @@ function generateMonth(opts = {}) {
   // Elige el mejor equipo disponible.
   // - excludeHard: no se pueden usar (cap hit, ya usados esta semana, restricciones)
   // - preferAvoid: preferir no usar (soft constraint, se ignora si no hay otra opción)
-  function pickBest(excludeHard, addDays, preferAvoid) {
+  // opts.ignoreCap: permite pasarse del cupo máximo del equipo. Es el último
+  // recurso antes de dejar un día sin asignar (ver assignWeekdaySlot).
+  function pickBest(excludeHard, addDays, preferAvoid, opts = {}) {
+    const capOk = (i) => opts.ignoreCap || canUse(i, addDays);
     let bestIdx = -1, bestScore = Infinity;
     for (let i = 0; i < teams.length; i++) {
       if (excludeHard.has(i)) continue;
       if (preferAvoid && preferAvoid.has(i)) continue;
-      if (!canUse(i, addDays)) continue;
+      if (!capOk(i)) continue;
       const s = effectiveScore(i);
       if (s < bestScore) { bestIdx = i; bestScore = s; }
     }
@@ -5914,7 +5920,7 @@ function generateMonth(opts = {}) {
     // Fallback: ignorar preferAvoid
     for (let i = 0; i < teams.length; i++) {
       if (excludeHard.has(i)) continue;
-      if (!canUse(i, addDays)) continue;
+      if (!capOk(i)) continue;
       const s = effectiveScore(i);
       if (s < bestScore) { bestIdx = i; bestScore = s; }
     }
@@ -6270,45 +6276,93 @@ function generateMonth(opts = {}) {
       lastSlotTeam.weekend = preAssignedTeamIdx;
     }
 
-    // === Construir el set "hard exclude" extra para slots de semana ===
-    // El equipo que hizo VIERNES la semana pasada NO puede hacer Lun-Mar/Mié-Jue/Vie
-    // y tampoco el equipo que hizo el FIN DE SEMANA anterior (descanso post-finde,
-    // para que no haga 4 días consecutivos: Sáb-Dom-Lun-Mar)
-    const restExclude = new Set();
-    // v77: se bloquea a TODO equipo que contenga a alguna de las personas que
-    // trabajaron el viernes pasado, no sólo al equipo "titular" de ese viernes.
+    // Personas que trabajaron el viernes de la semana calendario anterior.
     const prevFridayPeople = peopleOnPrevWeekFriday(weekMondayDate(wk));
-    teamsWithAnyMember(prevFridayPeople).forEach(i => restExclude.add(i));
-    if (prevWeekendTeamIdx >= 0) restExclude.add(prevWeekendTeamIdx);
-    // En la PRIMERA semana, si venimos de un mes de feria (enero/julio), los equipos
-    // que trabajaron en su última semana descansan en la primera del mes actual.
-    if (weekIdx === 0) {
-      postFeriaRestTeams.forEach(t => restExclude.add(t));
+
+    // === Asignación de un slot de días de semana, con relajación POR CAPAS ===
+    // v78: antes, si todas las restricciones chocaban, el día quedaba VACÍO y
+    // sólo se avisaba con un toast que desaparecía. Pasaba seguido: en 12 meses
+    // de prueba quedaban 14 días sin turno, y no por falta de cupo (los equipos
+    // llegaban a 4 días teniendo 5 disponibles) sino porque las reglas se
+    // bloqueaban entre sí sobre el final del mes.
+    //
+    // Ahora se intenta con todas las reglas puestas y, si no hay candidato, se
+    // van aflojando de la MÁS DÉBIL a la MÁS FUERTE, registrando cuál se aflojó
+    // para poder mostrárselo al usuario. Nunca se relajan: equipo ya usado esta
+    // semana, cumpleaños y ausencias.
+    function assignWeekdaySlot(slotName, days, sameSlotTeam) {
+      const realDays = days.filter(d => d !== null && !isSkipDay(y, m, d));
+      if (realDays.length === 0) return -1;
+      const addDays = realDays.length;
+
+      // NUNCA se relajan: equipo ya usado esta semana, cumpleaños, ausencias y
+      // el descanso post-viernes. Este último es la regla más importante del
+      // turnero, así que preferimos pasarnos del cupo de un equipo antes que
+      // romperla (y, en el peor caso, dejar el día vacío para que lo resuelva
+      // una persona).
+      const base = new Set(used);
+      teamsBlockedByBirthday(days).forEach(i => base.add(i));
+      teamsBlockedByAbsence(days).forEach(i => base.add(i));
+      teamsWithAnyMember(prevFridayPeople).forEach(i => base.add(i));
+
+      // Capas ordenadas de la más débil (se afloja primero) a la más fuerte.
+      const layers = [];
+      if (sameSlotTeam >= 0) {
+        layers.push({ label: 'rotación de slot', set: new Set([sameSlotTeam]) });
+      }
+      if (prevWeekendTeamIdx >= 0) {
+        layers.push({ label: 'descanso post-finde', set: new Set([prevWeekendTeamIdx]) });
+      }
+      if (weekIdx === 0 && postFeriaRestTeams.size > 0) {
+        layers.push({ label: 'descanso post-feria', set: new Set(postFeriaRestTeams) });
+      }
+
+      const preferAvoid = new Set();
+      teams.forEach((_, i) => {
+        if (teamLastWeekdaySlot[i] === slotName) preferAvoid.add(i);
+      });
+
+      const commit = (idx, relaxed) => {
+        if (relaxed.length > 0) relaxLog.push({ days: realDays.slice(), rules: relaxed });
+        used.add(idx);
+        lastSlotTeam[slotName] = idx;
+        teamLastWeekdaySlot[idx] = slotName;
+        return idx;
+      };
+
+      for (let drop = 0; drop <= layers.length; drop++) {
+        const ex = new Set(base);
+        for (let i = drop; i < layers.length; i++) layers[i].set.forEach(v => ex.add(v));
+        const relaxed = layers.slice(0, drop).map(l => l.label);
+
+        const idx = pickBest(ex, addDays, preferAvoid);
+        if (idx >= 0) {
+          assignSlot(idx, days);
+          return commit(idx, relaxed);
+        }
+
+        // Con todo relajado, probar partir el slot entre dos equipos distintos
+        if (drop === layers.length && addDays === 2) {
+          const split = assignTwoDaySlot(days, ex, preferAvoid);
+          if (split >= 0) return commit(split, [...relaxed, 'slot partido en dos equipos']);
+        }
+      }
+
+      // Último recurso antes de dejar el día vacío: pasarse del cupo del equipo.
+      const idxCap = pickBest(base, addDays, preferAvoid, { ignoreCap: true });
+      if (idxCap >= 0) {
+        assignSlot(idxCap, days);
+        return commit(idxCap, [...layers.map(l => l.label), 'cupo máximo del equipo']);
+      }
+
+      realDays.forEach(d => unassignedDays.push(d));
+      return -1;
     }
 
     // === Slot Lun-Mar ===
     const hasMon = wk[0] !== null, hasTue = wk[1] !== null;
     if ((hasMon || hasTue) && !(weekIdx === 0 && preAssignedSlotType === 'monTue')) {
-      // HARD: ya usado esta semana + descanso post-viernes + slot consecutivo + cumpleaños
-      const hardExclude = new Set(used);
-      restExclude.forEach(i => hardExclude.add(i));
-      if (lastSlotTeam.monTue >= 0) hardExclude.add(lastSlotTeam.monTue);
-      teamsBlockedByBirthday([wk[0], wk[1]]).forEach(i => hardExclude.add(i));
-      teamsBlockedByAbsence([wk[0], wk[1]]).forEach(i => hardExclude.add(i));
-
-      // SOFT (preferAvoid): equipos cuyo último slot semanal fue también Lun-Mar.
-      // Así rota: si Frias hizo Lun-Mar la vez pasada, prefiero darle Mié-Jue o Vie.
-      const preferAvoid = new Set();
-      teams.forEach((_, i) => {
-        if (teamLastWeekdaySlot[i] === 'monTue') preferAvoid.add(i);
-      });
-
-      const idx = assignTwoDaySlot([wk[0], wk[1]], hardExclude, preferAvoid);
-      if (idx >= 0) {
-        used.add(idx);
-        lastSlotTeam.monTue = idx;
-        teamLastWeekdaySlot[idx] = 'monTue';
-      }
+      assignWeekdaySlot('monTue', [wk[0], wk[1]], lastSlotTeam.monTue);
     } else if (weekIdx === 0 && preAssignedSlotType === 'monTue') {
       // Slot Lun-Mar ya pre-asignado (día 1 = Martes, continúa)
       lastSlotTeam.monTue = preAssignedTeamIdx;
@@ -6318,23 +6372,7 @@ function generateMonth(opts = {}) {
     // === Slot Mié-Jue ===
     const hasWed = wk[2] !== null, hasThu = wk[3] !== null;
     if ((hasWed || hasThu) && !(weekIdx === 0 && preAssignedSlotType === 'wedThu')) {
-      const hardExclude = new Set(used);
-      restExclude.forEach(i => hardExclude.add(i));
-      if (lastSlotTeam.wedThu >= 0) hardExclude.add(lastSlotTeam.wedThu);
-      teamsBlockedByBirthday([wk[2], wk[3]]).forEach(i => hardExclude.add(i));
-      teamsBlockedByAbsence([wk[2], wk[3]]).forEach(i => hardExclude.add(i));
-
-      const preferAvoid = new Set();
-      teams.forEach((_, i) => {
-        if (teamLastWeekdaySlot[i] === 'wedThu') preferAvoid.add(i);
-      });
-
-      const idx = assignTwoDaySlot([wk[2], wk[3]], hardExclude, preferAvoid);
-      if (idx >= 0) {
-        used.add(idx);
-        lastSlotTeam.wedThu = idx;
-        teamLastWeekdaySlot[idx] = 'wedThu';
-      }
+      assignWeekdaySlot('wedThu', [wk[2], wk[3]], lastSlotTeam.wedThu);
     } else if (weekIdx === 0 && preAssignedSlotType === 'wedThu') {
       lastSlotTeam.wedThu = preAssignedTeamIdx;
       teamLastWeekdaySlot[preAssignedTeamIdx] = 'wedThu';
@@ -6342,28 +6380,8 @@ function generateMonth(opts = {}) {
 
     // === Slot Viernes ===
     const hasFri = wk[4] !== null;
-    let thisWeekFriTeam = -1;
     if (hasFri) {
-      const hardExclude = new Set(used);
-      restExclude.forEach(i => hardExclude.add(i));
-      if (lastSlotTeam.fri >= 0) hardExclude.add(lastSlotTeam.fri);
-      teamsBlockedByBirthday([wk[4]]).forEach(i => hardExclude.add(i));
-      teamsBlockedByAbsence([wk[4]]).forEach(i => hardExclude.add(i));
-
-      const preferAvoid = new Set();
-      teams.forEach((_, i) => {
-        if (teamLastWeekdaySlot[i] === 'fri') preferAvoid.add(i);
-      });
-
-      thisWeekFriTeam = pickBest(hardExclude, 1, preferAvoid);
-      if (thisWeekFriTeam >= 0) {
-        assignSlot(thisWeekFriTeam, [wk[4]]);
-        used.add(thisWeekFriTeam);
-        lastSlotTeam.fri = thisWeekFriTeam;
-        teamLastWeekdaySlot[thisWeekFriTeam] = 'fri';
-      } else if (!isSkipDay(y, m, wk[4])) {
-        unassignedDays.push(wk[4]);
-      }
+      assignWeekdaySlot('fri', [wk[4]], lastSlotTeam.fri);
     }
 
     // El descanso post-viernes ya no necesita actualizarse acá: la semana que
@@ -6395,11 +6413,236 @@ function generateMonth(opts = {}) {
   state.selectedDay = null;
   rerenderActiveView(); renderDetail();
 
-  if (unassignedDays.length > 0) {
-    showToast(`Turnos generados. ${unassignedDays.length} día(s) sin asignar — revisá los cupos.`);
+  // v78: en vez de un toast que se va en 3 segundos, se abre el informe de
+  // reglas con lo que quedó pendiente. Si salió todo limpio, sólo el toast.
+  // Se guarda con la clave del mes: el informe de OTRO mes no debe mostrar las
+  // reglas que se aflojaron acá.
+  state._lastRelaxLog = { key: `${y}-${m}`, log: relaxLog };
+  const report = validateMonth(y, m, { relaxLog });
+  if (report.issues.length > 0) {
+    showToast('Turnos generados — revisá el informe');
+    openValidateModal(report);
   } else {
-    showToast('Turnos generados');
+    showToast('✅ Turnos generados, sin conflictos');
   }
+}
+
+// ---------- Validador de reglas ----------
+// Audita un mes ya generado (o cargado a mano) contra las reglas del turnero.
+// Trabaja sobre los DATOS GUARDADOS, no sobre el estado interno del generador,
+// así que también detecta problemas introducidos editando días a mano.
+// Mira el mes anterior y el siguiente para las reglas que cruzan semanas.
+const VALIDATE_SEVERITY = { error: 0, warn: 1, info: 2 };
+
+function validateMonth(y, m, opts = {}) {
+  const cfg = loadGenConfig();
+  const teams = cfg.teams || [];
+  const issues = [];
+  const dim = new Date(y, m, 0).getDate();
+
+  const add = (severity, rule, day, text) => issues.push({ severity, rule, day, text });
+
+  // --- Línea de tiempo continua: mes anterior + este + siguiente ---
+  // Necesaria para las reglas "semana siguiente", que cruzan el borde del mes.
+  const prevY = m === 1 ? y - 1 : y, prevM = m === 1 ? 12 : m - 1;
+  const nextY = m === 12 ? y + 1 : y, nextM = m === 12 ? 1 : m + 1;
+  const dataOf = (yy, mm) =>
+    (yy === state.year && mm === state.month) ? state.data : loadMonthData(yy, mm);
+
+  const timeline = [];
+  [[prevY, prevM], [y, m], [nextY, nextM]].forEach(([yy, mm]) => {
+    const data = dataOf(yy, mm);
+    const n = new Date(yy, mm, 0).getDate();
+    for (let d = 1; d <= n; d++) {
+      const people = [];
+      (data[String(d)] || []).forEach(slot => {
+        if (!slot) return;
+        [slot[0], slot[1]].forEach(nm => {
+          if (nm && !GESTION_MATERIALES.includes(nm)) people.push(nm);
+        });
+      });
+      timeline.push({ y: yy, m: mm, d, dt: new Date(yy, mm - 1, d), people, isCurrent: mm === m && yy === y });
+    }
+  });
+
+  const mondayOf = (dt) => {
+    const x = new Date(dt);
+    x.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+    x.setHours(0, 0, 0, 0);
+    return x.getTime();
+  };
+  const WEEK = 7 * 24 * 3600 * 1000;
+  const fmt = (x) => `${['dom','lun','mar','mié','jue','vie','sáb'][x.dt.getDay()]} ${x.d}/${x.m}`;
+
+  // === R1: descanso post-viernes (PERSONA) ===
+  // Quien trabaja un viernes no vuelve de lunes a viernes de la semana siguiente.
+  // El fin de semana sí está permitido.
+  timeline.filter(x => x.dt.getDay() === 5).forEach(vie => {
+    const nextWeek = mondayOf(vie.dt) + WEEK;
+    vie.people.forEach(p => {
+      timeline.forEach(x => {
+        const dow = x.dt.getDay();
+        if (dow === 0 || dow === 6) return;
+        if (mondayOf(x.dt) !== nextWeek) return;
+        if (!x.people.includes(p)) return;
+        if (!vie.isCurrent && !x.isCurrent) return;   // ambos fuera del mes: no es asunto nuestro
+        add('error', 'Descanso post-viernes', x.isCurrent ? x.d : vie.d,
+          `${p} trabaja el viernes ${fmt(vie)} y vuelve el ${fmt(x)}`);
+      });
+    });
+  });
+
+  // === R2: descanso post-finde (PERSONA) ===
+  // Quien hace sábado/domingo no arranca el lunes o martes siguiente
+  // (evita 4 días seguidos: sáb-dom-lun-mar).
+  timeline.filter(x => x.dt.getDay() === 6).forEach(sab => {
+    const nextWeek = mondayOf(sab.dt) + WEEK;
+    const finde = new Set(sab.people);
+    const dom = timeline.find(x => x.dt.getTime() === sab.dt.getTime() + 24 * 3600 * 1000);
+    if (dom) dom.people.forEach(p => finde.add(p));
+    finde.forEach(p => {
+      timeline.forEach(x => {
+        const dow = x.dt.getDay();
+        if (dow !== 1 && dow !== 2) return;
+        if (mondayOf(x.dt) !== nextWeek) return;
+        if (!x.people.includes(p)) return;
+        if (!sab.isCurrent && !x.isCurrent) return;
+        add('warn', 'Descanso post-finde', x.isCurrent ? x.d : sab.d,
+          `${p} hace el finde del ${fmt(sab)} y vuelve el ${fmt(x)}`);
+      });
+    });
+  });
+
+  // === R3: días sin turno asignado (ignora feriados y feria judicial) ===
+  const data = dataOf(y, m);
+  for (let d = 1; d <= dim; d++) {
+    if (isSkipDay(y, m, d)) continue;
+    const slots = data[String(d)] || [];
+    const hasReal = slots.some(s => s && (s[0] || s[1]) &&
+      ![s[0], s[1]].every(n => !n || GESTION_MATERIALES.includes(n)));
+    if (!hasReal) {
+      add('error', 'Día sin turno', d, `El día ${d} no tiene ningún equipo asignado`);
+    }
+  }
+
+  // === R4: cupo máximo por equipo ===
+  const usage = teams.map(() => 0);
+  for (let d = 1; d <= dim; d++) {
+    const main = (data[String(d)] || [])[0];
+    if (!main) continue;
+    const idx = teamIdxForSlotFlexible(main, teams);
+    if (idx >= 0) usage[idx]++;
+  }
+  teams.forEach((t, i) => {
+    const max = t.maxDays || 0;
+    if (max > 0 && usage[i] > max) {
+      add('warn', 'Cupo excedido', null,
+        `${t.a} + ${t.b} tiene ${usage[i]} días y su cupo es ${max}`);
+    }
+  });
+
+  // === R5: cumpleaños trabajando ===
+  for (let d = 1; d <= dim; d++) {
+    const bd = birthdaysOn(y, m, d);
+    if (bd.length === 0) continue;
+    const dayPeople = timeline.find(x => x.isCurrent && x.d === d)?.people || [];
+    bd.filter(p => dayPeople.includes(p)).forEach(p => {
+      add('warn', 'Cumpleaños', d, `${p} está de turno el día ${d} y es su cumpleaños`);
+    });
+  }
+
+  // === R6: ausencia planificada trabajando ===
+  const absences = loadAbsences();
+  if (absences.length > 0) {
+    for (let d = 1; d <= dim; d++) {
+      const absent = absentPeopleOn(y, m, d, absences);
+      if (absent.size === 0) continue;
+      const dayPeople = timeline.find(x => x.isCurrent && x.d === d)?.people || [];
+      dayPeople.filter(p => absent.has(p)).forEach(p => {
+        add('error', 'Ausencia', d, `${p} está de turno el día ${d} pero figura ausente`);
+      });
+    }
+  }
+
+  // === R7: reglas que el generador tuvo que aflojar ===
+  (opts.relaxLog || []).forEach(entry => {
+    add('info', 'Regla relajada', entry.days[0],
+      `Día(s) ${entry.days.join(', ')}: hubo que aflojar ${entry.rules.join(' + ')} para no dejarlos vacíos`);
+  });
+
+  issues.sort((a, b) =>
+    (VALIDATE_SEVERITY[a.severity] - VALIDATE_SEVERITY[b.severity]) || ((a.day || 0) - (b.day || 0)));
+
+  return {
+    y, m, issues,
+    errors: issues.filter(i => i.severity === 'error').length,
+    warns: issues.filter(i => i.severity === 'warn').length,
+    infos: issues.filter(i => i.severity === 'info').length,
+  };
+}
+
+// Escapa texto antes de meterlo en innerHTML. Los nombres de personas son
+// editables por el usuario, así que no confiamos en su contenido.
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Abre el informe. Sin argumento, valida el mes actual en pantalla.
+function openValidateModal(report) {
+  const stored = state._lastRelaxLog;
+  const relaxLog = (stored && stored.key === `${state.year}-${state.month}`) ? stored.log : [];
+  const rep = report || validateMonth(state.year, state.month, { relaxLog });
+  const modal = document.getElementById('validate-modal');
+  const sub = document.getElementById('validate-sub');
+  const list = document.getElementById('validate-list');
+  const label = `${MES_NAMES[rep.m - 1]} ${rep.y}`;
+
+  if (rep.issues.length === 0) {
+    sub.textContent = `${label}: sin conflictos. Todas las reglas se cumplen.`;
+    list.innerHTML = '<div class="validate-empty">✅ Nada para revisar</div>';
+  } else {
+    const partes = [];
+    if (rep.errors) partes.push(`${rep.errors} conflicto${rep.errors > 1 ? 's' : ''}`);
+    if (rep.warns) partes.push(`${rep.warns} advertencia${rep.warns > 1 ? 's' : ''}`);
+    if (rep.infos) partes.push(`${rep.infos} nota${rep.infos > 1 ? 's' : ''}`);
+    sub.textContent = `${label}: ${partes.join(', ')}.`;
+    const icon = { error: '⛔', warn: '⚠️', info: 'ℹ️' };
+    list.innerHTML = rep.issues.map((it, i) => `
+      <div class="validate-item validate-${it.severity}" data-day="${it.day == null ? '' : it.day}" data-i="${i}">
+        <span class="validate-icon">${icon[it.severity]}</span>
+        <span class="validate-body">
+          <b>${escapeHtml(it.rule)}</b>
+          <small>${escapeHtml(it.text)}</small>
+        </span>
+        ${it.day != null ? '<span class="validate-go">ver ›</span>' : ''}
+      </div>`).join('');
+
+    // Tocar un ítem lleva al día señalado
+    list.querySelectorAll('.validate-item').forEach(el => {
+      const day = el.dataset.day;
+      if (!day) return;
+      el.classList.add('validate-clickable');
+      el.addEventListener('click', () => {
+        modal.classList.add('hidden');
+        state.year = rep.y; state.month = rep.m;
+        reloadCurrentMonth();
+        state.selectedDay = parseInt(day, 10);
+        state.view = 'month';
+        switchView('month');
+        renderDetail();
+        setTimeout(() => {
+          document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 50);
+      });
+    });
+  }
+
+  modal.classList.remove('hidden');
+  const close = () => modal.classList.add('hidden');
+  document.getElementById('validate-modal-close').onclick = close;
+  document.getElementById('validate-close-btn').onclick = close;
+  modal.querySelector('.modal-backdrop').onclick = close;
 }
 
 // ---------- Install prompt ----------
@@ -6511,6 +6754,7 @@ function wireUp() {
       // sin dependencias externas). El antiguo exportAndShareMonth requería
       // html2canvas que no se carga siempre. Ya no se usa.
       else if (a === 'stats') openStatsSettings();
+      else if (a === 'validate') openValidateModal();
       else if (a === 'absences') openAbsencesModal();
       else if (a === 'gen-settings') openGenSettings();
       else if (a === 'colors-settings') openColorsSettings();

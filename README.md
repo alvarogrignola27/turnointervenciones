@@ -159,6 +159,20 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v79
+- **🔍 Informe de reglas (nuevo)**. Menú *Generación → "Revisar reglas del mes"*, y se abre solo al terminar de generar si algo quedó pendiente. Audita el mes **sobre los datos guardados**, así que también detecta problemas metidos editando días a mano. Chequea:
+  - **Descanso post-viernes** (⛔): quien trabaja un viernes no vuelve de lunes a viernes de la semana siguiente.
+  - **Descanso post-finde** (⚠️): quien hace sábado/domingo no arranca el lunes o martes siguiente.
+  - **Días sin turno** (⛔), ignorando feriados y feria judicial.
+  - **Cupo excedido** por equipo (⚠️), **cumpleaños trabajando** (⚠️) y **ausencias trabajando** (⛔).
+  - **Reglas que el generador tuvo que aflojar** (ℹ️), con el detalle de cuál y en qué días.
+  - Todas las reglas de "semana siguiente" miran el mes anterior y el siguiente, así que los conflictos en el borde del mes no se escapan. Tocando un ítem se va al día en cuestión.
+- **🐛 Los días ya no quedan vacíos en silencio**. Los slots de días de semana no tenían ningún fallback: si las reglas se bloqueaban entre sí, el día quedaba sin turno y sólo avisaba un toast de 3 segundos. Pasaba seguido — en 12 meses de prueba quedaban **14 días sin turno**, y no por falta de cupo (los equipos llegaban a 4 días teniendo 5 disponibles) sino porque las reglas chocaban sobre el final del mes.
+  - Ahora se intenta con todas las reglas puestas y, si no hay candidato, se van **aflojando por capas** de la más débil a la más fuerte: rotación de slot → descanso post-finde → descanso post-feria → partir el slot entre dos equipos → pasarse del cupo máximo.
+  - **El descanso post-viernes nunca se afloja**, junto con cumpleaños y ausencias. Es la regla más importante del turnero: se prefiere pasarse del cupo de un equipo antes que romperla.
+  - Cada relajación queda registrada y se muestra en el informe, así que nunca hay un cambio silencioso.
+  - Resultado en los mismos 12 meses: **0 días sin turno, 0 violaciones de post-viernes, 0 de post-finde**. El costo es que en 4 de 11 meses un equipo queda 1 día por encima de su cupo, y sale avisado en el informe.
+
 ### v78
 - **🐛 La regla del viernes no se respetaba al cambiar de mes**. La regla es: *si una persona trabaja un viernes, no puede volver de lunes a viernes de la semana siguiente* (el fin de semana sí está permitido). Fallaba por tres motivos distintos, todos en el cruce entre meses:
   - **Días editados a mano quedaban invisibles**: el generador identificaba al equipo de un día exigiendo que el par de nombres coincidiera **exacto** con un equipo de la config. Un día cargado a mano como `Frias + Martinez` (que no es ningún equipo) devolvía "no encontrado" y la regla de descanso simplemente no se aplicaba. Ahora, si no hay par exacto, se identifica al equipo por cualquiera de sus integrantes.

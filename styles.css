@@ -1998,3 +1998,44 @@ body.role-viewer { padding-bottom: 44px; }
   }
   .menu { left: auto; right: 24px; bottom: 80px; max-width: 280px; }
 }
+
+/* ---------- Informe de reglas (validador) ---------- */
+.validate-list {
+  max-height: 55vh;
+  overflow-y: auto;
+  margin: 4px 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.validate-empty {
+  text-align: center;
+  padding: 28px 12px;
+  color: #6c6c70;
+  font-size: 15px;
+}
+.validate-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f6f7f9;
+  border-left: 4px solid #c9cfda;
+}
+.validate-item.validate-error { background: #fef2f2; border-left-color: #dc2626; }
+.validate-item.validate-warn  { background: #fffbeb; border-left-color: #d97706; }
+.validate-item.validate-info  { background: #eff6ff; border-left-color: #2563eb; }
+.validate-clickable { cursor: pointer; }
+.validate-clickable:active { transform: scale(0.99); }
+.validate-icon { font-size: 16px; line-height: 1.35; flex-shrink: 0; }
+.validate-body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.validate-body b { font-size: 13px; font-weight: 700; color: #1c1c1e; }
+.validate-body small { font-size: 13px; color: #44464a; line-height: 1.35; }
+.validate-go {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1f3a68;
+  flex-shrink: 0;
+  align-self: center;
+}
