@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '77';
+const APP_VERSION = '78';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -3105,9 +3105,15 @@ function renderWeekView() {
 
     // Click en la tarjeta abre vista día (pero los selects no propagan)
     card.addEventListener('click', () => {
+      // v77 fix: una semana puede cruzar dos meses (ej: lun 29/09 – dom 05/10).
+      // Al abrir un día del OTRO mes hay que recargar data + feriados + feria +
+      // reemplazos; antes sólo se cambiaba year/month y la vista día quedaba
+      // mostrando los turnos y marcadores del mes anterior.
+      const monthChanged = (y !== state.year || m !== state.month);
       state.year = y;
       state.month = m;
       state.day = d;
+      if (monthChanged) reloadCurrentMonth();
       state.view = 'day';
       switchView('day');
     });
@@ -3173,7 +3179,10 @@ function renderDayView() {
     note.textContent = '✎ Editar este día (cambiar de mes)';
     note.addEventListener('click', () => {
       state.year = y; state.month = m;
-      state.data = loadMonthData(y, m);
+      // v77 fix: antes sólo recargaba state.data, así que feriados / feria
+      // judicial / reemplazos quedaban los del mes viejo y se pintaban marcas
+      // en días equivocados.
+      reloadCurrentMonth();
       state.selectedDay = d;
       state.view = 'month';
       switchView('month');
@@ -5772,13 +5781,77 @@ function generateMonth(opts = {}) {
     ? computeRotatedMaxes(teams, teamHistory, teamKeys)
     : teams.map(t => t.maxDays || 0);
 
-  // Helper: buscar índice del equipo que coincide con una dupla [a, b]
+  // Helper: buscar índice del equipo que coincide con una dupla [a, b].
+  // v77: antes exigía coincidencia EXACTA del par, así que cualquier día editado
+  // a mano o con un reemplazo (ej: ["Frias","Martinez"], que no es un equipo de
+  // la config) devolvía -1 y quedaba INVISIBLE para las reglas de descanso y de
+  // continuidad. Ahora, si no hay par exacto, caemos al matcher flexible que
+  // identifica el equipo por cualquiera de sus integrantes.
   function findTeamIdxBySlot(slotPair) {
     if (!slotPair) return -1;
-    return teams.findIndex(t =>
+    const exact = teams.findIndex(t =>
       (t.a === slotPair[0] && t.b === slotPair[1]) ||
       (t.a === slotPair[1] && t.b === slotPair[0])
     );
+    if (exact >= 0) return exact;
+    return teamIdxForSlotFlexible(slotPair, teams);
+  }
+
+  // --- Descanso post-viernes, a nivel PERSONA ---
+  // La regla del cliente es sobre personas, no sobre equipos: "si una persona
+  // está un viernes, no puede estar de lunes a viernes la semana siguiente".
+  // Trabajar con nombres (y no con índices de equipo) hace que la regla siga
+  // valiendo aunque el día se haya editado a mano, tenga un reemplazo o combine
+  // gente de dos equipos.
+  function peopleOnDay(dayData) {
+    const out = new Set();
+    (dayData || []).forEach(slot => {
+      if (!slot) return;
+      [slot[0], slot[1]].forEach(n => {
+        if (n && !GESTION_MATERIALES.includes(n)) out.add(n);
+      });
+    });
+    return out;
+  }
+
+  // Lunes (Date) de la semana representada por `wk`. Las claves de wk son
+  // 0=Lun … 6=Dom, así que restando el índice al día que haya en esa posición
+  // llegamos al lunes, incluso si la semana es parcial y no tiene lunes propio.
+  function weekMondayDate(wk) {
+    for (let i = 0; i <= 6; i++) {
+      if (wk[i] === null) continue;
+      const dt = new Date(y, m - 1, wk[i]);
+      dt.setDate(dt.getDate() - i);
+      return dt;
+    }
+    return null;
+  }
+
+  // Personas que trabajaron el VIERNES de la semana calendario anterior a la que
+  // arranca en `mondayDate`. Lee del mes que corresponda por fecha real.
+  // v77: reemplaza al viejo `lastWeekFridayTeam`, que se arrastraba como estado
+  // entre iteraciones y se equivocaba de semana cuando el mes anterior terminaba
+  // a mitad de semana (ej: octubre 2026 termina sábado 31 → se leía el viernes 23
+  // en lugar del 30, y noviembre arrancaba sin ninguna restricción).
+  function peopleOnPrevWeekFriday(mondayDate) {
+    if (!mondayDate) return new Set();
+    const fri = new Date(mondayDate);
+    fri.setDate(mondayDate.getDate() - 3);
+    const fy = fri.getFullYear(), fm = fri.getMonth() + 1, fd = fri.getDate();
+    if (fy === y && fm === m) return peopleOnDay(newData[String(fd)]);
+    if (fy === prevY && fm === prevM) return peopleOnDay(prevData[String(fd)]);
+    return new Set();
+  }
+
+  // Equipos que tienen AL MENOS un integrante dentro del set de nombres.
+  function teamsWithAnyMember(nameSet) {
+    const out = new Set();
+    if (!nameSet || nameSet.size === 0) return out;
+    teams.forEach((t, i) => {
+      const members = [t.a, t.b, t.c].filter(Boolean);
+      if (members.some(n => nameSet.has(n))) out.add(i);
+    });
+    return out;
   }
 
   // Helper: equipos bloqueados por cumpleaños en alguno de los días dados
@@ -5850,10 +5923,16 @@ function generateMonth(opts = {}) {
 
   // Asignar slot completo (1+ días al mismo equipo). Salta feriados.
   // Devuelve el índice del equipo asignado o -1 si no se pudo.
-  function assignSlot(teamIdx, days) {
+  // opts.slotsOverride: composición exacta a escribir en lugar del plantel
+  // completo del equipo. Se usa para continuar un turno que arrancó el mes
+  // anterior, replicándolo tal cual estaba (ver la pre-asignación del día 1).
+  function assignSlot(teamIdx, days, opts = {}) {
     if (teamIdx < 0) return -1;
     const t = teams[teamIdx];
-    const members = [t.a, t.b, t.c].filter(Boolean);
+    const override = opts.slotsOverride;
+    const members = override
+      ? [...new Set(override.flatMap(s => [s[0], s[1]]).filter(Boolean))]
+      : [t.a, t.b, t.c].filter(Boolean);
     days.forEach(d => {
       if (d === null) return;
       if (isSkipDay(y, m, d)) return;
@@ -5863,8 +5942,13 @@ function generateMonth(opts = {}) {
         unassignedDays.push(d);
         return;
       }
-      const slots = [[t.a, t.b]];
-      if (t.c) slots.push([t.c, null]);
+      let slots;
+      if (override) {
+        slots = deepCopy(override);
+      } else {
+        slots = [[t.a, t.b]];
+        if (t.c) slots.push([t.c, null]);
+      }
       newData[String(d)] = slots;
       usage[teamIdx]++;
     });
@@ -5944,14 +6028,23 @@ function generateMonth(opts = {}) {
     else if (lastDow === 6) preAssignedSlotType = 'satSun';  // Sáb → Dom
 
     if (preAssignedSlotType) {
-      // Pre-asignar día 1 al mismo equipo (completa el slot que arrancó el mes pasado)
-      assignSlot(lastTeamIdx, [1]);
+      // Pre-asignar día 1 al mismo equipo (completa el slot que arrancó el mes pasado).
+      // v77: se replica la composición EXACTA del último día del mes anterior en
+      // vez del plantel completo del equipo. Antes, continuar un turno de
+      // "Sallas + Ibañez" reincorporaba al 3er integrante (Martinez) que no
+      // estaba en ese turno — y si esa persona venía de trabajar el viernes,
+      // rompía la regla de descanso sin que nada lo detectara.
+      const prevLastSlots = (prevData[String(prevDaysInMonth)] || [])
+        .filter(s => s && (s[0] || s[1]) && ![s[0], s[1]].every(n => !n || GESTION_MATERIALES.includes(n)));
+      assignSlot(lastTeamIdx, [1], {
+        slotsOverride: prevLastSlots.length > 0 ? prevLastSlots : null,
+      });
       preAssignedDay1 = true;
       preAssignedTeamIdx = lastTeamIdx;
     }
   }
 
-  // === INICIALIZAR lastSlotTeam Y lastWeekFridayTeam DESDE LA ÚLTIMA SEMANA COMPLETA DEL MES ANTERIOR ===
+  // === INICIALIZAR lastSlotTeam DESDE LA ÚLTIMA SEMANA COMPLETA DEL MES ANTERIOR ===
   // La "última semana completa" es la que termina antes del slot que cruza meses
   // (o la última semana del mes si no hay cruce).
   let spanStart;
@@ -5966,7 +6059,8 @@ function generateMonth(opts = {}) {
   //   1. Mismo equipo NO puede hacer el mismo slot 2 semanas seguidas
   //   2. Si un equipo hizo VIERNES la semana pasada, solo puede hacer
   //      el fin de semana (no Lun-Mar, Mié-Jue, Vie de esta semana)
-  let lastWeekFridayTeam = -1;   // descansa esta semana excepto en finde
+  // El descanso post-viernes ya no se arrastra como estado: cada semana consulta
+  // el viernes de la semana calendario anterior con peopleOnPrevWeekFriday().
   const lastSlotTeam = { weekend: -1, monTue: -1, wedThu: -1, fri: -1 };
 
   // Tracking del equipo del finde de la SEMANA ANTERIOR (no la actual).
@@ -5985,6 +6079,7 @@ function generateMonth(opts = {}) {
     if (d < 1) break;
     const dt = new Date(prevY, prevM - 1, d);
     const dow = dt.getDay();  // 0=Dom, 1=Lun, ..., 6=Sáb
+
     const slot = prevData[String(d)]?.[0];
     if (!slot) continue;
     const teamIdx = findTeamIdxBySlot(slot);
@@ -5996,7 +6091,6 @@ function generateMonth(opts = {}) {
       if (lastSlotTeam.wedThu < 0) lastSlotTeam.wedThu = teamIdx;
     } else if (dow === 5) {
       if (lastSlotTeam.fri < 0) lastSlotTeam.fri = teamIdx;
-      if (lastWeekFridayTeam < 0) lastWeekFridayTeam = teamIdx;
     } else {
       if (lastSlotTeam.weekend < 0) lastSlotTeam.weekend = teamIdx;
     }
@@ -6181,7 +6275,10 @@ function generateMonth(opts = {}) {
     // y tampoco el equipo que hizo el FIN DE SEMANA anterior (descanso post-finde,
     // para que no haga 4 días consecutivos: Sáb-Dom-Lun-Mar)
     const restExclude = new Set();
-    if (lastWeekFridayTeam >= 0) restExclude.add(lastWeekFridayTeam);
+    // v77: se bloquea a TODO equipo que contenga a alguna de las personas que
+    // trabajaron el viernes pasado, no sólo al equipo "titular" de ese viernes.
+    const prevFridayPeople = peopleOnPrevWeekFriday(weekMondayDate(wk));
+    teamsWithAnyMember(prevFridayPeople).forEach(i => restExclude.add(i));
     if (prevWeekendTeamIdx >= 0) restExclude.add(prevWeekendTeamIdx);
     // En la PRIMERA semana, si venimos de un mes de feria (enero/julio), los equipos
     // que trabajaron en su última semana descansan en la primera del mes actual.
@@ -6269,10 +6366,9 @@ function generateMonth(opts = {}) {
       }
     }
 
-    // Al final de la semana: actualizar el "descanso post-viernes"
-    // (si esta semana hubo viernes asignado, ese equipo descansa la próxima
-    //  semana excepto en el finde)
-    lastWeekFridayTeam = thisWeekFriTeam;
+    // El descanso post-viernes ya no necesita actualizarse acá: la semana que
+    // viene lee directamente el viernes recién asignado desde newData. Eso además
+    // hace que un viernes feriado (que no asigna a nadie) no bloquee a nadie.
     // El equipo del finde de ESTA semana se convierte en "previo" para la próxima
     // (para evitar que haga también Lun-Mar de la próxima semana → descanso post-finde)
     if (thisWeekendTeam >= 0) {

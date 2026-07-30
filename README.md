@@ -159,6 +159,16 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v78
+- **🐛 La regla del viernes no se respetaba al cambiar de mes**. La regla es: *si una persona trabaja un viernes, no puede volver de lunes a viernes de la semana siguiente* (el fin de semana sí está permitido). Fallaba por tres motivos distintos, todos en el cruce entre meses:
+  - **Días editados a mano quedaban invisibles**: el generador identificaba al equipo de un día exigiendo que el par de nombres coincidiera **exacto** con un equipo de la config. Un día cargado a mano como `Frias + Martinez` (que no es ningún equipo) devolvía "no encontrado" y la regla de descanso simplemente no se aplicaba. Ahora, si no hay par exacto, se identifica al equipo por cualquiera de sus integrantes.
+  - **La regla miraba equipos, no personas**: ahora se bloquea a todo equipo que tenga *alguna* de las personas que trabajaron el viernes anterior. Antes se bloqueaba sólo al equipo "titular" de ese viernes.
+  - **Se leía el viernes equivocado cuando el mes anterior terminaba a mitad de semana**: si octubre terminaba sábado 31, noviembre leía el viernes 23 en lugar del 30 y arrancaba sin ninguna restricción. El descanso ya no se arrastra como estado entre semanas: cada semana consulta directamente el viernes de la semana calendario anterior, sea del mes que sea.
+  - **La continuidad entre meses sumaba gente de más**: al completar un turno que arrancó el último día del mes anterior, se escribía el plantel completo del equipo. Continuar un turno de `Sallas + Ibañez` reincorporaba al tercer integrante que no había estado. Ahora se replica la composición exacta del turno original.
+  - **Un viernes feriado ya no hace descansar a nadie**: antes se bloqueaba al equipo por un turno que en realidad nunca se trabajó.
+  - Verificado generando 12 meses corridos: **0 violaciones** (antes, entre 1 y 3 en el mismo escenario).
+- **🐛 Marcadores del mes viejo al cambiar de mes**: al abrir un día de otro mes desde la vista Semana (una semana puede cruzar dos meses) o desde "Editar este día", se cambiaba el mes pero no se recargaban feriados, feria judicial ni reemplazos. Quedaban los del mes anterior, pintados sobre los días del mes nuevo. Ahora se recarga todo el estado del mes.
+
 ### v77
 - **📸 Rediseño del export de imagen (WhatsApp / PDF)**: el póster que se descargaba quedaba muy distinto del calendario de Excel que se venía compartiendo y de la vista de la app.
   - **Los dos integrantes del equipo ahora van uno al lado del otro**, dentro de una misma cápsula partida al medio. Si el equipo comparte color se lee como un bloque único (igual que el Excel); si cada uno tiene su color, cada mitad lleva el suyo (igual que la vista de mes). Antes los nombres salían apilados uno sobre el otro, que era la diferencia más visible contra el Excel.
