@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '76';
+const APP_VERSION = '77';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -4368,11 +4368,12 @@ function exportData() {
 function openExportImage() {
   const modal = document.getElementById('export-image-modal');
   modal.classList.remove('hidden');
-  // Default del toggle: ON si es mes de feria (donde hay 2-3 extras),
-  // OFF en meses regulares (que típicamente solo tienen intervención + apoyo).
-  const toggle = document.getElementById('export-image-show-all');
-  const isFeria = (state.month === 1 || state.month === 7);
-  toggle.checked = isFeria;
+  // v77: el toggle ahora es "modo compacto" y arranca SIEMPRE apagado. Antes era
+  // "mostrar todos los turnos" y arrancaba apagado en meses regulares, lo que
+  // hacía que el export perdiera la gestión de materiales y los terceros
+  // integrantes que sí aparecían en el calendario de Excel.
+  const toggle = document.getElementById('export-image-compact');
+  toggle.checked = false;
   toggle.onchange = renderExportImage;
   renderExportImage();
   document.getElementById('export-image-modal-close').onclick = () => modal.classList.add('hidden');
@@ -4384,8 +4385,8 @@ function openExportImage() {
 function renderExportImage() {
   const preview = document.getElementById('export-image-preview');
   preview.innerHTML = '';
-  const showAll = document.getElementById('export-image-show-all').checked;
-  const canvas = buildExportCanvas(state.year, state.month, state.data, { showAll });
+  const compact = document.getElementById('export-image-compact').checked;
+  const canvas = buildExportCanvas(state.year, state.month, state.data, { compact });
   canvas.style.maxWidth = '100%';
   canvas.style.height = 'auto';
   canvas.style.borderRadius = '12px';
@@ -4394,212 +4395,331 @@ function renderExportImage() {
   preview.appendChild(canvas);
 }
 
-// Construye un canvas con el calendario del mes en formato póster.
-// Layout: header con mes/año + grid de 7 columnas (Lun-Dom).
-// Cada celda: día arriba + N tiles apilados con los slots del día.
-//   showAll=false → solo slot[0] (intervención principal). Modo "regular".
-//   showAll=true  → TODOS los slots no-vacíos. Modo "feria/completo".
-// La altura de las celdas se adapta al máximo de slots usados en el mes
-// para que ningún tile quede chico.
+// ---------- Export: construcción del póster del mes ----------
+// v77: rediseño del export para que se parezca a la vista de la app (y al
+// calendario de Excel que se venía compartiendo por WhatsApp):
+//   · los dos integrantes del equipo van UNO AL LADO DEL OTRO dentro de una
+//     misma cápsula partida al medio. Si comparten color se lee como un solo
+//     bloque (igual que el Excel); si no, cada mitad lleva su color (igual que
+//     la app).
+//   · la gestión de materiales (ALVARO / MARTIN) SIEMPRE se dibuja, como la
+//     franja gris "diligenciado de oficios" del Excel. Antes quedaba oculta en
+//     los meses regulares y el export perdía información.
+//   · header con banda de color, feriados / feria / cumpleaños marcados, y
+//     alto de celda que se estira para que la imagen no salga apachurrada.
+
+const EXP = {
+  brand: '#1f3a68',
+  ink: '#1c1c1e',
+  muted: '#6c6c70',
+  line: '#c9cfda',        // líneas de la grilla
+  lineSoft: '#e4e8ef',
+  headBg: '#eef1f6',      // banda de días hábiles
+  headBgWeekend: '#fdeaea',
+  weekendInk: '#b91c1c',
+  weekendCell: '#fdf7f7',
+  feriadoCell: '#fff8e6',
+  feriadoInk: '#a16207',
+  gmatBg: '#dfe3ea',
+  gmatInk: '#3f4654',
+  outMonth: '#f6f7f9',    // celdas de relleno antes/después del mes
+};
+
+// Ajusta el tamaño de fuente hasta que el texto entre en maxW.
+function expFitFont(ctx, text, maxW, size, weight = 'bold') {
+  let s = size;
+  while (s > 9) {
+    ctx.font = `${weight} ${s}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+    if (ctx.measureText(text).width <= maxW) break;
+    s -= 1;
+  }
+  return s;
+}
+
+// Modelo de filas de un día. Cada fila es lo que se dibuja como una cápsula:
+//   { type: 'pair',   a, b }  → equipo de 2 (cápsula partida)
+//   { type: 'single', name }  → una sola persona (3er integrante, extra)
+//   { type: 'gmat',   name }  → gestión de materiales (franja baja y gris)
+// En feria judicial ALVARO/MARTIN NO son gestión: son extras y van como pill
+// normal, igual que en la vista de la app.
+function expRowsForDay(y, m, d, data, opts = {}) {
+  const slots = data[String(d)] || [];
+  const isFeriaDay = isFeriaJud(y, m, d);
+  const rows = [];
+  slots.forEach(slot => {
+    if (!slot) return;
+    const names = [slot[0], slot[1]].filter(n => n && n !== 'FERIADO');
+    if (names.length === 0) return;
+    const isGmat = !isFeriaDay && names.every(n => GESTION_MATERIALES.includes(n));
+    if (isGmat) { rows.push({ type: 'gmat', name: names[0] }); return; }
+    rows.push(names.length >= 2
+      ? { type: 'pair', a: names[0], b: names[1] }
+      : { type: 'single', name: names[0] });
+  });
+  // Modo compacto: sólo el equipo principal (primera fila que no sea gestión).
+  // La gestión se mantiene siempre porque es la franja que en el Excel nunca
+  // faltaba.
+  if (opts.compact) {
+    const main = rows.find(r => r.type !== 'gmat');
+    return [main, ...rows.filter(r => r.type === 'gmat')].filter(Boolean);
+  }
+  return rows;
+}
+
 function buildExportCanvas(y, m, data, opts = {}) {
-  const showAll = !!opts.showAll;
+  const compact = !!opts.compact;
   const monthName = MES_NAMES[m - 1];
-  const isFeria = (m === 1 || m === 7);
   const dim = new Date(y, m, 0).getDate();
   const firstDow = (new Date(y, m - 1, 1).getDay() + 6) % 7;
   const cellsTotal = firstDow + dim;
   const numRows = Math.ceil(cellsTotal / 7);
 
-  // v70: tiles G.MAT (Alvaro/Martin solos) son MÁS CHICOS que los normales.
-  // Esto refleja visualmente que G.MAT no es intervención principal.
-  const isGmatSlot = (slot) => {
-    if (!slot) return false;
-    const a = slot[0], b = slot[1];
-    if (a && b) return false; // 2 personas → no es G.MAT
-    const name = a || b;
-    return name === 'ALVARO' || name === 'MARTIN';
-  };
+  // --- Métricas ---
+  const cellW = 244;
+  const padX = 22;
+  const rowH = 46;          // cápsula de equipo
+  const gmatH = 32;         // franja de gestión de materiales
+  const rowGap = 6;
+  const dayLabelH = 34;
+  const cellPadV = 8;
+  const cellPadX = 8;
+  const headerH = 104;
+  const dayHeaderH = 44;
+  const footerH = 36;
 
-  // Tamaños base — v70: optimizados para que el calendario entre en una
-  // hoja OFICIO HORIZONTAL (ratio ~1.65:1, ~14"×8.5"). Reducimos paddings
-  // y altura de tiles vs v69.
-  const tileH = 50;        // tile normal (equipo de intervención/apoyo)
-  const tileGmatH = 32;    // tile G.MAT (Alvaro/Martin solos) — ~64% del normal
-  const tileGap = 4;       // gap entre tiles de un mismo día
-  const dayLabelH = 32;    // espacio para el número del día arriba
-  const cellPadV = 6;      // padding vertical interno de la celda
+  const W = padX * 2 + cellW * 7;
 
-  // Calcular altura del CONTENIDO de cada día (suma de tiles + gaps).
-  // Luego usar el máximo como altura uniforme de celda → grilla pareja.
-  const slotsForDay = (d) => {
-    const all = data[String(d)] || [];
-    return showAll
-      ? all.filter(s => s && (s[0] || s[1]))
-      : (all[0] && (all[0][0] || all[0][1]) ? [all[0]] : []);
-  };
-  let maxContentH = tileH; // mínimo: 1 tile normal
+  // Alto de contenido de cada día → el máximo del mes define el alto de celda,
+  // así la grilla queda pareja.
+  const rowsByDay = {};
+  let maxContentH = rowH;
   for (let d = 1; d <= dim; d++) {
-    const slots = slotsForDay(d);
-    if (slots.length === 0) continue;
-    let h = 0;
-    slots.forEach((s, i) => {
-      h += isGmatSlot(s) ? tileGmatH : tileH;
-      if (i > 0) h += tileGap;
-    });
+    const rows = expRowsForDay(y, m, d, data, { compact });
+    rowsByDay[d] = rows;
+    if (!rows.length) continue;
+    const h = rows.reduce((acc, r, i) => acc + (r.type === 'gmat' ? gmatH : rowH) + (i ? rowGap : 0), 0);
     if (h > maxContentH) maxContentH = h;
   }
 
-  const cellH = dayLabelH + cellPadV + maxContentH + cellPadV;
-  const cellW = 290;       // ancho de columna
-  const padX = 24, padY = 22;
-  const headerH = 84;
-  const dayHeaderH = 36;
-  const W = padX * 2 + cellW * 7;
-  const H = padY * 2 + headerH + dayHeaderH + cellH * numRows + 36;
+  let cellH = dayLabelH + cellPadV * 2 + maxContentH;
+  // Si el póster queda demasiado panorámico (típico en meses de 1 sola fila por
+  // día) estiramos las celdas hasta un ratio cómodo para leer en el celular.
+  const fixedH = headerH + dayHeaderH + footerH;
+  const minH = W / 1.9;
+  if (fixedH + cellH * numRows < minH) {
+    cellH = Math.ceil((minH - fixedH) / numRows);
+  }
+  const H = fixedH + cellH * numRows;
 
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
 
-  // Fondo blanco
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, W, H);
 
-  // === Header: nombre del mes + año ===
-  ctx.fillStyle = '#1f3a68';
-  ctx.font = 'bold 46px system-ui, -apple-system, sans-serif';
-  ctx.textBaseline = 'middle';
+  // === Header: banda de color con título ===
+  ctx.fillStyle = EXP.brand;
+  ctx.fillRect(0, 0, W, headerH);
   ctx.textAlign = 'center';
-  const title = `${monthName.toUpperCase()} ${y}` + (isFeria ? ' · FERIA JUDICIAL' : '');
-  ctx.fillText(title, W / 2, padY + headerH / 2);
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.72)';
+  ctx.font = '600 17px system-ui, -apple-system, "Segoe UI", sans-serif';
+  ctx.fillText('TURNOS DE INTERVENCIONES', W / 2, 34);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 44px system-ui, -apple-system, "Segoe UI", sans-serif';
+  const isFeriaMonth = (m === 1 || m === 7);
+  ctx.fillText(`${monthName.toUpperCase()} ${y}${isFeriaMonth ? '  ·  FERIA JUDICIAL' : ''}`, W / 2, 71);
 
-  // === Cabecera de días (Lun, Mar, Mié, ...) ===
-  const dayNames = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
-  ctx.font = 'bold 18px system-ui, -apple-system, sans-serif';
-  const dayHeaderY = padY + headerH;
+  // === Banda de días de la semana ===
+  const dayNames = ['LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO', 'DOMINGO'];
+  const dayHeaderY = headerH;
   for (let c = 0; c < 7; c++) {
-    const isWeekend = c >= 5;
-    if (isWeekend) {
-      ctx.fillStyle = '#fef2f2';
-      ctx.fillRect(padX + c * cellW, dayHeaderY, cellW, dayHeaderH);
-    }
-    ctx.fillStyle = isWeekend ? '#b91c1c' : '#6c6c70';
-    ctx.fillText(dayNames[c], padX + c * cellW + cellW / 2, dayHeaderY + dayHeaderH / 2);
+    const isWknd = c >= 5;
+    const x = padX + c * cellW;
+    ctx.fillStyle = isWknd ? EXP.headBgWeekend : EXP.headBg;
+    ctx.fillRect(x, dayHeaderY, cellW, dayHeaderH);
+    ctx.fillStyle = isWknd ? EXP.weekendInk : EXP.brand;
+    ctx.font = 'bold 18px system-ui, -apple-system, "Segoe UI", sans-serif';
+    ctx.fillText(dayNames[c], x + cellW / 2, dayHeaderY + dayHeaderH / 2 + 1);
   }
 
-  // === Celdas de los días ===
+  // === Celdas ===
   const gridY = dayHeaderY + dayHeaderH;
-  for (let i = 0; i < cellsTotal; i++) {
+  for (let i = 0; i < numRows * 7; i++) {
     const row = Math.floor(i / 7);
     const col = i % 7;
     const x = padX + col * cellW;
     const yPos = gridY + row * cellH;
 
-    ctx.strokeStyle = '#e5e7eb';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, yPos, cellW, cellH);
-
-    if (i < firstDow) continue;
-    const d = i - firstDow + 1;
-    const dt = new Date(y, m - 1, d);
-    const isWeekendCell = dt.getDay() === 0 || dt.getDay() === 6;
-
-    if (isWeekendCell) {
-      ctx.fillStyle = '#fffbfb';
-      ctx.fillRect(x + 1, yPos + 1, cellW - 2, cellH - 2);
+    // Celdas de relleno (antes del 1 y después del último día) en gris tenue,
+    // así se lee claro dónde empieza y termina el mes.
+    if (i < firstDow || i >= cellsTotal) {
+      ctx.fillStyle = EXP.outMonth;
+      ctx.fillRect(x, yPos, cellW, cellH);
+      continue;
     }
+    const d = i - firstDow + 1;
+    const dow = new Date(y, m - 1, d).getDay();
+    const isWknd = dow === 0 || dow === 6;
+    const isFer = isFeriado(y, m, d);
+    const isFj = isFeriaJud(y, m, d);
 
-    // Número del día (esquina superior izquierda)
-    ctx.fillStyle = isWeekendCell ? '#b91c1c' : '#1c1c1e';
-    ctx.font = 'bold 26px system-ui, -apple-system, sans-serif';
+    ctx.fillStyle = isFer ? EXP.feriadoCell : (isWknd ? EXP.weekendCell : '#ffffff');
+    ctx.fillRect(x, yPos, cellW, cellH);
+
+    // Número del día
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(String(d), x + 10, yPos + 6);
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = isFer ? EXP.feriadoInk : (isWknd ? EXP.weekendInk : EXP.ink);
+    ctx.font = 'bold 25px system-ui, -apple-system, "Segoe UI", sans-serif';
+    ctx.fillText(String(d), x + cellPadX + 3, yPos + dayLabelH / 2 + 2);
 
-    // === TILES: uno por slot no-vacío del día ===
-    const slotsToRender = slotsForDay(d);
-
-    let tileY = yPos + dayLabelH + cellPadV;
-    slotsToRender.forEach((slot, idx) => {
-      const a = slot[0], b = slot[1];
-      const isGmat = isGmatSlot(slot);
-      const thisTileH = isGmat ? tileGmatH : tileH;
-      drawSlotTile(ctx, x + 6, tileY, cellW - 12, thisTileH, a, b, { isGmat });
-      tileY += thisTileH + tileGap;
+    // Marcas a la derecha del número: feriado / feria / cumpleaños
+    const marks = [];
+    if (isFer) marks.push({ t: 'FERIADO', bg: '#fde68a', fg: '#92400e' });
+    else if (isFj) marks.push({ t: 'FERIA', bg: '#dbeafe', fg: '#1e40af' });
+    if (birthdaysOn(y, m, d).length) marks.push({ t: 'CUMPLE', bg: '#fce7f3', fg: '#9d174d' });
+    let mx = x + cellW - cellPadX;
+    marks.forEach(mk => {
+      ctx.font = 'bold 12px system-ui, -apple-system, "Segoe UI", sans-serif';
+      const tw = ctx.measureText(mk.t).width;
+      const bw = tw + 14;
+      ctx.fillStyle = mk.bg;
+      roundedRect(ctx, mx - bw, yPos + 8, bw, 19, 9, true);
+      ctx.fillStyle = mk.fg;
+      ctx.textAlign = 'center';
+      ctx.fillText(mk.t, mx - bw / 2, yPos + 18);
+      mx -= bw + 5;
     });
+
+    // Filas del día, centradas verticalmente en el espacio disponible
+    const rows = rowsByDay[d] || [];
+    if (rows.length) {
+      const contentH = rows.reduce((acc, r, idx) => acc + (r.type === 'gmat' ? gmatH : rowH) + (idx ? rowGap : 0), 0);
+      const areaTop = yPos + dayLabelH;
+      const areaH = cellH - dayLabelH;
+      let ty = areaTop + Math.max(cellPadV, (areaH - contentH) / 2);
+      const innerX = x + cellPadX;
+      const innerW = cellW - cellPadX * 2;
+      rows.forEach(r => {
+        if (r.type === 'gmat') {
+          drawGmatBar(ctx, innerX, ty, innerW, gmatH, r.name);
+          ty += gmatH + rowGap;
+        } else if (r.type === 'pair') {
+          drawPairCapsule(ctx, innerX, ty, innerW, rowH, r.a, r.b);
+          ty += rowH + rowGap;
+        } else {
+          drawPairCapsule(ctx, innerX, ty, innerW, rowH, r.name, null);
+          ty += rowH + rowGap;
+        }
+      });
+    }
   }
 
+  // === Grilla por encima de los rellenos ===
+  ctx.strokeStyle = EXP.line;
+  ctx.lineWidth = 1.5;
+  for (let r = 0; r <= numRows; r++) {
+    const yy = Math.round(gridY + r * cellH) + 0.5;
+    ctx.beginPath(); ctx.moveTo(padX, yy); ctx.lineTo(W - padX, yy); ctx.stroke();
+  }
+  for (let c = 0; c <= 7; c++) {
+    const xx = Math.round(padX + c * cellW) + 0.5;
+    ctx.beginPath(); ctx.moveTo(xx, dayHeaderY); ctx.lineTo(xx, gridY + numRows * cellH); ctx.stroke();
+  }
+  ctx.beginPath(); ctx.moveTo(padX, dayHeaderY + 0.5); ctx.lineTo(W - padX, dayHeaderY + 0.5); ctx.stroke();
+
   // === Footer ===
-  ctx.fillStyle = '#9ca3af';
-  ctx.font = '14px system-ui, -apple-system, sans-serif';
-  ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`Turnos de Intervenciones · v${APP_VERSION}`, W - padX, H - 18);
+  ctx.font = '14px system-ui, -apple-system, "Segoe UI", sans-serif';
+  ctx.fillStyle = EXP.muted;
+  ctx.textAlign = 'left';
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  ctx.fillText(`Actualizado ${dd}/${mm}/${now.getFullYear()}`, padX, H - footerH / 2);
+  ctx.textAlign = 'right';
+  ctx.fillText(`Turnos de Intervenciones · v${APP_VERSION}`, W - padX, H - footerH / 2);
 
   return canvas;
 }
 
-// Dibuja un tile (pill) con uno o dos nombres adentro.
-// opts.isGmat=true → tile más bajo, con prefijo "G.MAT" antes del nombre.
-function drawSlotTile(ctx, x, y, w, h, a, b, opts = {}) {
+// Cápsula con los dos integrantes UNO AL LADO DEL OTRO. Cada mitad va con el
+// color de su persona; si comparten color se ve como un bloque único (igual que
+// el calendario de Excel). Con b=null ocupa todo el ancho con un solo nombre.
+function drawPairCapsule(ctx, x, y, w, h, a, b) {
   if (!a && !b) return;
-  const isGmat = !!opts.isGmat;
-  const colorA = a ? colorFor(a) : null;
-  const colorB = b ? colorFor(b) : null;
-  // En G.MAT solo hay 1 persona, no aplica split
-  const isSplit = !isGmat && a && b && colorA !== colorB;
-
-  if (isSplit) {
-    const r = 10;
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-    ctx.clip();
-    ctx.fillStyle = colorA;
-    ctx.fillRect(x, y, w, h / 2);
-    ctx.fillStyle = colorB;
-    ctx.fillRect(x, y + h / 2, w, h / 2);
-    ctx.restore();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = 'bold 17px system-ui, -apple-system, sans-serif';
+  const r = 11;
+  if (!b) {
+    ctx.fillStyle = colorFor(a);
+    roundedRect(ctx, x, y, w, h, r, true);
+    const size = expFitFont(ctx, a, w - 20, 19);
     ctx.fillStyle = textColorFor(a);
-    ctx.fillText(a, x + w / 2, y + h / 4);
-    ctx.fillStyle = textColorFor(b);
-    ctx.fillText(b, x + w / 2, y + (h * 3) / 4);
-  } else {
-    const refName = a || b;
-    ctx.fillStyle = colorFor(refName);
-    roundedRect(ctx, x, y, w, h, isGmat ? 8 : 10, true);
-    ctx.fillStyle = textColorFor(refName);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    if (isGmat) {
-      // Tile G.MAT: "G.MAT" + nombre en una sola línea, fuente más chica
-      ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
-      ctx.fillText(`G.MAT · ${refName}`, x + w / 2, y + h / 2);
-    } else if (a && b) {
-      ctx.font = 'bold 17px system-ui, -apple-system, sans-serif';
-      ctx.fillText(a, x + w / 2, y + h / 2 - 10);
-      ctx.fillText(b, x + w / 2, y + h / 2 + 10);
-    } else {
-      // v75: usar la misma fuente 17px que los tiles de par para consistencia
-      // visual. Antes usábamos 20px para nombre solo, lo que hacía que el
-      // 3er integrante de equipos de 3 (ej: Martinez) se viera más grande
-      // que Sallas+Ibañez del mismo equipo.
-      ctx.font = 'bold 17px system-ui, -apple-system, sans-serif';
-      ctx.fillText(refName, x + w / 2, y + h / 2);
-    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `bold ${size}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+    ctx.fillText(a, x + w / 2, y + h / 2 + 1);
+    return;
   }
+
+  const half = w / 2;
+  ctx.save();
+  roundedRect(ctx, x, y, w, h, r, false);
+  ctx.clip();
+  ctx.fillStyle = colorFor(a);
+  ctx.fillRect(x, y, half, h);
+  ctx.fillStyle = colorFor(b);
+  ctx.fillRect(x + half, y, w - half, h);
+  ctx.restore();
+
+  // Separador central: sutil, para que se lean como dos nombres incluso cuando
+  // el equipo comparte color.
+  ctx.strokeStyle = textColorFor(a) === '#FFFFFF' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.14)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x + half, y + 7);
+  ctx.lineTo(x + half, y + h - 7);
+  ctx.stroke();
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const maxW = half - 14;
+  const size = Math.min(expFitFont(ctx, a, maxW, 19), expFitFont(ctx, b, maxW, 19));
+  ctx.font = `bold ${size}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+  ctx.fillStyle = textColorFor(a);
+  ctx.fillText(a, x + half / 2, y + h / 2 + 1);
+  ctx.fillStyle = textColorFor(b);
+  ctx.fillText(b, x + half + half / 2, y + h / 2 + 1);
+}
+
+// Franja de gestión de materiales: gris y más baja que una cápsula de equipo,
+// equivalente a la banda "DILIGENCIADO DE OFICIOS" del calendario de Excel.
+// El rótulo va en gris tenue y el nombre en negrita para que se lea de un saque.
+// (ALVARO y MARTIN comparten color, así que un indicador de color no aportaría.)
+function drawGmatBar(ctx, x, y, w, h, name) {
+  ctx.fillStyle = EXP.gmatBg;
+  roundedRect(ctx, x, y, w, h, 8, true);
+  ctx.textBaseline = 'middle';
+  const cy = y + h / 2 + 1;
+
+  const tagFont = '600 12px system-ui, -apple-system, "Segoe UI", sans-serif';
+  const tag = 'G. MAT.';
+  ctx.font = tagFont;
+  const tagW = ctx.measureText(tag).width;
+
+  const nameSize = expFitFont(ctx, name, w - tagW - 26, 15);
+  const nameFont = `bold ${nameSize}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+  ctx.font = nameFont;
+  const nameW = ctx.measureText(name).width;
+
+  const gap = 8;
+  let tx = x + (w - (tagW + gap + nameW)) / 2;
+  ctx.textAlign = 'left';
+  ctx.font = tagFont;
+  ctx.fillStyle = '#7b8496';
+  ctx.fillText(tag, tx, cy);
+  ctx.font = nameFont;
+  ctx.fillStyle = EXP.gmatInk;
+  ctx.fillText(name, tx + tagW + gap, cy);
 }
 
 function roundedRect(ctx, x, y, w, h, r, fill) {

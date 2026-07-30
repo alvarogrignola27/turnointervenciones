@@ -159,6 +159,15 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v77
+- **📸 Rediseño del export de imagen (WhatsApp / PDF)**: el póster que se descargaba quedaba muy distinto del calendario de Excel que se venía compartiendo y de la vista de la app.
+  - **Los dos integrantes del equipo ahora van uno al lado del otro**, dentro de una misma cápsula partida al medio. Si el equipo comparte color se lee como un bloque único (igual que el Excel); si cada uno tiene su color, cada mitad lleva el suyo (igual que la vista de mes). Antes los nombres salían apilados uno sobre el otro, que era la diferencia más visible contra el Excel.
+  - **🐛 La gestión de materiales ya no se pierde**: el toggle "Mostrar todos los turnos" arrancaba **apagado** en los meses regulares, así que el export se descargaba **sin** las franjas de G. MAT. (ALVARO / MARTIN) ni los terceros integrantes — información que en el Excel siempre estaba. Ahora todos los slots no vacíos se dibujan siempre.
+  - El toggle pasó a ser **"Modo compacto"** (apagado por defecto): deja sólo el equipo principal más la gestión de materiales, útil en meses de feria con muchos extras.
+  - **Header con banda de color** y subtítulo, nombres de día completos (LUNES, MARTES…), grilla más marcada, celdas de relleno en gris tenue, y feriados / feria / cumpleaños marcados con chips.
+  - El alto de las celdas se estira cuando el mes tiene poco contenido, así la imagen no sale apachurrada y panorámica.
+  - Footer con la fecha de actualización, para que en WhatsApp se sepa de cuándo es la versión compartida.
+
 ### v76
 - **🐛 Bug post-feria — finalmente resuelto**: en las versiones anteriores `feriaWeekendTeams` marcaba a demasiados equipos porque en feria los slots del finde tienen personas mezcladas de teams distintos (ej: slot[0] = "Sallas + Hidalgo" son miembros de teams diferentes). Con TODOS los equipos "marcados", el fallback aflojaba y elegía cualquiera, incluyendo a Milisenda o Campi que fueron protagonistas absolutos.
   - **Fix — detección precisa de protagonistas**: `feriaWeekendTeams` ahora requiere que los DOS miembros de `slot[0]` del finde sean del **MISMO equipo** (ej: Milisenda+Diaz o Campi+Montilla). Los slots mixtos ya no marcan protagonista.
