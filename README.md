@@ -129,6 +129,56 @@ Y asignarle un color en `COLORS`.
 
 Después de cambiar los archivos, subilos al repo y la app se actualiza sola la próxima vez que se abre con internet (el service worker la refresca). Si querés forzar la actualización, abrí la app, ve al menú → "Borrar mes actual" y volvé a abrir.
 
+## 🔗 Link de solo lectura para el equipo
+
+Una URL fija que le podés mandar al equipo por WhatsApp. Entran y ven sólo el calendario: no pueden generar, editar ni borrar. Se actualiza sola cuando guardás cambios, así que **se manda una vez y no hay que volver a mandarla**.
+
+### Configuración (una sola vez)
+
+**1. Tener la sincronización en la nube andando.** El link lee el calendario desde Firebase. Si todavía no la configuraste: ☁️ Datos → Sincronización en la nube.
+
+**2. Habilitar la lectura pública en Firebase.** Entrá a tu proyecto → *Realtime Database* → pestaña *Reglas*, y pegá esto:
+
+```json
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid"
+      }
+    },
+    "public": {
+      "$sid": {
+        ".read": true,
+        ".write": "auth != null"
+      }
+    }
+  }
+}
+```
+
+Lo importante de estas reglas: `users` sigue siendo **privado** (cada usuario sólo lee y escribe lo suyo), y `public` es de **lectura para cualquiera** pero sólo escribible por alguien con sesión iniciada. El visor lee sin loguearse; nadie puede modificar nada desde el link.
+
+**3. Generar el link.** ☁️ Datos → 🔗 Link de solo lectura → Copiar. Ya lo podés mandar.
+
+### Qué se comparte y qué no
+
+| Se comparte | NO se comparte |
+|---|---|
+| Turnos de todos los meses | Contraseña del generador |
+| Feriados y feria judicial | Configuración de equipos y cupos |
+| Reemplazos | Ausencias del personal |
+| Colores de las personas | Credenciales de Firebase |
+| Cumpleaños | Historial de rotación |
+
+La lista de lo que se publica es una **lista blanca** en `isPublicShareKey()` (app.js): si se agrega un dato nuevo a la app, no se publica solo — hay que habilitarlo a propósito.
+
+### Tener en cuenta
+
+- **Cualquiera con el link ve el calendario, sin contraseña.** La URL lleva un token al azar de 32 caracteres para que no se pueda adivinar, pero si alguien la reenvía, quien la reciba entra igual. Es el mismo nivel de exposición que tenía el link de Drive.
+- **Para revocar un link**: borrá la clave `turnos:share_id` (☁️ Datos → Exportar/Importar, o desde la consola del navegador) y generá uno nuevo. El anterior deja de actualizarse; para que deje de verse, borrá el nodo `public/{shareId}` viejo desde la consola de Firebase.
+
 ## 💾 Backup y restauración
 
 - **Para hacer backup**: botón **Más** abajo → **Exportar datos (JSON)**. Te descarga un archivo `turnos-backup-AAAA-MM-DD.json`.
@@ -158,6 +208,15 @@ Para repos privados, GitHub Pages cuesta plata. Alternativa gratis: Cloudflare P
 Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
+
+### v80
+- **🔗 Link de solo lectura (nuevo)**. Menú *☁️ Datos → "Link de solo lectura"*. Genera una URL fija para mandarle al equipo: entran y ven **sólo el calendario**, sin poder generar, editar ni borrar nada. Reemplaza el viejo link de Drive.
+  - **El link no cambia nunca.** Se manda una vez y listo: cada vez que guardás cambios, el calendario publicado se actualiza solo. Si alguien lo tiene abierto, se le refresca en vivo.
+  - **Publica sólo lo necesario, con lista blanca.** El nodo `users/{uid}/data` que usa la sincronización **no se puede exponer**, porque `pushToCloud` sube *todas* las claves `turnos:*` — incluida `turnos:gen_password` y la config del generador. Por eso el visor lee de un nodo aparte, `public/{shareId}`, al que sólo se copian: meses, feriados, feria judicial, reemplazos, colores y cumpleaños. Todo lo demás queda afuera **por defecto**: si mañana se agrega una clave nueva, no se publica sola.
+  - **El link no lleva credenciales.** Sólo el `shareId` (token al azar de 32 caracteres, para que la URL no sea adivinable) y los 4 campos públicos de config de Firebase, que están pensados para ir en el cliente. El email y la contraseña de Firebase nunca salen del dispositivo.
+  - **El visor no toca el dispositivo de quien mira.** Los datos viven en memoria, no en su `localStorage`. Todas las funciones de guardado cortan al entrar. Así, si abrís tu propio link de compartir en tu celular, no te pisa nada.
+  - Requiere agregar las reglas de `public` en Firebase (el modal las muestra listas para copiar). Ver más abajo.
+- **🔒 Faltaban acciones en el bloqueo de solo lectura**: un dispositivo en modo viewer igual podía usar "Guardar como maestro" (pisando la nube), entrar a la configuración de sincronización o cambiarse el rol solo. Ahora esas acciones también están bloqueadas.
 
 ### v79
 - **🔍 Informe de reglas (nuevo)**. Menú *Generación → "Revisar reglas del mes"*, y se abre solo al terminar de generar si algo quedó pendiente. Audita el mes **sobre los datos guardados**, así que también detecta problemas metidos editando días a mano. Chequea:

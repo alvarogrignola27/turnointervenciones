@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '79';
+const APP_VERSION = '80';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -60,11 +60,14 @@ function loadUserRole() {
   return def;
 }
 function saveUserRole(role) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   if (role === 'viewer') localStorage.setItem(USER_ROLE_KEY, 'viewer');
   else localStorage.setItem(USER_ROLE_KEY, 'admin');
   scheduleCloudPush();
 }
-function isViewer() { return loadUserRole() === 'viewer'; }
+// El link de solo lectura fuerza viewer siempre, sin posibilidad de desbloqueo.
+function isViewer() { return isViewerLink() || loadUserRole() === 'viewer'; }
 function toggleUserRole() {
   const cur = loadUserRole();
   const next = cur === 'admin' ? 'viewer' : 'admin';
@@ -142,6 +145,23 @@ const state = {
 
 let deferredInstallPrompt = null;
 
+// ---------- Modo visor (link de solo lectura) ----------
+// Cuando la app se abre con un link `#ver=...`, los datos NO salen del
+// localStorage del dispositivo sino de este snapshot en memoria bajado de
+// Firebase. Así el visor nunca pisa los datos de quien abra el link (por
+// ejemplo si el propio admin abre su link de compartir en su celular).
+let VIEWER_SNAPSHOT = null;
+function isViewerLink() { return VIEWER_SNAPSHOT !== null; }
+
+// Lectura de storage que respeta el modo visor.
+function lsGet(key) {
+  if (VIEWER_SNAPSHOT) {
+    return Object.prototype.hasOwnProperty.call(VIEWER_SNAPSHOT, key)
+      ? VIEWER_SNAPSHOT[key] : null;
+  }
+  return localStorage.getItem(key);
+}
+
 // ---------- Persistencia ----------
 function monthKeyOf(y, m) { return `${y}-${String(m).padStart(2, '0')}`; }
 function storageKeyOf(y, m) { return STORAGE_PREFIX + monthKeyOf(y, m); }
@@ -150,7 +170,7 @@ function loadMonthData(y, m) {
   const key = storageKeyOf(y, m);
   let data;
   try {
-    const stored = localStorage.getItem(key);
+    const stored = lsGet(key);
     if (stored !== null) data = JSON.parse(stored);
   } catch (e) { console.warn('Read storage error', e); }
   if (!data) {
@@ -164,6 +184,8 @@ function loadMonthData(y, m) {
 }
 
 function saveMonthData(y, m, data) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   const key = storageKeyOf(y, m);
   try {
     if (Object.keys(data).length === 0) localStorage.removeItem(key);
@@ -182,6 +204,8 @@ function historyKey(y, m, d) {
   return `${HISTORY_PREFIX}${y}-${String(m).padStart(2,'0')}-${d}`;
 }
 function pushHistory(y, m, d, prevState) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   const key = historyKey(y, m, d);
   let stack = [];
   try { stack = JSON.parse(localStorage.getItem(key) || '[]'); } catch {}
@@ -228,11 +252,13 @@ function feriadoKey(y, m) {
 }
 function loadFeriados(y, m) {
   try {
-    const raw = localStorage.getItem(feriadoKey(y, m));
+    const raw = lsGet(feriadoKey(y, m));
     return raw ? JSON.parse(raw) : {};
   } catch { return {}; }
 }
 function saveFeriados(y, m, feriados) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   const key = feriadoKey(y, m);
   try {
     if (Object.keys(feriados).length === 0) localStorage.removeItem(key);
@@ -266,11 +292,13 @@ function feriaJudKey(y, m) {
 }
 function loadFeriaJud(y, m) {
   try {
-    const raw = localStorage.getItem(feriaJudKey(y, m));
+    const raw = lsGet(feriaJudKey(y, m));
     return raw ? JSON.parse(raw) : {};
   } catch { return {}; }
 }
 function saveFeriaJud(y, m, fj) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   const key = feriaJudKey(y, m);
   try {
     if (Object.keys(fj).length === 0) localStorage.removeItem(key);
@@ -344,13 +372,14 @@ let _birthdaysCache = null;
 function loadBirthdays() {
   if (_birthdaysCache !== null) return _birthdaysCache;
   try {
-    const raw = localStorage.getItem(BIRTHDAYS_KEY);
+    const raw = lsGet(BIRTHDAYS_KEY);
     if (raw === null) {
       // Primera vez: cargamos los defaults y los persistimos (así se sincronizan
       // con Firebase). Si después el user quiere borrarlos, los reseteamos en {}.
       _birthdaysCache = { ...DEFAULT_BIRTHDAYS };
       try {
-        localStorage.setItem(BIRTHDAYS_KEY, JSON.stringify(_birthdaysCache));
+        // En modo visor no se persiste nada en el dispositivo de quien mira.
+        if (!isViewerLink()) localStorage.setItem(BIRTHDAYS_KEY, JSON.stringify(_birthdaysCache));
       } catch {}
     } else {
       _birthdaysCache = JSON.parse(raw || '{}');
@@ -359,6 +388,8 @@ function loadBirthdays() {
   return _birthdaysCache;
 }
 function saveBirthdays(b) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   _birthdaysCache = b;
   try {
     localStorage.setItem(BIRTHDAYS_KEY, JSON.stringify(b));
@@ -392,6 +423,8 @@ function loadAbsences() {
   } catch { return []; }
 }
 function saveAbsences(arr) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   try {
     localStorage.setItem(ABSENCES_KEY, JSON.stringify(arr || []));
     scheduleCloudPush();
@@ -434,11 +467,13 @@ function replacementsKey(y, m) {
 }
 function loadReplacements(y, m) {
   try {
-    const raw = localStorage.getItem(replacementsKey(y, m));
+    const raw = lsGet(replacementsKey(y, m));
     return raw ? JSON.parse(raw) : {};
   } catch { return {}; }
 }
 function saveReplacements(y, m, data) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   const key = replacementsKey(y, m);
   try {
     if (Object.keys(data).length === 0) localStorage.removeItem(key);
@@ -1320,6 +1355,8 @@ function reloadCurrentMonth() {
 
 // ---------- Inicialización del seed ----------
 function initSeed() {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   const v = localStorage.getItem(STORAGE_VERSION_KEY);
   if (v === SEED_VERSION) return;
   if (typeof SEED_DATA === 'undefined') return;
@@ -1375,11 +1412,13 @@ let _personColorsCache = null;
 function loadPersonColors() {
   if (_personColorsCache !== null) return _personColorsCache;
   try {
-    _personColorsCache = JSON.parse(localStorage.getItem(PERSON_COLORS_KEY) || '{}');
+    _personColorsCache = JSON.parse(lsGet(PERSON_COLORS_KEY) || '{}');
   } catch { _personColorsCache = {}; }
   return _personColorsCache;
 }
 function savePersonColors(colors) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   _personColorsCache = colors;
   try {
     localStorage.setItem(PERSON_COLORS_KEY, JSON.stringify(colors));
@@ -1396,11 +1435,13 @@ function loadPersonColorsMonth(y, m) {
   const k = `${y}-${String(m).padStart(2,'0')}`;
   if (_personColorsMonthCache[k] !== undefined) return _personColorsMonthCache[k];
   try {
-    _personColorsMonthCache[k] = JSON.parse(localStorage.getItem(monthColorsKey(y, m)) || '{}');
+    _personColorsMonthCache[k] = JSON.parse(lsGet(monthColorsKey(y, m)) || '{}');
   } catch { _personColorsMonthCache[k] = {}; }
   return _personColorsMonthCache[k];
 }
 function savePersonColorsMonth(y, m, colors) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   const k = `${y}-${String(m).padStart(2,'0')}`;
   _personColorsMonthCache[k] = colors;
   try {
@@ -1476,6 +1517,8 @@ function loadFirebaseConfig() {
   return base;
 }
 function saveFirebaseConfig(cfg) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   if (cfg === null) {
     localStorage.removeItem(FIREBASE_CONFIG_KEY);
   } else {
@@ -1754,6 +1797,9 @@ async function pushToCloud(opts = {}) {
     await _fbDb.ref(`users/${_fbUser.uid}/data`).set(data);
     localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(data._timestamp));
     setSyncStatus('connected');
+    // v80: si ya se generó un link de solo lectura, se republica el snapshot
+    // público para que el link siempre muestre lo último (como el de Drive).
+    publishPublicSnapshot();
     // v62: después de un push exitoso explícito (force), marcamos pull como OK
     // así los próximos pushes automáticos vuelven a funcionar.
     if (opts.force) _initialPullSucceeded = true;
@@ -1761,6 +1807,105 @@ async function pushToCloud(opts = {}) {
     console.error('Push to cloud failed:', e);
     setSyncStatus('error', `🔴 ${e.message}`);
   }
+}
+
+// ============================================================
+// LINK PÚBLICO DE SOLO LECTURA (visor)
+// ============================================================
+// El nodo `users/{uid}/data` NO se puede exponer: pushToCloud sube TODAS las
+// claves `turnos:*`, incluida `turnos:gen_password` y la config del generador.
+// Por eso el visor lee de un nodo aparte, `public/{shareId}`, al que sólo se
+// copia una LISTA BLANCA de claves: lo justo para dibujar el calendario.
+//
+// Reglas de Firebase necesarias (ver README):
+//   "users":  { "$uid": { ".read": "$uid === auth.uid", ".write": "$uid === auth.uid" } }
+//   "public": { "$sid": { ".read": true, ".write": "auth != null" } }
+
+const SHARE_ID_KEY = 'turnos:share_id';
+
+// Claves que SÍ viajan al nodo público. Todo lo demás queda afuera por defecto:
+// si mañana se agrega una clave nueva, no se publica sola.
+function isPublicShareKey(key) {
+  if (/^turnos:\d{4}-\d{2}$/.test(key)) return true;              // meses
+  if (key.startsWith('turnos:feriado:')) return true;             // feriados
+  if (key.startsWith('turnos:feria_jud:')) return true;           // feria judicial
+  if (key.startsWith('turnos:replacements:')) return true;        // reemplazos
+  if (key === 'turnos:person_colors') return true;                // colores globales
+  if (key.startsWith('turnos:person_colors_month:')) return true; // colores por mes
+  if (key === 'turnos:birthdays') return true;                    // cumpleaños
+  return false;
+}
+// Explícitamente NUNCA: gen_password, gen_config, user_role, absences,
+// firebase_config, hist:, gen_* (rotación, historial de equipos), masterPushTs.
+
+function getOrCreateShareId() {
+  let id = localStorage.getItem(SHARE_ID_KEY);
+  if (id) return id;
+  // Token al azar: el nodo es de lectura pública, así que la URL no debe ser adivinable.
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  id = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  localStorage.setItem(SHARE_ID_KEY, id);
+  return id;
+}
+
+function buildPublicSnapshot() {
+  const out = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && isPublicShareKey(key)) out[key] = localStorage.getItem(key);
+  }
+  out._updatedAt = Date.now();
+  return out;
+}
+
+// Publica (o re-publica) el snapshot público. Se llama al generar el link y
+// después de cada push a la nube, para que el link se mantenga al día solo.
+async function publishPublicSnapshot(opts = {}) {
+  if (!_fbUser || !_fbDb) return false;
+  if (!localStorage.getItem(SHARE_ID_KEY) && !opts.create) return false; // nunca se compartió
+  const shareId = getOrCreateShareId();
+  try {
+    await _fbDb.ref(`public/${shareId}`).set(buildPublicSnapshot());
+    return true;
+  } catch (e) {
+    console.warn('No se pudo publicar el snapshot público:', e);
+    return false;
+  }
+}
+
+// Arma la URL del visor. Lleva la config pública de Firebase + el shareId en el
+// hash (el hash no se manda al servidor). La apiKey de Firebase NO es un secreto:
+// está pensada para ir en el cliente; quien protege los datos son las reglas.
+function buildViewerLink() {
+  const cfg = loadFirebaseConfig();
+  const fb = cfg && cfg.firebase;
+  if (!fb || !fb.databaseURL) return null;
+  const payload = {
+    s: getOrCreateShareId(),
+    c: {
+      apiKey: fb.apiKey,
+      authDomain: fb.authDomain,
+      databaseURL: fb.databaseURL,
+      projectId: fb.projectId,
+    },
+  };
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const base = location.origin + location.pathname;
+  return `${base}#ver=${b64}`;
+}
+
+function parseViewerHash() {
+  const m = (location.hash || '').match(/[#&]ver=([A-Za-z0-9\-_]+)/);
+  if (!m) return null;
+  try {
+    let b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const payload = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    if (!payload || !payload.s || !payload.c || !payload.c.databaseURL) return null;
+    return payload;
+  } catch { return null; }
 }
 
 // Forzar descarga desde la nube (ignora timestamp local)
@@ -1869,6 +2014,8 @@ function loadGenPasswordHash() {
   return localStorage.getItem(GEN_PASSWORD_KEY) || null;
 }
 function saveGenPasswordHash(hash) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   if (hash) localStorage.setItem(GEN_PASSWORD_KEY, hash);
   else localStorage.removeItem(GEN_PASSWORD_KEY);
   scheduleCloudPush();
@@ -5307,6 +5454,8 @@ function loadGenConfig() {
   return { teams: deepCopy(DEFAULT_TEAMS) };
 }
 function saveGenConfig(cfg) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   try {
     localStorage.setItem(GEN_CONFIG_KEY, JSON.stringify(cfg));
     scheduleCloudPush();
@@ -5316,6 +5465,8 @@ function loadWeekendRotation() {
   return parseInt(localStorage.getItem(WEEKEND_ROT_KEY) || '0', 10);
 }
 function saveWeekendRotation(idx) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   localStorage.setItem(WEEKEND_ROT_KEY, String(idx));
   scheduleCloudPush();
 }
@@ -5328,6 +5479,8 @@ function loadRecentWeekends() {
   } catch { return []; }
 }
 function saveRecentWeekends(arr) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   // Mantengo solo los últimos N (un poco más que MIN_GAP por seguridad)
   const trimmed = arr.slice(-(WEEKEND_RECENT_MIN_GAP + 2));
   localStorage.setItem(WEEKEND_RECENT_KEY, JSON.stringify(trimmed));
@@ -5463,6 +5616,8 @@ function loadTeamHistory() {
   } catch { return {}; }
 }
 function saveTeamHistory(h) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   try {
     localStorage.setItem(TEAM_HISTORY_KEY, JSON.stringify(h));
     scheduleCloudPush();
@@ -5477,6 +5632,8 @@ function loadAutoRotate() {
   return localStorage.getItem(GEN_AUTO_ROTATE_KEY) === '1';
 }
 function saveAutoRotate(on) {
+  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
+
   if (on) localStorage.setItem(GEN_AUTO_ROTATE_KEY, '1');
   else localStorage.removeItem(GEN_AUTO_ROTATE_KEY);
   scheduleCloudPush();
@@ -6645,6 +6802,89 @@ function openValidateModal(report) {
   modal.querySelector('.modal-backdrop').onclick = close;
 }
 
+// ---------- Modal: link de solo lectura ----------
+async function openShareLinkModal() {
+  const modal = document.getElementById('share-modal');
+  const body = document.getElementById('share-body');
+  modal.classList.remove('hidden');
+  const close = () => modal.classList.add('hidden');
+  document.getElementById('share-modal-close').onclick = close;
+  document.getElementById('share-close-btn').onclick = close;
+  modal.querySelector('.modal-backdrop').onclick = close;
+
+  if (!_fbUser || !_fbDb) {
+    body.innerHTML = `<div class="share-warn">
+      <b>Primero conectá la sincronización en la nube</b>
+      <span>El link de solo lectura lee el calendario desde Firebase. Andá a
+      ☁️ Datos → Sincronización en la nube y conectate, después volvé acá.</span>
+    </div>`;
+    return;
+  }
+
+  body.innerHTML = '<div class="share-warn"><b>Publicando calendario…</b></div>';
+  const ok = await publishPublicSnapshot({ create: true });
+  const link = buildViewerLink();
+
+  if (!ok || !link) {
+    body.innerHTML = `<div class="share-warn share-error">
+      <b>No se pudo publicar</b>
+      <span>Lo más probable es que falten las reglas de Firebase. Copiá esto en
+      Realtime Database → Reglas:</span>
+      <pre class="share-rules">${escapeHtml(FIREBASE_RULES_SNIPPET)}</pre>
+    </div>`;
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="share-linkbox">
+      <input type="text" id="share-link-input" readonly value="${escapeHtml(link)}">
+      <button id="share-copy" class="modal-btn primary">📋 Copiar</button>
+    </div>
+    <div class="share-note">
+      <b>Qué ve quien abra este link:</b> solo el calendario, en modo lectura.
+      No puede generar, editar ni borrar nada. Se actualiza solo cada vez que
+      guardás cambios, así que <b>el link no cambia nunca</b> — mandalo una vez.
+    </div>
+    <div class="share-note share-note-warn">
+      <b>Ojo:</b> cualquiera que tenga el link ve el calendario, sin contraseña.
+      No se comparte tu configuración, contraseñas ni ausencias — sólo turnos,
+      feriados, colores y cumpleaños.
+    </div>
+    <details class="share-details">
+      <summary>¿No funciona? Reglas de Firebase necesarias</summary>
+      <pre class="share-rules">${escapeHtml(FIREBASE_RULES_SNIPPET)}</pre>
+    </details>`;
+
+  document.getElementById('share-copy').onclick = async () => {
+    const input = document.getElementById('share-link-input');
+    try {
+      await navigator.clipboard.writeText(link);
+      showToast('📋 Link copiado');
+    } catch {
+      input.select();
+      document.execCommand('copy');
+      showToast('📋 Link copiado');
+    }
+  };
+}
+
+const FIREBASE_RULES_SNIPPET = `{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid"
+      }
+    },
+    "public": {
+      "$sid": {
+        ".read": true,
+        ".write": "auth != null"
+      }
+    }
+  }
+}`;
+
 // ---------- Install prompt ----------
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
@@ -6714,9 +6954,12 @@ function wireUp() {
       // Acciones bloqueadas en modo "viewer" (solo lectura). Si el usuario aprieta,
       // mostramos un toast en vez de ejecutar. Solo lectura y configuración del rol
       // están permitidas.
-      const EDIT_ACTIONS = ['generate', 'regenerate', 'clear', 'absences',
+      const EDIT_ACTIONS = ['generate', 'regenerate', 'regenerate-random', 'clear', 'absences',
         'gen-settings', 'mark-month-feria', 'mark-range-feria', 'load-holidays',
-        'colors-settings', 'birthdays-settings', 'import'];
+        'colors-settings', 'birthdays-settings', 'import',
+        // v80: faltaban. Sin esto, un dispositivo en "solo lectura" igual podía
+        // pisar la nube con "Guardar como maestro" o cambiarse el rol solo.
+        'save-as-master', 'sync-settings', 'toggle-role', 'share-link'];
       if (isViewer() && EDIT_ACTIONS.includes(a)) {
         showToast('🔒 Modo solo lectura activado — no se puede modificar');
         return;
@@ -6762,6 +7005,7 @@ function wireUp() {
       else if (a === 'load-holidays') preloadArgentinaHolidays();
       else if (a === 'mark-month-feria') markWholeMonthAsFeriaJud();
       else if (a === 'mark-range-feria') markRangeAsFeriaJud();
+      else if (a === 'share-link') openShareLinkModal();
       else if (a === 'sync-settings') openSyncSettings();
       else if (a === 'save-as-master') saveCalendarAsMaster();
       else if (a === 'check-update') checkForUpdate();
@@ -7006,6 +7250,13 @@ function wireUp() {
 
 // ---------- Boot ----------
 function boot() {
+  // Link de solo lectura: arranque completamente distinto. No se toca el
+  // localStorage del dispositivo, no se conecta con usuario y no se puede editar.
+  const viewerPayload = parseViewerHash();
+  if (viewerPayload) {
+    bootViewer(viewerPayload);
+    return;
+  }
   initSeed();
   reloadCurrentMonth();
   rerenderActiveView();
@@ -7014,5 +7265,74 @@ function boot() {
   updateRoleBadge();
   // Auto-conectar sync si hay config guardada (o creds embebidas en data.js)
   setTimeout(() => initFirebaseSync(), 500);
+}
+
+async function bootViewer(payload) {
+  // VIEWER_SNAPSHOT deja de ser null → isViewerLink() pasa a true y todas las
+  // lecturas salen de acá en vez del localStorage. Arranca vacío para que no se
+  // vea el seed viejo mientras baja.
+  VIEWER_SNAPSHOT = {};
+  document.body.classList.add('viewer-link', 'role-viewer');
+  const titleEl = document.getElementById('title');
+  if (titleEl) titleEl.textContent = 'Cargando…';
+
+  const fail = (msg) => {
+    const cal = document.getElementById('cal');
+    if (cal) {
+      cal.innerHTML = `<div class="viewer-error">
+        <b>No se pudo cargar el calendario</b>
+        <span>${escapeHtml(msg)}</span>
+        <span class="viewer-error-hint">Probá de nuevo con internet, o pedile al administrador un link nuevo.</span>
+      </div>`;
+    }
+    if (titleEl) titleEl.textContent = 'Turnos';
+  };
+
+  if (typeof firebase === 'undefined') {
+    fail('No se pudo cargar Firebase. Revisá tu conexión.');
+    return;
+  }
+
+  try {
+    const app = firebase.apps && firebase.apps.length
+      ? firebase.app() : firebase.initializeApp(payload.c);
+    const db = firebase.database(app);
+    // Lectura anónima del nodo público. Si las reglas no lo permiten, esto tira
+    // PERMISSION_DENIED y lo mostramos con un mensaje entendible.
+    const snap = await db.ref(`public/${payload.s}`).once('value');
+    const data = snap.val();
+    if (!data) {
+      fail('El link no tiene datos publicados todavía.');
+      return;
+    }
+    VIEWER_SNAPSHOT = data;
+    _birthdaysCache = null;
+    _personColorsCache = null;
+    _personColorsMonthCache = {};
+
+    reloadCurrentMonth();
+    rerenderActiveView();
+    renderFilters();
+    wireUp();
+
+    // Escuchar cambios en vivo: si el admin republica, el visor se actualiza solo.
+    db.ref(`public/${payload.s}`).on('value', (s) => {
+      const v = s.val();
+      if (!v || v._updatedAt === VIEWER_SNAPSHOT._updatedAt) return;
+      VIEWER_SNAPSHOT = v;
+      _birthdaysCache = null;
+      _personColorsCache = null;
+      _personColorsMonthCache = {};
+      reloadCurrentMonth();
+      rerenderActiveView();
+      showToast('🔄 Calendario actualizado');
+    });
+  } catch (e) {
+    console.error('Viewer boot failed:', e);
+    const permiso = String(e && e.message || '').toLowerCase().includes('permission');
+    fail(permiso
+      ? 'El link no tiene permisos de lectura. El administrador tiene que habilitar la lectura pública en Firebase.'
+      : (e.message || 'Error desconocido'));
+  }
 }
 boot();

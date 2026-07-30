@@ -16,7 +16,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=79">
+  <link rel="stylesheet" href="styles.css?v=80">
   <!-- Firebase SDK (compat) - se conecta solo si está configurado -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -105,7 +105,7 @@
     <!-- Footer compacto que SOLO se muestra en modo viewer (cuando los 4 botones de arriba están ocultos).
          Permite ver la versión y forzar la actualización sin perder el acceso al menú Datos. -->
     <div class="viewer-footer" id="viewer-footer">
-      <span class="viewer-footer-version">Versión <span id="viewer-version">79</span></span>
+      <span class="viewer-footer-version">Versión <span id="viewer-version">80</span></span>
       <button class="viewer-footer-btn" id="viewer-force-update">🔄 Buscar actualización</button>
     </div>
 
@@ -142,6 +142,8 @@
         <button data-action="check-update" class="menu-item-highlight">🔄 Forzar actualización (limpiar caché)</button>
         <div class="menu-hint">¿No ves los últimos cambios? Tocá esto para descargar la versión más nueva.</div>
         <button data-action="sync-settings">☁️ Sincronización en la nube</button>
+        <button data-action="share-link">🔗 Link de solo lectura (para el equipo)</button>
+        <div class="menu-hint">Una URL fija que muestra sólo el calendario, sin poder editar. Se actualiza sola cuando guardás cambios — se manda una vez y listo.</div>
         <button data-action="save-as-master" class="menu-item-master">🚀 Guardar calendario como maestro en la nube</button>
         <div class="menu-hint">Cuando termines de armar el calendario, tocá esto para "fijarlo" en la nube. Los dispositivos nuevos que se conecten van a descargar esta versión y no podrán pisarla con datos viejos.</div>
         <button data-action="export-image">📸 Exportar mes a imagen / PDF (para WhatsApp)</button>
@@ -160,7 +162,7 @@
       <div class="menu-version">
         <div class="version-badge ok" id="version-badge">
           <span class="version-dot">●</span>
-          <span class="version-label">Versión <span id="app-version">79</span> · actualizada</span>
+          <span class="version-label">Versión <span id="app-version">80</span> · actualizada</span>
         </div>
         <button class="version-update-btn hidden" id="version-update-btn">
           🔴 Hay una versión nueva — Tocar para actualizar
@@ -294,6 +296,21 @@
       </div>
     </div>
 
+    <div id="share-modal" class="modal hidden" role="dialog" aria-labelledby="share-modal-title">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2 id="share-modal-title">🔗 Link de solo lectura</h2>
+          <button class="modal-close" id="share-modal-close" aria-label="Cerrar">×</button>
+        </div>
+        <p class="modal-sub">Para mandarle al equipo. Ven el calendario y nada más.</p>
+        <div id="share-body"></div>
+        <div class="modal-footer">
+          <button id="share-close-btn" class="modal-btn primary">Cerrar</button>
+        </div>
+      </div>
+    </div>
+
     <div id="validate-modal" class="modal hidden" role="dialog" aria-labelledby="validate-modal-title">
       <div class="modal-backdrop"></div>
       <div class="modal-card">
@@ -386,8 +403,8 @@
     </div>
   </div>
 
-  <script src="data.js?v=79"></script>
-  <script src="app.js?v=79"></script>
+  <script src="data.js?v=80"></script>
+  <script src="app.js?v=80"></script>
   <script>
     // === Detección de actualizaciones del Service Worker ===
     // Mantiene una referencia al SW "esperando" (instalado pero no activo todavía).

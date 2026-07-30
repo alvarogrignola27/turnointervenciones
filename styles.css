@@ -2039,3 +2039,80 @@ body.role-viewer { padding-bottom: 44px; }
   flex-shrink: 0;
   align-self: center;
 }
+
+/* ---------- Modo visor (link de solo lectura) ---------- */
+/* Se esconde TODO lo que sea edición o configuración. Queda navegación,
+   filtros y el calendario. */
+body.viewer-link .footer-actions,
+body.viewer-link .viewer-footer,
+body.viewer-link #menu,
+body.viewer-link #viewer-unlock-btn,
+body.viewer-link #install-btn,
+body.viewer-link #update-banner {
+  display: none !important;
+}
+body.viewer-link .detail { display: none !important; }
+.viewer-error {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 32px 20px;
+  text-align: center;
+  color: #44464a;
+}
+.viewer-error b { font-size: 16px; color: #b91c1c; }
+.viewer-error span { font-size: 14px; }
+.viewer-error-hint { color: #6c6c70; font-size: 13px !important; }
+
+/* ---------- Modal: link de solo lectura ---------- */
+.share-linkbox { display: flex; gap: 8px; margin: 4px 0 14px; }
+.share-linkbox input {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  padding: 10px 12px;
+  border: 1px solid #c9cfda;
+  border-radius: 10px;
+  background: #f6f7f9;
+  color: #1c1c1e;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.share-linkbox .modal-btn { flex-shrink: 0; }
+.share-note {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #44464a;
+  background: #eff6ff;
+  border-left: 4px solid #2563eb;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.share-note-warn { background: #fffbeb; border-left-color: #d97706; }
+.share-warn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 10px;
+  background: #f6f7f9;
+  font-size: 14px;
+  color: #44464a;
+  margin-bottom: 12px;
+}
+.share-warn b { color: #1c1c1e; }
+.share-warn.share-error { background: #fef2f2; }
+.share-details { font-size: 13px; color: #44464a; }
+.share-details summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
+.share-rules {
+  background: #1f2430;
+  color: #e6e9ef;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+  margin: 6px 0 0;
+}
