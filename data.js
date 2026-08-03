@@ -26,6 +26,33 @@ const AUTO_CONNECT_FIREBASE = {
 };
 
 // ════════════════════════════════════════════════════════════
+// CONFIG PÚBLICA DE FIREBASE (para acortar el link de solo lectura)
+// ════════════════════════════════════════════════════════════
+// Si completás estos 4 campos, el link de solo lectura pasa de ~220 caracteres
+// a ~70, porque ya no necesita llevar la config adentro:
+//
+//   Largo:  .../#ver=eyJzIjoiN2YwYzIyYTIwY2FmNTJjZGIwZGU0ODZkNj...
+//   Corto:  .../#v=Xk9mQ2pR7dLwAb
+//
+// ✅ ESTOS VALORES NO SON SECRETOS. La config web de Firebase está diseñada para
+//    ir en el cliente: cualquiera que abra el link de solo lectura ya los ve.
+//    Lo que protege los datos son las REGLAS de la base, no estos valores.
+//    NO confundir con AUTO_CONNECT_FIREBASE de arriba, que sí lleva email y
+//    password y NO debe completarse si el repo es público.
+//
+// 📝 Dónde sacarlos: consola de Firebase → ⚙️ Configuración del proyecto →
+//    "Tus apps" → app web → objeto firebaseConfig. O copialos del menú
+//    ☁️ Datos → Sincronización en la nube de la app, que ya los tiene cargados.
+//
+// Si quedan vacíos, el link sigue funcionando igual, sólo que largo.
+const PUBLIC_FIREBASE_CONFIG = {
+  apiKey: '',
+  authDomain: '',
+  databaseURL: '',
+  projectId: '',
+};
+
+// ════════════════════════════════════════════════════════════
 // ROL POR DEFECTO Y CONTRASEÑA DE ADMIN
 // ════════════════════════════════════════════════════════════
 // Cuando un dispositivo NUEVO instala la app, arranca con este rol.

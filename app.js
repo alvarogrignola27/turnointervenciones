@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '80';
+const APP_VERSION = '81';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -1840,13 +1840,22 @@ function isPublicShareKey(key) {
 
 function getOrCreateShareId() {
   let id = localStorage.getItem(SHARE_ID_KEY);
-  if (id) return id;
-  // Token al azar: el nodo es de lectura pública, así que la URL no debe ser adivinable.
-  const bytes = new Uint8Array(16);
+  if (id) return id;  // los ids ya generados se respetan: los links viejos siguen andando
+  // Token al azar: el nodo es de lectura pública, así que la URL no debe ser
+  // adivinable. v81: 14 caracteres base62 (~83 bits) en vez de 32 hex (128 bits).
+  // Sigue siendo imposible de adivinar por fuerza bruta y acorta el link.
+  const ALFA = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const bytes = new Uint8Array(14);
   crypto.getRandomValues(bytes);
-  id = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  id = Array.from(bytes, b => ALFA[b % ALFA.length]).join('');
   localStorage.setItem(SHARE_ID_KEY, id);
   return id;
+}
+
+// ¿Está la config pública embebida en data.js? Si sí, el link puede ser corto.
+function hasEmbeddedPublicConfig() {
+  const c = typeof PUBLIC_FIREBASE_CONFIG !== 'undefined' ? PUBLIC_FIREBASE_CONFIG : null;
+  return !!(c && c.apiKey && c.databaseURL);
 }
 
 function buildPublicSnapshot() {
@@ -1856,6 +1865,10 @@ function buildPublicSnapshot() {
     if (key && isPublicShareKey(key)) out[key] = localStorage.getItem(key);
   }
   out._updatedAt = Date.now();
+  // v81: dueño del nodo. Las reglas sólo dejan escribir a quien lo creó, así
+  // nadie más puede pisar el calendario publicado (antes alcanzaba con estar
+  // logueado en el proyecto, y crear una cuenta es gratis).
+  if (_fbUser) out._owner = _fbUser.uid;
   return out;
 }
 
@@ -1881,8 +1894,21 @@ function buildViewerLink() {
   const cfg = loadFirebaseConfig();
   const fb = cfg && cfg.firebase;
   if (!fb || !fb.databaseURL) return null;
+  const shareId = getOrCreateShareId();
+  // Quitamos index.html del final: la URL corta queda más limpia y GitHub Pages
+  // sirve igual el directorio.
+  const base = (location.origin + location.pathname).replace(/index\.html$/, '');
+
+  // Formato CORTO: sólo el id. Requiere la config embebida en data.js, y que sea
+  // la MISMA base a la que está conectado este dispositivo (si no, el visor
+  // apuntaría a otro proyecto y no encontraría nada).
+  if (hasEmbeddedPublicConfig() && PUBLIC_FIREBASE_CONFIG.databaseURL === fb.databaseURL) {
+    return `${base}#v=${shareId}`;
+  }
+
+  // Formato LARGO: la config viaja en el link.
   const payload = {
-    s: getOrCreateShareId(),
+    s: shareId,
     c: {
       apiKey: fb.apiKey,
       authDomain: fb.authDomain,
@@ -1892,15 +1918,24 @@ function buildViewerLink() {
   };
   const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const base = location.origin + location.pathname;
   return `${base}#ver=${b64}`;
 }
 
 function parseViewerHash() {
-  const m = (location.hash || '').match(/[#&]ver=([A-Za-z0-9\-_]+)/);
-  if (!m) return null;
+  const hash = location.hash || '';
+
+  // Formato CORTO (#v=id): la config sale de data.js.
+  const short = hash.match(/[#&]v=([A-Za-z0-9]+)/);
+  if (short) {
+    if (!hasEmbeddedPublicConfig()) return null;
+    return { s: short[1], c: { ...PUBLIC_FIREBASE_CONFIG } };
+  }
+
+  // Formato LARGO (#ver=payload): compatibilidad con los links ya repartidos.
+  const long = hash.match(/[#&]ver=([A-Za-z0-9\-_]+)/);
+  if (!long) return null;
   try {
-    let b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    let b64 = long[1].replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4) b64 += '=';
     const payload = JSON.parse(decodeURIComponent(escape(atob(b64))));
     if (!payload || !payload.s || !payload.c || !payload.c.databaseURL) return null;
@@ -6835,16 +6870,48 @@ async function openShareLinkModal() {
     return;
   }
 
+  const cfg = loadFirebaseConfig();
+  const fb = (cfg && cfg.firebase) || {};
+  const esCorto = link.includes('#v=');
+  const snippet = `const PUBLIC_FIREBASE_CONFIG = {
+  apiKey: '${fb.apiKey || ''}',
+  authDomain: '${fb.authDomain || ''}',
+  databaseURL: '${fb.databaseURL || ''}',
+  projectId: '${fb.projectId || ''}',
+};`;
+
+  const bloqueAcortar = esCorto ? '' : `
+    <details class="share-details" open>
+      <summary>✂️ Acortar el link (queda en ~70 caracteres)</summary>
+      <div class="share-note">
+        El link es largo porque lleva la config de Firebase adentro. Si la dejás
+        fija en el código, sólo viaja el identificador.
+        <br><br>
+        Editá <b>data.js</b> en GitHub y reemplazá el bloque
+        <code>PUBLIC_FIREBASE_CONFIG</code> por esto:
+      </div>
+      <pre class="share-rules">${escapeHtml(snippet)}</pre>
+      <div class="share-note">
+        Estos 4 valores <b>no son secretos</b> — cualquiera que abra el link ya
+        los ve. Lo que protege los datos son las reglas de la base.
+        <b>No confundir</b> con <code>AUTO_CONNECT_FIREBASE</code>, que lleva tu
+        email y contraseña y no hay que completarlo.
+      </div>
+      <button id="share-copy-snippet" class="modal-btn secondary">📋 Copiar bloque</button>
+    </details>`;
+
   body.innerHTML = `
     <div class="share-linkbox">
       <input type="text" id="share-link-input" readonly value="${escapeHtml(link)}">
       <button id="share-copy" class="modal-btn primary">📋 Copiar</button>
     </div>
+    <div class="share-len">${link.length} caracteres${esCorto ? ' · formato corto ✅' : ''}</div>
     <div class="share-note">
       <b>Qué ve quien abra este link:</b> solo el calendario, en modo lectura.
       No puede generar, editar ni borrar nada. Se actualiza solo cada vez que
       guardás cambios, así que <b>el link no cambia nunca</b> — mandalo una vez.
     </div>
+    ${bloqueAcortar}
     <div class="share-note share-note-warn">
       <b>Ojo:</b> cualquiera que tenga el link ve el calendario, sin contraseña.
       No se comparte tu configuración, contraseñas ni ausencias — sólo turnos,
@@ -6855,17 +6922,22 @@ async function openShareLinkModal() {
       <pre class="share-rules">${escapeHtml(FIREBASE_RULES_SNIPPET)}</pre>
     </details>`;
 
-  document.getElementById('share-copy').onclick = async () => {
-    const input = document.getElementById('share-link-input');
+  const copiar = async (texto, msg) => {
     try {
-      await navigator.clipboard.writeText(link);
-      showToast('📋 Link copiado');
+      await navigator.clipboard.writeText(texto);
     } catch {
-      input.select();
+      const ta = document.createElement('textarea');
+      ta.value = texto;
+      document.body.appendChild(ta);
+      ta.select();
       document.execCommand('copy');
-      showToast('📋 Link copiado');
+      ta.remove();
     }
+    showToast(msg);
   };
+  document.getElementById('share-copy').onclick = () => copiar(link, '📋 Link copiado');
+  const snipBtn = document.getElementById('share-copy-snippet');
+  if (snipBtn) snipBtn.onclick = () => copiar(snippet, '📋 Bloque copiado');
 }
 
 const FIREBASE_RULES_SNIPPET = `{
@@ -6879,7 +6951,7 @@ const FIREBASE_RULES_SNIPPET = `{
     "public": {
       "$sid": {
         ".read": true,
-        ".write": "auth != null"
+        ".write": "auth != null && (!data.exists() || data.child('_owner').val() === auth.uid)"
       }
     }
   }

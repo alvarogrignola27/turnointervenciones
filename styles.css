@@ -2116,3 +2116,17 @@ body.viewer-link .detail { display: none !important; }
   white-space: pre;
   margin: 6px 0 0;
 }
+.share-len {
+  font-size: 12px;
+  color: #6c6c70;
+  text-align: right;
+  margin: -8px 0 12px;
+}
+.share-note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: rgba(0,0,0,0.07);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.share-details .modal-btn { margin-top: 8px; }

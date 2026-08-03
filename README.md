@@ -131,7 +131,7 @@ Después de cambiar los archivos, subilos al repo y la app se actualiza sola la 
 
 ## 🔗 Link de solo lectura para el equipo
 
-Una URL fija que le podés mandar al equipo por WhatsApp. Entran y ven sólo el calendario: no pueden generar, editar ni borrar. Se actualiza sola cuando guardás cambios, así que **se manda una vez y no hay que volver a mandarla**.
+Una URL corta y fija que le podés mandar al equipo por WhatsApp (o pegar en la descripción del grupo). Entran y ven sólo el calendario: no pueden generar, editar ni borrar. Se actualiza sola cuando guardás cambios, así que **se manda una vez y no hay que volver a mandarla**.
 
 ### Configuración (una sola vez)
 
@@ -151,7 +151,7 @@ Una URL fija que le podés mandar al equipo por WhatsApp. Entran y ven sólo el 
     "public": {
       "$sid": {
         ".read": true,
-        ".write": "auth != null"
+        ".write": "auth != null && (!data.exists() || data.child('_owner').val() === auth.uid)"
       }
     }
   }
@@ -208,6 +208,15 @@ Para repos privados, GitHub Pages cuesta plata. Alternativa gratis: Cloudflare P
 Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
+
+### v81
+- **✂️ Link de solo lectura mucho más corto**: de **~307 a ~72 caracteres**, para que entre en la descripción de un grupo de WhatsApp.
+  - `https://alvarogrignola27.github.io/turnointervenciones/#v=uvAXLlTsRwn0qg`
+  - El link era largo porque llevaba la config de Firebase adentro. Ahora, si se completa `PUBLIC_FIREBASE_CONFIG` en `data.js`, sólo viaja el identificador. El modal de compartir arma el bloque listo para pegar y avisa cuántos caracteres quedaron.
+  - Si `PUBLIC_FIREBASE_CONFIG` queda vacío, el link sigue funcionando igual, sólo que largo. **Los links ya repartidos siguen andando**: se soportan los dos formatos.
+  - El identificador nuevo pasó de 32 caracteres hexadecimales a 14 en base62 (~83 bits), que sigue siendo imposible de adivinar. Los identificadores ya generados no se tocan.
+  - Se saca `index.html` del final de la URL, que GitHub Pages resuelve igual.
+- **🔒 El nodo público ahora sólo lo puede pisar su dueño**. La regla anterior era `".write": "auth != null"`: cualquiera con una cuenta del proyecto (y crear una es gratis) podía sobrescribir el calendario publicado. Ahora el snapshot guarda `_owner` con el uid de quien lo creó y la regla exige que coincida. **Si ya venías usando el link, actualizá las reglas** con el bloque nuevo que muestra el modal.
 
 ### v80
 - **🔗 Link de solo lectura (nuevo)**. Menú *☁️ Datos → "Link de solo lectura"*. Genera una URL fija para mandarle al equipo: entran y ven **sólo el calendario**, sin poder generar, editar ni borrar nada. Reemplaza el viejo link de Drive.
