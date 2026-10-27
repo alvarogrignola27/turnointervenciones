@@ -251,6 +251,10 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v85
+- **🐛 Estadísticas por equipo con parejas mezcladas**: antes, un día con una pareja de dos equipos distintos (ej: *Montilla + Milisenda*, de antes de un cambio de equipos) se le contaba entero al primer equipo de la lista y el otro quedaba en 0 (Milisenda + Diaz figuraba con 0 en febrero 2026). Ahora cada persona suma medio día a su equipo actual, y las celdas con días repartidos quedan marcadas con un punto violeta. Se aplica a la tabla por mes, Equidad, Este mes y Rango.
+- **👤 Estadísticas por persona**: en *Por mes* hay un selector *Por equipo / Por persona*. La vista por persona muestra los días de cada uno mes a mes (con cualquier pareja) y debajo **con quién estuvo cada persona** en el período, resaltando a su equipo actual.
+
 ### v84
 - **📊 Estadísticas como botón propio** (ya no está dentro de Armar) y en pantalla grande. Nueva pestaña **🗂️ Por mes**: una tabla con una fila por equipo y una columna por mes, eligiendo la métrica (días, findes, viernes o feriados), con total, promedio, días sin equipo y los meses con cupo alto marcados. Los meses de feria se ven en gris y no suman.
 - **🔍 Revisar reglas como checklist**: muestra todas las reglas del turnero con ✅ / ⚠️ / ⛔ y cuántos casos tiene cada una; tocando la regla se ve el detalle y desde ahí se va al día. Se agregaron controles nuevos: un bloque por semana, bloques completos (Lun-Mar y Mié-Jue con el mismo equipo), rotación de bloque, rotación de findes, gestión de materiales en todos los findes (y alternada) y post-feria.

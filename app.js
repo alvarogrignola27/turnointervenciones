@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '84';
+const APP_VERSION = '85';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -2066,6 +2066,7 @@ function addAbsenceFromForm() {
 // ---------- Modal de Estadísticas ----------
 let _statsScope = 'table'; // 'table' | 'equity' | 'month' | 'range' | 'total'
 let _statsMetric = 'days';  // métrica de la tabla por mes
+let _statsTableView = 'teams'; // v85: 'teams' | 'people'
 
 function openStatsSettings() {
   document.getElementById('stats-modal').classList.remove('hidden');
@@ -2144,10 +2145,7 @@ function countDaysByTeamInCurrentMonth() {
   for (let d = 1; d <= daysInMonth; d++) {
     const slot = state.data[String(d)];
     if (!slot || slot.length === 0) continue;
-    const main = slot[0];
-    if (!main) continue;
-    const idx = teamIdxForSlotFlexible(main, teams);
-    if (idx >= 0) counts[idx]++;
+    teamCredits(slot[0], teams).forEach(({ idx, credit }) => { counts[idx] += credit; });
   }
   return { teams, counts };
 }
@@ -2174,6 +2172,26 @@ function teamIdxForSlotFlexible(slot, teams) {
   return bestIdx;
 }
 
+// v85: crédito de un turno para cada equipo. Cada persona de la pareja principal
+// aporta medio día al equipo al que pertenece hoy. Así una pareja "mezclada"
+// (ej: Montilla + Milisenda, de antes de que cambiaran los equipos) suma ½ a
+// cada equipo en vez de dárselo entero al primero de la lista y dejar al otro en 0.
+// Devuelve [{ idx, credit }] (credit 1 = el día completo para ese equipo).
+function teamCredits(slot, teams) {
+  if (!slot) return [];
+  const byTeam = new Map();
+  [slot[0], slot[1]].forEach(name => {
+    if (!name) return;
+    const idx = teams.findIndex(t => [t.a, t.b, t.c].includes(name));
+    if (idx >= 0) byTeam.set(idx, Math.min(1, (byTeam.get(idx) || 0) + 0.5));
+  });
+  return [...byTeam].map(([idx, credit]) => ({ idx, credit }));
+}
+// Número con a lo sumo un decimal ("4", "4.5")
+function fmtNum(v) {
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
 // Cuenta días por equipo en un rango de meses (inclusive)
 function countDaysByTeamInRange(fromY, fromM, toY, toM) {
   const cfg = loadGenConfig();
@@ -2186,10 +2204,7 @@ function countDaysByTeamInRange(fromY, fromM, toY, toM) {
     for (let d = 1; d <= dim; d++) {
       const slot = data[String(d)];
       if (!slot || slot.length === 0) continue;
-      const main = slot[0];
-      if (!main) continue;
-      const idx = teamIdxForSlotFlexible(main, teams);
-      if (idx >= 0) counts[idx]++;
+      teamCredits(slot[0], teams).forEach(({ idx, credit }) => { counts[idx] += credit; });
     }
     m++;
     if (m > 12) { m = 1; y++; }
@@ -2243,19 +2258,21 @@ function computeEquity(fromY, fromM, toY, toM) {
       for (let d = 1; d <= dim; d++) {
         if (isFeriaJud(y, m, d)) continue;
         const main = (data[String(d)] || [])[0];
-        const idx = main ? teamIdxForSlotFlexible(main, teams) : -1;
+        const credits = teamCredits(main, teams);
         const holiday = isHoliday(y, m, d);
         if (holiday) {
-          feriadoList.push({ y, m, d, name: nationalHolidayName(y, m, d) || 'Feriado', idx,
+          feriadoList.push({ y, m, d, name: nationalHolidayName(y, m, d) || 'Feriado',
+            idx: credits.length ? credits[0].idx : -1,
             who: main ? main.filter(Boolean).join(' + ') : '' });
         }
-        if (idx < 0) continue;
         const dow = new Date(y, m - 1, d).getDay();
-        const r = rows[idx];
-        r.days++; monthCount[idx]++;
-        if (dow === 0 || dow === 6) r.weekend++;
-        if (dow === 5) r.fri++;
-        if (holiday) r.feriados++;
+        credits.forEach(({ idx, credit }) => {
+          const r = rows[idx];
+          r.days += credit; monthCount[idx] += credit;
+          if (dow === 0 || dow === 6) r.weekend += credit;
+          if (dow === 5) r.fri += credit;
+          if (holiday) r.feriados += credit;
+        });
       }
       const evenShare = Math.floor(dim / Math.max(1, teams.length));
       monthCount.forEach((c, i) => { if (c > evenShare) rows[i].highMonths++; });
@@ -2277,21 +2294,39 @@ const STATS_METRICS = [
 function teamMetricsForMonth(y, m, teams) {
   const data = (y === state.year && m === state.month) ? state.data : loadMonthData(y, m);
   const dim = new Date(y, m, 0).getDate();
-  const rows = teams.map(() => ({ days: 0, weekend: 0, fri: 0, feriados: 0 }));
+  const rows = teams.map(() => ({ days: 0, weekend: 0, fri: 0, feriados: 0, mixed: 0 }));
+  // v85: lo mismo por persona, y con quién estuvo cada una
+  const people = {};
+  const partners = {};
   let empty = 0, covered = 0;
   for (let d = 1; d <= dim; d++) {
     if (isFeriaJud(y, m, d)) continue;
     covered++;
-    const main = (data[String(d)] || [])[0];
-    const idx = main ? teamIdxForSlotFlexible(main, teams) : -1;
-    if (idx < 0) { empty++; continue; }
+    const slots = data[String(d)] || [];
     const dow = new Date(y, m - 1, d).getDay();
-    rows[idx].days++;
-    if (dow === 0 || dow === 6) rows[idx].weekend++;
-    if (dow === 5) rows[idx].fri++;
-    if (isHoliday(y, m, d)) rows[idx].feriados++;
+    const hol = isHoliday(y, m, d);
+    const bump = (r, c) => {
+      r.days += c;
+      if (dow === 0 || dow === 6) r.weekend += c;
+      if (dow === 5) r.fri += c;
+      if (hol) r.feriados += c;
+    };
+    const names = [...new Set(slots.filter(sl => sl && !isGmatOnlySlot(sl))
+      .flatMap(sl => [sl[0], sl[1]]).filter(Boolean))];
+    names.forEach(n => {
+      if (!people[n]) people[n] = { days: 0, weekend: 0, fri: 0, feriados: 0 };
+      bump(people[n], 1);
+      if (!partners[n]) partners[n] = {};
+      names.forEach(o => { if (o !== n) partners[n][o] = (partners[n][o] || 0) + 1; });
+    });
+    const credits = teamCredits(slots[0], teams);
+    if (credits.length === 0) { empty++; continue; }
+    credits.forEach(({ idx, credit }) => {
+      bump(rows[idx], credit);
+      if (credit < 1) rows[idx].mixed++;
+    });
   }
-  return { rows, empty, covered, dim, feria: (m === 1 || m === 7),
+  return { rows, people, partners, empty, covered, dim, feria: (m === 1 || m === 7),
     loaded: Object.keys(data).length > 0 };
 }
 
@@ -2310,6 +2345,15 @@ function renderMonthTable(content, fromY, fromM, toY, toM) {
     m++; if (m > 12) { m = 1; y++; }
   }
 
+  // v85: ver por equipos o por personas
+  const viewChips = el('div', 'stats-metric-chips');
+  [['teams', '🤝 Por equipo'], ['people', '👤 Por persona']].forEach(([k, label]) => {
+    const b = el('button', 'stats-metric-chip view-chip' + (k === _statsTableView ? ' active' : ''), label);
+    b.addEventListener('click', () => { _statsTableView = k; renderStats(); });
+    viewChips.appendChild(b);
+  });
+  content.appendChild(viewChips);
+
   // Selector de métrica
   const chips = el('div', 'stats-metric-chips');
   STATS_METRICS.forEach(mt => {
@@ -2318,7 +2362,12 @@ function renderMonthTable(content, fromY, fromM, toY, toM) {
     chips.appendChild(b);
   });
   content.appendChild(chips);
+  if (_statsTableView === 'people') {
+    renderPeopleTable(content, months, el);
+    return;
+  }
   content.appendChild(el('div', 'stats-intro',
+    'Cada persona suma medio día a su equipo actual: si la pareja era mixta (de antes de un cambio de equipos), el día se reparte ½ y ½ y la celda queda marcada con un punto. ' +
     'Los meses de feria (enero y julio) se muestran en gris y no suman al total. ' +
     (_statsMetric === 'days' ? 'En naranja, los meses en que el equipo tuvo cupo alto (más días que el reparto parejo). ' : '') +
     'En la columna Total: rojo el que más tiene y verde el que menos.'));
@@ -2349,15 +2398,19 @@ function renderMonthTable(content, fromY, fromM, toY, toM) {
     tr.appendChild(name);
     months.forEach(mo => {
       const v = mo.rows[i][_statsMetric];
-      const td = el('td', mo.feria ? 'feria-col' : null, mo.loaded ? String(v) : '·');
+      const td = el('td', mo.feria ? 'feria-col' : null, mo.loaded ? fmtNum(v) : '·');
       if (!mo.loaded) td.classList.add('empty-cell');
+      if (mo.loaded && mo.rows[i].mixed > 0 && v > 0) {
+        td.classList.add('mixed-cell');
+        td.title = `${mo.rows[i].mixed} día(s) con pareja mixta, contados a medias`;
+      }
       if (_statsMetric === 'days' && !mo.feria && v > Math.floor(mo.covered / Math.max(1, teams.length))) {
         td.classList.add('high-cell');
       }
       if (mo.y === state.year && mo.m === state.month) td.classList.add('current-col');
       tr.appendChild(td);
     });
-    const tot = el('td', 'total-col', String(totals[i]));
+    const tot = el('td', 'total-col', fmtNum(totals[i]));
     if (hi - lo >= 2 && totals[i] === hi) tot.classList.add('equity-hi');
     if (hi - lo >= 2 && totals[i] === lo) tot.classList.add('equity-lo');
     tr.appendChild(tot);
@@ -2380,6 +2433,86 @@ function renderMonthTable(content, fromY, fromM, toY, toM) {
   }
   wrap.appendChild(table);
   content.appendChild(wrap);
+}
+
+// v85: tabla por persona (días que trabajó cada uno, con cualquier pareja) y
+// el detalle de con quién estuvo.
+function renderPeopleTable(content, months, el) {
+  const regular = months.filter(mo => !mo.feria && mo.loaded);
+  const allNames = new Set();
+  months.forEach(mo => Object.keys(mo.people).forEach(n => allNames.add(n)));
+  const total = (n) => regular.reduce((a, mo) => a + (mo.people[n] ? mo.people[n][_statsMetric] : 0), 0);
+  // Los que no son de los equipos (feria, abogados) sólo si trabajaron fuera de la feria
+  const order = [...ROSTER.filter(n => allNames.has(n)),
+    ...[...allNames].filter(n => !ROSTER.includes(n) && total(n) > 0).sort()];
+  const rosterTotals = order.filter(n => ROSTER.includes(n)).map(total);
+  const hi = Math.max(...rosterTotals), lo = Math.min(...rosterTotals);
+
+  content.appendChild(el('div', 'stats-intro',
+    'Días que trabajó cada persona, con cualquier pareja (no cuenta la gestión de materiales). ' +
+    'Los meses de feria se muestran en gris y no suman. En Total, rojo el que más y verde el que menos (sólo personas de los equipos).'));
+  const wrap = el('div', 'stats-table-wrap');
+  const table = el('table', 'stats-month-table');
+  const head = el('tr');
+  head.appendChild(el('th', 'sticky-col', 'Persona'));
+  months.forEach(mo => {
+    const th = el('th', mo.feria ? 'feria-col' : null, `${MES_NAMES[mo.m - 1].slice(0, 3)} ${String(mo.y).slice(2)}`);
+    if (mo.y === state.year && mo.m === state.month) th.classList.add('current-col');
+    head.appendChild(th);
+  });
+  head.appendChild(el('th', 'total-col', 'Total'));
+  head.appendChild(el('th', 'total-col', 'Prom.'));
+  table.appendChild(head);
+  order.forEach(n => {
+    const tr = el('tr');
+    const name = el('td', 'sticky-col team-cell', n);
+    name.style.background = colorFor(n);
+    name.style.color = textColorFor(n);
+    tr.appendChild(name);
+    months.forEach(mo => {
+      const v = mo.people[n] ? mo.people[n][_statsMetric] : 0;
+      const td = el('td', mo.feria ? 'feria-col' : null, mo.loaded ? String(v) : '·');
+      if (!mo.loaded) td.classList.add('empty-cell');
+      if (mo.y === state.year && mo.m === state.month) td.classList.add('current-col');
+      tr.appendChild(td);
+    });
+    const t = total(n);
+    const tot = el('td', 'total-col', String(t));
+    if (ROSTER.includes(n) && hi - lo >= 2 && t === hi) tot.classList.add('equity-hi');
+    if (ROSTER.includes(n) && hi - lo >= 2 && t === lo) tot.classList.add('equity-lo');
+    tr.appendChild(tot);
+    tr.appendChild(el('td', 'total-col', regular.length ? (t / regular.length).toFixed(1) : '–'));
+    table.appendChild(tr);
+  });
+  wrap.appendChild(table);
+  content.appendChild(wrap);
+
+  // Con quién estuvo cada persona (días compartidos en el período, sin feria)
+  const sec = el('div', 'stats-section');
+  sec.style.marginTop = '16px';
+  sec.appendChild(el('h3', null, '🤝 Con quién estuvo cada persona'));
+  const teams = loadGenConfig().teams || [];
+  const grid = el('div', 'partners-grid');
+  order.filter(n => ROSTER.includes(n)).forEach(n => {
+    const acc = {};
+    regular.forEach(mo => Object.entries(mo.partners[n] || {}).forEach(([o, c]) => { acc[o] = (acc[o] || 0) + c; }));
+    const card = el('div', 'partner-card');
+    const title = el('div', 'partner-name', n);
+    title.style.background = colorFor(n);
+    title.style.color = textColorFor(n);
+    card.appendChild(title);
+    const team = teams.find(t => [t.a, t.b, t.c].includes(n));
+    if (team) card.appendChild(el('div', 'partner-team', 'Equipo actual: ' + [team.a, team.b, team.c].filter(Boolean).join(' + ')));
+    const list = Object.entries(acc).sort((a, b) => b[1] - a[1]);
+    if (list.length === 0) card.appendChild(el('div', 'partner-row', 'Sin turnos en el período'));
+    list.forEach(([o, c]) => {
+      const inTeam = team && [team.a, team.b, team.c].includes(o);
+      card.appendChild(el('div', 'partner-row' + (inTeam ? ' in-team' : ''), `${o} · ${c} día${c !== 1 ? 's' : ''}`));
+    });
+    grid.appendChild(card);
+  });
+  sec.appendChild(grid);
+  content.appendChild(sec);
 }
 
 function renderEquityReport(content, fromY, fromM, toY, toM) {
@@ -2423,7 +2556,7 @@ function renderEquityReport(content, fromY, fromM, toY, toM) {
     name.title = [r.team.a, r.team.b, r.team.c].filter(Boolean).join(' + ');
     tr.appendChild(name);
     cols.forEach(c => {
-      const td = el('td', null, String(r[c.key]));
+      const td = el('td', null, fmtNum(r[c.key]));
       const ex = extremes[c.key];
       if (ex.hi - ex.lo >= 2) {
         if (r[c.key] === ex.hi) td.classList.add('equity-hi');
@@ -2445,7 +2578,7 @@ function renderEquityReport(content, fromY, fromM, toY, toM) {
     'Orden de prioridad: menos feriados hechos en el período, primero. El generador usa el mismo criterio (con todo el historial cargado) cuando el feriado cae entre semana; los findes siguen la rotación de findes.'));
   const chips = el('div', 'equity-chips');
   order.forEach(({ r }, pos) => {
-    const chip = el('span', 'equity-chip', `${pos + 1}. ${shortTeamName(r.team)} (${r.feriados})`);
+    const chip = el('span', 'equity-chip', `${pos + 1}. ${shortTeamName(r.team)} (${fmtNum(r.feriados)})`);
     chip.style.background = colorFor(r.team.a);
     chip.style.color = textColorFor(r.team.a);
     chips.appendChild(chip);
@@ -2562,7 +2695,7 @@ function renderStats() {
       barWrap.appendChild(bar);
       const num = document.createElement('div');
       num.className = 'stats-num';
-      num.textContent = `${counts[idx]} días`;
+      num.textContent = `${fmtNum(counts[idx])} días`;
       row.appendChild(label);
       row.appendChild(barWrap);
       row.appendChild(num);
@@ -2639,7 +2772,7 @@ function renderStats() {
       barWrap.appendChild(bar);
       const num = document.createElement('div');
       num.className = 'stats-num';
-      num.textContent = `${counts[idx]} días`;
+      num.textContent = `${fmtNum(counts[idx])} días`;
       row.appendChild(label);
       row.appendChild(barWrap);
       row.appendChild(num);
