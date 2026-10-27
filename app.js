@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '83';
+const APP_VERSION = '84';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -691,7 +691,7 @@ function openReplicateDayForm(srcDay) {
       <div class="modal-body" style="padding:14px 16px;">
         <div style="font-size:13px;color:#3a3a3c;margin-bottom:10px;">
           Se van a copiar las personas asignadas el día <b>${srcDay}</b> a todos los días del rango.
-          También se marcará feria judicial en cada uno.
+          ${isFeriaJud(state.year, state.month, srcDay) ? 'También se marcará feria judicial en cada uno.' : ''}
         </div>
         <div style="background:#fff8e0;border-radius:8px;padding:8px 10px;font-size:12px;color:#8a5a00;margin-bottom:12px;">
           <b>Asignados hoy:</b> ${peopleStr}
@@ -731,12 +731,15 @@ function openReplicateDayForm(srcDay) {
     // Clonar los slots del día origen (deep copy para que cada día tenga su propio array)
     const cloneSlots = () => srcSlots.map(s => [s[0] || null, s[1] || null]);
     if (!state._feriaJud) state._feriaJud = {};
+    // v84: replicar está disponible en cualquier día; la marca de feria sólo se
+    // copia si el día de origen es de feria.
+    const srcIsFeria = isFeriaJud(state.year, state.month, srcDay);
     let count = 0;
     for (let d = from; d <= to; d++) {
       if (d === srcDay) continue;  // no nos pisamos a nosotros mismos
+      snapshotDayBeforeEdit(d);
       state.data[String(d)] = cloneSlots();
-      // También marcar feria judicial en cada día replicado
-      state._feriaJud[String(d)] = true;
+      if (srcIsFeria) state._feriaJud[String(d)] = true;
       count++;
     }
     saveMonthData(state.year, state.month, state.data);
@@ -746,6 +749,109 @@ function openReplicateDayForm(srcDay) {
     else if (state.view === 'day') renderDayView();
     showToast(`📋 Replicado en ${count} día${count !== 1 ? 's' : ''} (${from}–${to})`);
     close();
+  });
+}
+
+// ---------- Copiar un equipo a este día (v84) ----------
+// Slots que son sólo de gestión de materiales (ALVARO / MARTIN solos).
+function isGmatOnlySlot(s) {
+  return !!s && [s[0], s[1]].filter(Boolean).length > 0 &&
+    [s[0], s[1]].filter(Boolean).every(n => GESTION_MATERIALES.includes(n));
+}
+// Reemplaza el equipo del día por `teamSlots`, conservando el G. MAT. del día.
+function applyTeamToDay(day, teamSlots) {
+  snapshotDayBeforeEdit(day);
+  const keep = (state.data[String(day)] || []).filter(isGmatOnlySlot);
+  state.data[String(day)] = [...teamSlots.map(s => [s[0] || null, s[1] || null]), ...keep];
+  // Los reemplazos del día apuntaban al equipo anterior: ya no aplican.
+  if (state._replacements && state._replacements[String(day)]) {
+    delete state._replacements[String(day)];
+    saveReplacements(state.year, state.month, state._replacements);
+  }
+  saveMonthData(state.year, state.month, state.data);
+  rerenderActiveView();
+  if (state.view === 'month') renderDetail();
+  else if (state.view === 'day') renderDayView();
+}
+
+// Modal: elegir un equipo de la configuración o copiar el equipo completo de otra fecha.
+function openCopyTeamForm(day) {
+  const y = state.year, m = state.month;
+  const teams = (loadGenConfig().teams || []).filter(t => t.a && t.b);
+  const fmtDate = (yy, mm, dd) => `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+  // Por defecto, el día anterior que tenga equipo
+  let def = new Date(y, m - 1, day - 1);
+  for (let i = 0; i < 31; i++) {
+    const slots = getDayDataAny(def.getFullYear(), def.getMonth() + 1, def.getDate()) || [];
+    if (slots.some(s => s && !isGmatOnlySlot(s) && (s[0] || s[1]))) break;
+    def.setDate(def.getDate() - 1);
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal';
+  overlay.innerHTML = `
+    <div class="modal-backdrop"></div>
+    <div class="modal-card modal-card-small">
+      <div class="modal-head">
+        <h2>📥 Copiar equipo al día ${day}</h2>
+        <button class="modal-close" data-act="cancel">×</button>
+      </div>
+      <div class="modal-body" style="padding:14px 16px;">
+        <div class="copy-team-label">Copiar el equipo completo de otro día</div>
+        <div class="copy-team-row">
+          <input type="date" id="copy-from-date" class="rep-select" value="${fmtDate(def.getFullYear(), def.getMonth() + 1, def.getDate())}">
+          <button class="modal-btn primary" data-act="from-date">Copiar</button>
+        </div>
+        <div id="copy-from-preview" class="copy-team-preview"></div>
+        <div class="copy-team-label" style="margin-top:14px;">O elegir un equipo</div>
+        <div class="copy-team-list"></div>
+        <div class="copy-team-hint">Reemplaza el equipo de intervención del día (con su 3er integrante). La gestión de materiales se mantiene.</div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('.modal-backdrop').addEventListener('click', close);
+  overlay.querySelectorAll('[data-act="cancel"]').forEach(b => b.addEventListener('click', close));
+
+  const dateInp = overlay.querySelector('#copy-from-date');
+  const preview = overlay.querySelector('#copy-from-preview');
+  const sourceSlots = () => {
+    const [yy, mm, dd] = (dateInp.value || '').split('-').map(Number);
+    if (!yy) return null;
+    const slots = (getDayDataAny(yy, mm, dd) || []).filter(s => s && !isGmatOnlySlot(s) && (s[0] || s[1]));
+    return slots.length > 0 ? slots : null;
+  };
+  const updatePreview = () => {
+    const slots = sourceSlots();
+    preview.textContent = slots
+      ? 'Se copia: ' + slots.flatMap(s => [s[0], s[1]]).filter(Boolean).join(', ')
+      : 'Ese día no tiene equipo.';
+  };
+  dateInp.addEventListener('change', updatePreview);
+  updatePreview();
+  overlay.querySelector('[data-act="from-date"]').addEventListener('click', () => {
+    const slots = sourceSlots();
+    if (!slots) { showToast('Ese día no tiene equipo para copiar'); return; }
+    applyTeamToDay(day, slots);
+    close();
+    showToast(`📥 Equipo copiado al día ${day}`);
+  });
+
+  const list = overlay.querySelector('.copy-team-list');
+  teams.forEach(t => {
+    const b = document.createElement('button');
+    b.className = 'copy-team-btn';
+    b.textContent = [t.a, t.b, t.c].filter(Boolean).join(' + ');
+    b.style.background = colorFor(t.a);
+    b.style.color = textColorFor(t.a);
+    b.addEventListener('click', () => {
+      const slots = [[t.a, t.b]];
+      if (t.c) slots.push([t.c, null]);
+      applyTeamToDay(day, slots);
+      close();
+      showToast(`📥 ${b.textContent} asignado al día ${day}`);
+    });
+    list.appendChild(b);
   });
 }
 
@@ -1958,7 +2064,8 @@ function addAbsenceFromForm() {
 }
 
 // ---------- Modal de Estadísticas ----------
-let _statsScope = 'month'; // 'month' | 'range' | 'total' | 'equity'
+let _statsScope = 'table'; // 'table' | 'equity' | 'month' | 'range' | 'total'
+let _statsMetric = 'days';  // métrica de la tabla por mes
 
 function openStatsSettings() {
   document.getElementById('stats-modal').classList.remove('hidden');
@@ -2158,6 +2265,123 @@ function computeEquity(fromY, fromM, toY, toM) {
   return { teams, rows, feriadoList, months };
 }
 
+// ---------- Tabla por mes (v84) ----------
+// Una fila por equipo y una columna por mes, con la métrica elegida (días, findes,
+// viernes o feriados). Los meses de feria se muestran pero no suman al total.
+const STATS_METRICS = [
+  { key: 'days', label: 'Días' },
+  { key: 'weekend', label: 'Findes (días)' },
+  { key: 'fri', label: 'Viernes' },
+  { key: 'feriados', label: 'Feriados' },
+];
+function teamMetricsForMonth(y, m, teams) {
+  const data = (y === state.year && m === state.month) ? state.data : loadMonthData(y, m);
+  const dim = new Date(y, m, 0).getDate();
+  const rows = teams.map(() => ({ days: 0, weekend: 0, fri: 0, feriados: 0 }));
+  let empty = 0, covered = 0;
+  for (let d = 1; d <= dim; d++) {
+    if (isFeriaJud(y, m, d)) continue;
+    covered++;
+    const main = (data[String(d)] || [])[0];
+    const idx = main ? teamIdxForSlotFlexible(main, teams) : -1;
+    if (idx < 0) { empty++; continue; }
+    const dow = new Date(y, m - 1, d).getDay();
+    rows[idx].days++;
+    if (dow === 0 || dow === 6) rows[idx].weekend++;
+    if (dow === 5) rows[idx].fri++;
+    if (isHoliday(y, m, d)) rows[idx].feriados++;
+  }
+  return { rows, empty, covered, dim, feria: (m === 1 || m === 7),
+    loaded: Object.keys(data).length > 0 };
+}
+
+function renderMonthTable(content, fromY, fromM, toY, toM) {
+  const teams = loadGenConfig().teams || [];
+  const el = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  };
+  const months = [];
+  let y = fromY, m = fromM;
+  while (y < toY || (y === toY && m <= toM)) {
+    months.push({ y, m, ...teamMetricsForMonth(y, m, teams) });
+    m++; if (m > 12) { m = 1; y++; }
+  }
+
+  // Selector de métrica
+  const chips = el('div', 'stats-metric-chips');
+  STATS_METRICS.forEach(mt => {
+    const b = el('button', 'stats-metric-chip' + (mt.key === _statsMetric ? ' active' : ''), mt.label);
+    b.addEventListener('click', () => { _statsMetric = mt.key; renderStats(); });
+    chips.appendChild(b);
+  });
+  content.appendChild(chips);
+  content.appendChild(el('div', 'stats-intro',
+    'Los meses de feria (enero y julio) se muestran en gris y no suman al total. ' +
+    (_statsMetric === 'days' ? 'En naranja, los meses en que el equipo tuvo cupo alto (más días que el reparto parejo). ' : '') +
+    'En la columna Total: rojo el que más tiene y verde el que menos.'));
+
+  const wrap = el('div', 'stats-table-wrap');
+  const table = el('table', 'stats-month-table');
+  const head = el('tr');
+  head.appendChild(el('th', 'sticky-col', 'Equipo'));
+  months.forEach(mo => {
+    const th = el('th', mo.feria ? 'feria-col' : null,
+      `${MES_NAMES[mo.m - 1].slice(0, 3)} ${String(mo.y).slice(2)}`);
+    if (mo.y === state.year && mo.m === state.month) th.classList.add('current-col');
+    head.appendChild(th);
+  });
+  head.appendChild(el('th', 'total-col', 'Total'));
+  head.appendChild(el('th', 'total-col', 'Prom.'));
+  table.appendChild(head);
+
+  const regular = months.filter(mo => !mo.feria && mo.loaded);
+  const totals = teams.map((_, i) => regular.reduce((a, mo) => a + mo.rows[i][_statsMetric], 0));
+  const hi = Math.max(...totals), lo = Math.min(...totals);
+
+  teams.forEach((t, i) => {
+    const tr = el('tr');
+    const name = el('td', 'sticky-col team-cell', [t.a, t.b, t.c].filter(Boolean).join(' + '));
+    name.style.background = colorFor(t.a);
+    name.style.color = textColorFor(t.a);
+    tr.appendChild(name);
+    months.forEach(mo => {
+      const v = mo.rows[i][_statsMetric];
+      const td = el('td', mo.feria ? 'feria-col' : null, mo.loaded ? String(v) : '·');
+      if (!mo.loaded) td.classList.add('empty-cell');
+      if (_statsMetric === 'days' && !mo.feria && v > Math.floor(mo.covered / Math.max(1, teams.length))) {
+        td.classList.add('high-cell');
+      }
+      if (mo.y === state.year && mo.m === state.month) td.classList.add('current-col');
+      tr.appendChild(td);
+    });
+    const tot = el('td', 'total-col', String(totals[i]));
+    if (hi - lo >= 2 && totals[i] === hi) tot.classList.add('equity-hi');
+    if (hi - lo >= 2 && totals[i] === lo) tot.classList.add('equity-lo');
+    tr.appendChild(tot);
+    tr.appendChild(el('td', 'total-col', regular.length ? (totals[i] / regular.length).toFixed(1) : '–'));
+    table.appendChild(tr);
+  });
+
+  // Fila de días sin equipo (sólo tiene sentido para "Días")
+  if (_statsMetric === 'days') {
+    const tr = el('tr', 'empty-row');
+    tr.appendChild(el('td', 'sticky-col', 'Sin equipo'));
+    months.forEach(mo => {
+      const td = el('td', mo.feria ? 'feria-col' : null, mo.loaded ? String(mo.empty) : '·');
+      if (mo.loaded && mo.empty > 0 && !mo.feria) td.classList.add('equity-hi');
+      tr.appendChild(td);
+    });
+    tr.appendChild(el('td', 'total-col', String(regular.reduce((a, mo) => a + mo.empty, 0))));
+    tr.appendChild(el('td', 'total-col', ''));
+    table.appendChild(tr);
+  }
+  wrap.appendChild(table);
+  content.appendChild(wrap);
+}
+
 function renderEquityReport(content, fromY, fromM, toY, toM) {
   const { teams, rows, feriadoList, months } = computeEquity(fromY, fromM, toY, toM);
   const el = (tag, cls, text) => {
@@ -2278,7 +2502,17 @@ function renderStats() {
   });
   // Mostrar pickers de rango sólo en scope 'range'
   const pickers = document.getElementById('stats-range-pickers');
-  if (pickers) pickers.classList.toggle('hidden', _statsScope !== 'range' && _statsScope !== 'equity');
+  if (pickers) pickers.classList.toggle('hidden', !['range', 'equity', 'table'].includes(_statsScope));
+
+  if (_statsScope === 'table') {
+    let fromY = _statsRangeFromY, fromM = _statsRangeFromM;
+    let toY = _statsRangeToY, toM = _statsRangeToM;
+    if (fromY > toY || (fromY === toY && fromM > toM)) {
+      [fromY, toY] = [toY, fromY]; [fromM, toM] = [toM, fromM];
+    }
+    renderMonthTable(content, fromY, fromM, toY, toM);
+    return;
+  }
 
   if (_statsScope === 'equity') {
     let fromY = _statsRangeFromY, fromM = _statsRangeFromM;
@@ -2503,7 +2737,7 @@ function renderStats() {
       const diff = entries[0].days - entries[entries.length-1].days;
       const balanceNote = document.createElement('div');
       balanceNote.className = 'stats-balance-note';
-      balanceNote.innerHTML = `<b>Balance:</b> diferencia máx-mín = ${diff} días. ${diff <= 1 ? '✅ Excelente equilibrio.' : diff <= 3 ? '👍 Buen equilibrio.' : '⚠️ Equilibrio mejorable: activá la rotación automática.'}`;
+      balanceNote.innerHTML = `<b>Balance:</b> diferencia máx-mín = ${diff} días. ${diff <= 1 ? '✅ Excelente equilibrio.' : diff <= 3 ? '👍 Buen equilibrio.' : '⚠️ Hay diferencia acumulada (incluye meses viejos con otras parejas); los cupos automáticos la van emparejando.'}`;
       content.appendChild(balanceNote);
     }
   }
@@ -3988,18 +4222,26 @@ function buildDayInfoBlock(y, m, d, opts = {}) {
     repsSection.appendChild(buildReplacementsBlock(d));
     block.appendChild(repsSection);
 
-    // --- Botón REPLICAR DÍA (solo si está marcado como feria judicial) ---
-    if (isFeriaJud(y, m, d)) {
-      const repSection = document.createElement('div');
-      repSection.className = 'di-edit-extra-section';
-      const repBtn = document.createElement('button');
-      repBtn.className = 'manage-item';
-      repBtn.innerHTML = '📋 Replicar este día en un rango';
-      repBtn.title = 'Copiar las personas asignadas hoy a varios días consecutivos';
-      repBtn.addEventListener('click', () => openReplicateDayForm(d));
-      repSection.appendChild(repBtn);
-      block.appendChild(repSection);
-    }
+    // --- v84: COPIAR equipo a este día / REPLICAR este día (cualquier día) ---
+    const repSection = document.createElement('div');
+    repSection.className = 'di-edit-extra-section';
+    const copyLabel = document.createElement('div');
+    copyLabel.className = 'manage-section-label';
+    copyLabel.textContent = '📋 Copiar';
+    repSection.appendChild(copyLabel);
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'manage-item';
+    copyBtn.innerHTML = '📥 Traer el equipo de otro día';
+    copyBtn.title = 'Poner en este día el equipo completo de otra fecha, o un equipo de la lista';
+    copyBtn.addEventListener('click', () => openCopyTeamForm(d));
+    repSection.appendChild(copyBtn);
+    const repBtn = document.createElement('button');
+    repBtn.className = 'manage-item';
+    repBtn.innerHTML = '📤 Replicar este día en un rango';
+    repBtn.title = 'Copiar las personas asignadas hoy a varios días consecutivos';
+    repBtn.addEventListener('click', () => openReplicateDayForm(d));
+    repSection.appendChild(repBtn);
+    block.appendChild(repSection);
 
     // --- Botón BORRAR DÍA (limpia equipos, reemplazos y marcadores del día) ---
     const delSection = document.createElement('div');
@@ -6610,6 +6852,24 @@ function generateMonth(opts = {}) {
 // Mira el mes anterior y el siguiente para las reglas que cruzan semanas.
 const VALIDATE_SEVERITY = { error: 0, warn: 1, info: 2 };
 
+// v84: todas las reglas que revisa el informe, en el orden en que se muestran.
+// `key` coincide con el nombre que usa validateMonth al registrar un problema.
+// `regular`: sólo aplica a meses que no son de feria. `postFeria`: sólo feb/ago.
+const VALIDATE_RULES = [
+  { key: 'Día sin turno', name: 'Todos los días tienen equipo', desc: 'Salvo la feria judicial. Los feriados también se cubren.' },
+  { key: 'Descanso post-viernes', name: 'Descanso post-viernes', desc: 'Quien trabaja un viernes no vuelve de lunes a viernes de la semana siguiente.' },
+  { key: 'Descanso post-finde', name: 'Descanso post-finde', desc: 'Quien hace sábado/domingo no trabaja el lunes y martes siguientes.' },
+  { key: 'Un bloque por semana', name: 'Un bloque por semana', desc: 'Cada equipo hace un solo bloque (Lun-Mar, Mié-Jue, Vie o finde) por semana.', regular: true },
+  { key: 'Bloques completos', name: 'Bloques completos', desc: 'Lun-Mar y Mié-Jue los hace el mismo equipo los dos días.', regular: true },
+  { key: 'Rotación de bloque', name: 'Rotación de bloque', desc: 'Un equipo no repite el mismo bloque dos semanas seguidas.', regular: true },
+  { key: 'Rotación de findes', name: 'Rotación de findes', desc: `Un equipo no repite finde hasta que pasen ${WEEKEND_RECENT_MIN_GAP} findes.`, regular: true },
+  { key: 'Gestión de materiales', name: 'Gestión de materiales', desc: 'Todos los findes tienen G. MAT. y se alternan ALVARO / MARTIN.', regular: true },
+  { key: 'Post-feria', name: 'Post-feria', desc: 'Quien hizo un finde completo en la feria no hace finde en febrero / agosto.', postFeria: true },
+  { key: 'Cupo excedido', name: 'Cupo por equipo', desc: 'Ningún equipo supera su cupo de días del mes.' },
+  { key: 'Cumpleaños', name: 'Cumpleaños', desc: 'Nadie trabaja el día de su cumpleaños.' },
+  { key: 'Ausencia', name: 'Ausencias', desc: 'Nadie está de turno en un día que figura ausente.' },
+];
+
 function validateMonth(y, m, opts = {}) {
   const cfg = loadGenConfig();
   const teams = cfg.teams || [];
@@ -6744,6 +7004,130 @@ function validateMonth(y, m, opts = {}) {
     }
   }
 
+  // === v84: reglas de estructura del turnero ===
+  const shortName = (i) => [teams[i].a, teams[i].b].filter(Boolean).join(' + ');
+  const mainTeam = (dd) => {
+    const main = (data[String(dd)] || [])[0];
+    return main ? teamIdxForSlotFlexible(main, teams) : -1;
+  };
+  const blockOf = (dow) => (dow === 1 || dow === 2) ? 'monTue'
+    : (dow === 3 || dow === 4) ? 'wedThu' : dow === 5 ? 'fri' : 'weekend';
+  const BLOCK_NAME = { monTue: 'Lun-Mar', wedThu: 'Mié-Jue', fri: 'Viernes', weekend: 'Sáb-Dom' };
+  const isFeriaMonth = (m === 1 || m === 7);
+
+  if (!isFeriaMonth) {
+    // R8: un equipo, un solo bloque por semana (Lun-Dom)
+    const weeks = {};
+    for (let d = 1; d <= dim; d++) {
+      const idx = mainTeam(d);
+      if (idx < 0) continue;
+      const dt = new Date(y, m - 1, d);
+      const wk = mondayOf(dt);
+      const blk = blockOf(dt.getDay());
+      if (!weeks[wk]) weeks[wk] = {};
+      if (!weeks[wk][idx]) weeks[wk][idx] = { blocks: new Set(), day: d };
+      weeks[wk][idx].blocks.add(blk);
+    }
+    Object.values(weeks).forEach(w => Object.keys(w).forEach(idx => {
+      const e = w[idx];
+      if (e.blocks.size > 1) {
+        add('error', 'Un bloque por semana', e.day,
+          `${shortName(idx)} hace ${[...e.blocks].map(b => BLOCK_NAME[b]).join(' y ')} en la misma semana`);
+      }
+    }));
+
+    // R9: bloques de 2 días con el mismo equipo (Lun-Mar y Mié-Jue)
+    for (let d = 1; d < dim; d++) {
+      const dow = new Date(y, m - 1, d).getDay();
+      if (dow !== 1 && dow !== 3) continue;
+      if (isSkipDay(y, m, d) || isSkipDay(y, m, d + 1)) continue;
+      const a = mainTeam(d), b = mainTeam(d + 1);
+      if (a >= 0 && b >= 0 && a !== b) {
+        add('warn', 'Bloques completos', d,
+          `${BLOCK_NAME[blockOf(dow)]} ${d}-${d + 1} partido entre ${shortName(a)} y ${shortName(b)}`);
+      }
+    }
+
+    // R10: rotación de bloque — mismo equipo, mismo bloque, dos semanas seguidas
+    const byBlock = {};
+    for (let d = 1; d <= dim; d++) {
+      const dt = new Date(y, m - 1, d);
+      const blk = blockOf(dt.getDay());
+      if (blk === 'weekend') continue;
+      const idx = mainTeam(d);
+      if (idx < 0) continue;
+      const wk = mondayOf(dt);
+      const prev = byBlock[blk + (wk - WEEK)];
+      if (prev === idx && !byBlock['_r' + blk + wk]) {
+        byBlock['_r' + blk + wk] = true;
+        add('warn', 'Rotación de bloque', d,
+          `${shortName(idx)} repite ${BLOCK_NAME[blk]} dos semanas seguidas`);
+      }
+      byBlock[blk + wk] = idx;
+    }
+
+    // R11: un equipo no repite finde hasta pasados 6 findes
+    const hist = rebuildHistoryFromMonths(y, m);
+    const seq = hist.recentWeekends.slice();
+    let lastGmat = hist.lastGmat;
+    for (let d = 1; d <= dim; d++) {
+      const dt = new Date(y, m - 1, d);
+      if (dt.getDay() !== 6) continue;
+      const idx = mainTeam(d);
+      if (idx >= 0) {
+        const last = seq.lastIndexOf(idx);
+        if (last >= 0 && seq.length - last <= WEEKEND_RECENT_MIN_GAP) {
+          add('warn', 'Rotación de findes', d,
+            `${shortName(idx)} repite finde el sáb ${d}: lo hizo hace ${seq.length - last} finde(s) y tienen que pasar ${WEEKEND_RECENT_MIN_GAP}`);
+        }
+        seq.push(idx);
+      }
+      // R12: gestión de materiales en el finde, alternando ALVARO / MARTIN
+      const sat = findGmatSlot(data[String(d)]);
+      if (!isSkipDay(y, m, d)) {
+        if (!sat) add('warn', 'Gestión de materiales', d, `El sáb ${d} no tiene G. MAT.`);
+        else if (lastGmat && sat.name === lastGmat) {
+          add('warn', 'Gestión de materiales', d, `${sat.name} repite G. MAT. dos findes seguidos (sáb ${d})`);
+        }
+      }
+      if (d + 1 <= dim && !isSkipDay(y, m, d + 1)) {
+        const sun = findGmatSlot(data[String(d + 1)]);
+        if (!sun) add('warn', 'Gestión de materiales', d + 1, `El dom ${d + 1} no tiene G. MAT.`);
+        else if (sat && sun.name !== sat.name) {
+          add('info', 'Gestión de materiales', d + 1, `El finde ${d}-${d + 1} tiene G. MAT. distinto cada día`);
+        }
+      }
+      if (sat) lastGmat = sat.name;
+    }
+    if (new Date(y, m - 1, 1).getDay() === 0 && !isSkipDay(y, m, 1) && !findGmatSlot(data['1'])) {
+      add('warn', 'Gestión de materiales', 1, 'El dom 1 no tiene G. MAT.');
+    }
+
+    // R13: post-feria — quien hizo un finde completo en la feria no hace finde
+    if (prevM === 1 || prevM === 7) {
+      const prevData = dataOf(prevY, prevM);
+      const pdim = new Date(prevY, prevM, 0).getDate();
+      const feriaTeams = new Set();
+      for (let d = 1; d <= pdim; d++) {
+        const dow = new Date(prevY, prevM - 1, d).getDay();
+        if (dow !== 0 && dow !== 6) continue;
+        const main = (prevData[String(d)] || [])[0];
+        if (!main || !main[0] || !main[1]) continue;
+        const ta = teams.findIndex(t => [t.a, t.b, t.c].includes(main[0]));
+        const tb = teams.findIndex(t => [t.a, t.b, t.c].includes(main[1]));
+        if (ta >= 0 && ta === tb) feriaTeams.add(ta);
+      }
+      for (let d = 1; d <= dim; d++) {
+        const dow = new Date(y, m - 1, d).getDay();
+        if (dow !== 6 && !(dow === 0 && d === 1)) continue;
+        const idx = mainTeam(d);
+        if (idx >= 0 && feriaTeams.has(idx)) {
+          add('warn', 'Post-feria', d, `${shortName(idx)} hizo un finde en la feria y vuelve a hacer finde el ${d}`);
+        }
+      }
+    }
+  }
+
   // === R7: reglas que el generador tuvo que aflojar ===
   (opts.relaxLog || []).forEach(entry => {
     add('info', 'Regla relajada', entry.days[0],
@@ -6754,7 +7138,7 @@ function validateMonth(y, m, opts = {}) {
     (VALIDATE_SEVERITY[a.severity] - VALIDATE_SEVERITY[b.severity]) || ((a.day || 0) - (b.day || 0)));
 
   return {
-    y, m, issues,
+    y, m, issues, isFeriaMonth: (m === 1 || m === 7), isPostFeria: (m === 2 || m === 8),
     errors: issues.filter(i => i.severity === 'error').length,
     warns: issues.filter(i => i.severity === 'warn').length,
     infos: issues.filter(i => i.severity === 'info').length,
@@ -6778,45 +7162,70 @@ function openValidateModal(report) {
   const list = document.getElementById('validate-list');
   const label = `${MES_NAMES[rep.m - 1]} ${rep.y}`;
 
-  if (rep.issues.length === 0) {
-    sub.textContent = `${label}: sin conflictos. Todas las reglas se cumplen.`;
-    list.innerHTML = '<div class="validate-empty">✅ Nada para revisar</div>';
-  } else {
-    const partes = [];
-    if (rep.errors) partes.push(`${rep.errors} conflicto${rep.errors > 1 ? 's' : ''}`);
-    if (rep.warns) partes.push(`${rep.warns} advertencia${rep.warns > 1 ? 's' : ''}`);
-    if (rep.infos) partes.push(`${rep.infos} nota${rep.infos > 1 ? 's' : ''}`);
-    sub.textContent = `${label}: ${partes.join(', ')}.`;
-    const icon = { error: '⛔', warn: '⚠️', info: 'ℹ️' };
-    list.innerHTML = rep.issues.map((it, i) => `
-      <div class="validate-item validate-${it.severity}" data-day="${it.day == null ? '' : it.day}" data-i="${i}">
+  const icon = { error: '⛔', warn: '⚠️', info: 'ℹ️' };
+  const itemHtml = (it) => `
+      <div class="validate-item validate-${it.severity}" data-day="${it.day == null ? '' : it.day}">
         <span class="validate-icon">${icon[it.severity]}</span>
-        <span class="validate-body">
-          <b>${escapeHtml(it.rule)}</b>
-          <small>${escapeHtml(it.text)}</small>
-        </span>
+        <span class="validate-body"><small>${escapeHtml(it.text)}</small></span>
         ${it.day != null ? '<span class="validate-go">ver ›</span>' : ''}
-      </div>`).join('');
+      </div>`;
 
-    // Tocar un ítem lleva al día señalado
-    list.querySelectorAll('.validate-item').forEach(el => {
-      const day = el.dataset.day;
-      if (!day) return;
-      el.classList.add('validate-clickable');
-      el.addEventListener('click', () => {
-        modal.classList.add('hidden');
-        state.year = rep.y; state.month = rep.m;
-        reloadCurrentMonth();
-        state.selectedDay = parseInt(day, 10);
-        state.view = 'month';
-        switchView('month');
-        renderDetail();
-        setTimeout(() => {
-          document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }, 50);
-      });
-    });
+  // v84: checklist con TODAS las reglas y si se cumplen o no en el mes.
+  let ok = 0, applicable = 0;
+  const rows = VALIDATE_RULES.map(rule => {
+    const na = (rule.regular && rep.isFeriaMonth) || (rule.postFeria && !rep.isPostFeria);
+    const its = rep.issues.filter(i => i.rule === rule.key);
+    let status, cls;
+    if (na) { status = '➖'; cls = 'na'; }
+    else {
+      applicable++;
+      if (its.some(i => i.severity === 'error')) { status = '⛔'; cls = 'error'; }
+      else if (its.some(i => i.severity === 'warn')) { status = '⚠️'; cls = 'warn'; }
+      else { status = '✅'; cls = 'ok'; ok++; }
+    }
+    const count = its.length > 0 ? `<span class="rule-count">${its.length}</span>` : '';
+    const head = `
+        <span class="rule-status">${status}</span>
+        <span class="rule-text"><b>${escapeHtml(rule.name)}</b><small>${na ? 'No aplica este mes' : escapeHtml(rule.desc)}</small></span>
+        ${count}`;
+    if (its.length === 0) return `<div class="rule-row rule-${cls}">${head}</div>`;
+    return `<details class="rule-row rule-${cls}" ${cls === 'error' ? 'open' : ''}>
+        <summary>${head}</summary>
+        <div class="rule-items">${its.map(itemHtml).join('')}</div>
+      </details>`;
+  });
+  const notes = rep.issues.filter(i => i.rule === 'Regla relajada');
+  if (notes.length > 0) {
+    rows.push(`<details class="rule-row rule-info">
+        <summary><span class="rule-status">ℹ️</span>
+        <span class="rule-text"><b>Reglas aflojadas al generar</b><small>Dónde el generador tuvo que ceder para no dejar días vacíos.</small></span>
+        <span class="rule-count">${notes.length}</span></summary>
+        <div class="rule-items">${notes.map(itemHtml).join('')}</div>
+      </details>`);
   }
+  sub.textContent = ok === applicable
+    ? `${label}: se cumplen las ${applicable} reglas. ✅`
+    : `${label}: se cumplen ${ok} de ${applicable} reglas. Tocá una regla para ver el detalle.`;
+  list.innerHTML = rows.join('');
+
+  // Tocar un ítem lleva al día señalado
+  list.querySelectorAll('.validate-item').forEach(el => {
+    const day = el.dataset.day;
+    if (!day) return;
+    el.classList.add('validate-clickable');
+    el.addEventListener('click', () => {
+      modal.classList.add('hidden');
+      state.year = rep.y; state.month = rep.m;
+      reloadCurrentMonth();
+      state.selectedDay = parseInt(day, 10);
+      state.view = 'month';
+      switchView('month');
+      renderDetail();
+      setTimeout(() => {
+        document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 50);
+    });
+  });
 
   modal.classList.remove('hidden');
   const close = () => modal.classList.add('hidden');
@@ -6999,6 +7408,12 @@ function wireUp() {
   // 4 botones de categoría: cada uno abre el menú mostrando sólo su sección
   document.querySelectorAll('.cat-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      // v84: Estadísticas es un botón directo, sin menú
+      if (btn.dataset.open === 'stats') {
+        menu.classList.add('hidden');
+        openStatsSettings();
+        return;
+      }
       const cat = btn.dataset.cat;
       // Ocultar todas las secciones del menú menos la elegida
       menu.querySelectorAll('.menu-section').forEach(s => {
@@ -7043,7 +7458,6 @@ function wireUp() {
       // v68: handler único para exportar imagen (openExportImage usa canvas puro,
       // sin dependencias externas).
       else if (a === 'stats') openStatsSettings();
-      else if (a === 'equity') { _statsScope = 'equity'; openStatsSettings(); }
       else if (a === 'validate') openValidateModal();
       else if (a === 'absences') openAbsencesModal();
       else if (a === 'gen-settings') openGenSettings();

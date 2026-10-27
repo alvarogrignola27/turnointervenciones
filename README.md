@@ -28,12 +28,13 @@ PWA (Progressive Web App) para gestionar y consultar los turnos de intervencione
 
 ## 🧭 Menú
 
-Los cuatro botones de abajo siguen el orden en que se arma un mes:
+Los botones de abajo siguen el orden en que se arma un mes:
 
 | Botón | Qué tiene |
 |---|---|
-| 🗓️ **Armar** | 1 · Equipos y cupos → 2 · Generar / Probar otra distribución → 3 · Revisar reglas / Estadísticas / Informe de equidad. Al final, Borrar mes. |
+| 🗓️ **Armar** | 1 · Equipos y cupos → 2 · Generar / Probar otra distribución → 3 · Revisar reglas. Al final, Borrar mes. |
 | 📌 **Fechas** | Lo que el generador tiene en cuenta: ausencias, cumpleaños, feriados nacionales y feria judicial. |
+| 📊 **Estadísticas** | Abre directo, en grande: tabla equipo × mes (días, findes, viernes o feriados), equidad, este mes, rango e histórico. |
 | 📤 **Compartir** | Imagen/PDF para WhatsApp, link de solo lectura y "Fijar como maestro en la nube". |
 | ⚙️ **Ajustes** | Sincronización, backup JSON, colores, rol del dispositivo y forzar actualización. |
 
@@ -249,6 +250,12 @@ Para repos privados, GitHub Pages cuesta plata. Alternativa gratis: Cloudflare P
 Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
+
+### v84
+- **📊 Estadísticas como botón propio** (ya no está dentro de Armar) y en pantalla grande. Nueva pestaña **🗂️ Por mes**: una tabla con una fila por equipo y una columna por mes, eligiendo la métrica (días, findes, viernes o feriados), con total, promedio, días sin equipo y los meses con cupo alto marcados. Los meses de feria se ven en gris y no suman.
+- **🔍 Revisar reglas como checklist**: muestra todas las reglas del turnero con ✅ / ⚠️ / ⛔ y cuántos casos tiene cada una; tocando la regla se ve el detalle y desde ahí se va al día. Se agregaron controles nuevos: un bloque por semana, bloques completos (Lun-Mar y Mié-Jue con el mismo equipo), rotación de bloque, rotación de findes, gestión de materiales en todos los findes (y alternada) y post-feria.
+- **📥 Traer el equipo de otro día**: en *Gestionar equipos* de cualquier día, copia el equipo completo de otra fecha (con su 3er integrante) o uno de la lista de equipos. Mantiene la gestión de materiales del día y se puede deshacer.
+- **📤 Replicar este día en un rango** ahora está disponible en cualquier día (antes sólo en feria). Sólo marca feria judicial si el día de origen es de feria.
 
 ### v83
 - **⚖️ Cupos automáticos, activados por defecto**: ya no hace falta balancear antes de generar (se fue la pregunta "¿YA BALANCEASTE?"). Cada mes los días se reparten parejo y el día de más rota entre equipos, así no le tocan 5 siempre a los mismos. Antes la rotación venía apagada y "Auto-balancear" le daba el 5 siempre a los primeros de la lista.

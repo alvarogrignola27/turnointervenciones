@@ -1107,6 +1107,31 @@ body.role-viewer { padding-bottom: 44px; }
   line-height: 1.5;
 }
 
+/* v84: estadísticas en grande + tabla por mes */
+.modal-card.stats-card-wide { max-width: 1100px; width: calc(100% - 24px); height: calc(100vh - 40px); }
+.stats-card-wide .stats-content { max-height: none; flex: 1; }
+.stats-card-wide .scope-btn { font-size: 12px; }
+.stats-metric-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.stats-metric-chip { border: 1px solid #d1d1d6; background: #fff; border-radius: 16px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.stats-metric-chip.active { background: #1f3a68; border-color: #1f3a68; color: #fff; }
+.stats-table-wrap { overflow-x: auto; border: 1px solid #e5e5ea; border-radius: 10px; }
+.stats-month-table { border-collapse: collapse; font-size: 13px; width: 100%; }
+.stats-month-table th, .stats-month-table td { padding: 7px 8px; text-align: center; border-bottom: 1px solid #f0f0f4; white-space: nowrap; }
+.stats-month-table th { font-size: 11px; color: #6c6c70; background: #f7f7f9; font-weight: 700; }
+.stats-month-table td { font-weight: 600; }
+.stats-month-table .sticky-col { position: sticky; left: 0; z-index: 1; text-align: left; background: #f7f7f9; }
+.stats-month-table td.team-cell { font-size: 12px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+.stats-month-table .feria-col { background: #f2f2f4; color: #a1a1a6; }
+.stats-month-table .current-col { box-shadow: inset 0 0 0 2px #1f3a68; }
+.stats-month-table .high-cell { background: #ffedd5; color: #9a3412; }
+.stats-month-table .empty-cell { color: #c7c7cc; }
+.stats-month-table .total-col { background: #f7f7f9; font-weight: 700; }
+.stats-month-table .empty-row td { font-size: 12px; color: #6c6c70; }
+@media (min-width: 900px) {
+  .stats-month-table { font-size: 15px; }
+  .stats-month-table th, .stats-month-table td { padding: 9px 10px; }
+}
+
 /* v83: informe de equidad */
 .equity-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .equity-table th { font-size: 10px; color: #6c6c70; font-weight: 700; text-align: center; padding: 4px 2px; }
@@ -2015,7 +2040,34 @@ body.role-viewer { padding-bottom: 44px; }
   .menu { left: auto; right: 24px; bottom: 90px; max-width: 300px; }
 }
 
+/* v84: copiar equipo a un día */
+.copy-team-label { font-size: 12px; font-weight: 700; color: #3a3a3c; margin-bottom: 6px; }
+.copy-team-row { display: flex; gap: 8px; align-items: center; }
+.copy-team-row input { flex: 1; margin: 0; }
+.copy-team-preview { font-size: 12px; color: #6c6c70; margin-top: 6px; }
+.copy-team-list { display: flex; flex-direction: column; gap: 6px; }
+.copy-team-btn { border: none; border-radius: 8px; padding: 10px 12px; font-weight: 600; font-size: 13px; text-align: left; cursor: pointer; }
+.copy-team-btn:active { transform: scale(0.98); }
+.copy-team-hint { font-size: 11px; color: #8e8e93; margin-top: 10px; }
+
 /* ---------- Informe de reglas (validador) ---------- */
+/* v84: checklist de reglas */
+.rule-row { border-radius: 10px; margin-bottom: 6px; background: #f7f7f9; border-left: 4px solid #d1d1d6; }
+.rule-row > summary { list-style: none; cursor: pointer; }
+.rule-row > summary::-webkit-details-marker { display: none; }
+.rule-row > summary, div.rule-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; }
+.rule-status { font-size: 16px; flex-shrink: 0; }
+.rule-text { flex: 1; display: flex; flex-direction: column; font-size: 13px; color: #1c1c1e; }
+.rule-text small { font-size: 11px; color: #6c6c70; line-height: 1.35; margin-top: 1px; }
+.rule-count { background: #1c1c1e; color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 1px 7px; }
+.rule-ok { border-left-color: #16a34a; }
+.rule-warn { border-left-color: #d97706; background: #fffbeb; }
+.rule-error { border-left-color: #dc2626; background: #fef2f2; }
+.rule-info { border-left-color: #2563eb; background: #eff6ff; }
+.rule-na { opacity: 0.55; }
+.rule-items { padding: 0 8px 8px 8px; }
+.rule-items .validate-item { background: #fff; }
+
 .validate-list {
   max-height: 55vh;
   overflow-y: auto;
@@ -2146,3 +2198,4 @@ body.viewer-link .detail { display: none !important; }
   border-radius: 4px;
 }
 .share-details .modal-btn { margin-top: 8px; }
+.copy-team-row .modal-btn { flex: 0 0 auto; padding-left: 18px; padding-right: 18px; }
