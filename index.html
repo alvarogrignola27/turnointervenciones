@@ -16,7 +16,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=82">
+  <link rel="stylesheet" href="styles.css?v=83">
   <!-- Firebase SDK (compat) - se conecta solo si está configurado -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -106,7 +106,7 @@
     <!-- Footer compacto que SOLO se muestra en modo viewer (cuando los 4 botones de arriba están ocultos).
          Permite ver la versión y forzar la actualización. -->
     <div class="viewer-footer" id="viewer-footer">
-      <span class="viewer-footer-version">Versión <span id="viewer-version">82</span></span>
+      <span class="viewer-footer-version">Versión <span id="viewer-version">83</span></span>
       <button class="viewer-footer-btn" id="viewer-force-update">🔄 Buscar actualización</button>
     </div>
 
@@ -120,6 +120,7 @@
         <div class="menu-section-title">3 · Revisar</div>
         <button data-action="validate">🔍 Revisar reglas del mes</button>
         <button data-action="stats">📊 Estadísticas</button>
+        <button data-action="equity">⚖️ Informe de equidad (feriados, findes, cupos)</button>
         <div class="menu-sep"></div>
         <button data-action="clear">🗑️ Borrar mes actual</button>
       </div>
@@ -162,7 +163,7 @@
       <div class="menu-version">
         <div class="version-badge ok" id="version-badge">
           <span class="version-dot">●</span>
-          <span class="version-label">Versión <span id="app-version">82</span> · actualizada</span>
+          <span class="version-label">Versión <span id="app-version">83</span> · actualizada</span>
         </div>
         <button class="version-update-btn hidden" id="version-update-btn">
           🔴 Hay una versión nueva — Tocar para actualizar
@@ -179,16 +180,16 @@
           <h2 id="gen-modal-title">Equipos del generador</h2>
           <button class="modal-close" id="gen-modal-close" aria-label="Cerrar">×</button>
         </div>
-        <p class="modal-sub">Definí las parejas (o tríos) de equipos y el máximo de días por mes que va a hacer cada uno. <b>Recomendado: máx 5 y mín 3 por equipo</b> (con 7 equipos suman 28-35 días = un mes). El generador balancea y rota automáticamente quiénes tienen cupo 5 cada mes.</p>
-        <div id="gen-day-counter" class="gen-day-counter"></div>
-        <button id="gen-auto-balance" class="modal-btn gen-balance-btn">⚖️ Auto-balancear cupos para este mes (4-5 por equipo)</button>
+        <p class="modal-sub">Definí las parejas (o tríos) de equipos. Los cupos (días por mes de cada equipo) se calculan solos.</p>
         <label class="gen-auto-rotate-row">
           <input type="checkbox" id="gen-auto-rotate-toggle">
           <span>
-            <b>🔄 Rotación automática de cupos altos</b><br>
-            <small>Cada mes, los equipos con menos días totales reciben los cupos más altos. Se balancea solo a la larga.</small>
+            <b>⚖️ Cupos automáticos (recomendado)</b><br>
+            <small>Reparte los días del mes en partes iguales. Los días que sobran (el "cupo de 5") rotan: quien lo tuvo vuelve a tenerlo recién cuando les tocó a todos los demás.</small>
           </span>
         </label>
+        <div id="gen-day-counter" class="gen-day-counter"></div>
+        <button id="gen-auto-balance" class="modal-btn gen-balance-btn">⚖️ Repartir cupos parejo para este mes (4-5 por equipo)</button>
         <div id="gen-teams-list" class="gen-teams-list"></div>
         <button id="gen-add-team" class="gen-add-team">+ Agregar equipo</button>
         <div class="modal-footer">
@@ -278,6 +279,7 @@
           <button class="scope-btn active" data-stats-scope="month">📅 Este mes</button>
           <button class="scope-btn" data-stats-scope="range">📆 Rango</button>
           <button class="scope-btn" data-stats-scope="total">📚 Histórico total</button>
+          <button class="scope-btn" data-stats-scope="equity">⚖️ Equidad</button>
         </div>
         <div id="stats-range-pickers" class="stats-range-pickers hidden">
           <label>Desde
@@ -403,8 +405,8 @@
     </div>
   </div>
 
-  <script src="data.js?v=82"></script>
-  <script src="app.js?v=82"></script>
+  <script src="data.js?v=83"></script>
+  <script src="app.js?v=83"></script>
   <script>
     // === Detección de actualizaciones del Service Worker ===
     // Mantiene una referencia al SW "esperando" (instalado pero no activo todavía).

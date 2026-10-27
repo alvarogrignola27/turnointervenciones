@@ -1107,6 +1107,19 @@ body.role-viewer { padding-bottom: 44px; }
   line-height: 1.5;
 }
 
+/* v83: informe de equidad */
+.equity-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.equity-table th { font-size: 10px; color: #6c6c70; font-weight: 700; text-align: center; padding: 4px 2px; }
+.equity-table th:first-child { text-align: left; }
+.equity-table td { text-align: center; padding: 5px 2px; border-top: 1px solid #f0f0f4; font-weight: 600; }
+.equity-table td.equity-team { text-align: left; font-size: 11px; border-radius: 6px; padding: 4px 8px; white-space: nowrap; }
+.equity-table td.equity-hi { color: #b42318; background: #fef3f2; }
+.equity-table td.equity-lo { color: #067647; background: #ecfdf3; }
+.equity-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.equity-chip { font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 6px; }
+.equity-list { font-size: 12px; color: #1c1c1e; line-height: 1.7; }
+.equity-missing { color: #b42318; }
+
 /* ========== Modal (Generator settings) ========== */
 .modal { position: fixed; inset: 0; z-index: 200; }
 .modal-backdrop {

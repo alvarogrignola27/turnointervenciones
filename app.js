@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '82';
+const APP_VERSION = '83';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -360,9 +360,27 @@ function markRangeAsFeriaJud() {
   showToast(`Días ${start} a ${end} marcados como feria judicial`);
 }
 
-// Devuelve true si el día NO debe asignarse un equipo (feriado o feria judicial)
+// Devuelve true si el día NO debe asignarse un equipo.
+// v83: sólo la feria judicial. Los feriados SÍ se trabajan (hay equipo de turno),
+// y el generador los reparte de forma pareja entre equipos (ver isHoliday).
 function isSkipDay(y, m, d) {
-  return isFeriado(y, m, d) || isFeriaJud(y, m, d);
+  return isFeriaJud(y, m, d);
+}
+
+// ¿Es feriado? Marcado a mano o feriado nacional del calendario. Se usa para
+// repartir los feriados entre equipos y para el informe de equidad, así cuentan
+// también los meses viejos donde nadie marcó el feriado.
+const _nationalHolidayCache = {};
+function nationalHolidayName(y, m, d) {
+  if (!_nationalHolidayCache[y]) {
+    const map = {};
+    getArgentinaHolidays(y).forEach(h => { map[`${h.month}-${h.day}`] = h.name; });
+    _nationalHolidayCache[y] = map;
+  }
+  return _nationalHolidayCache[y][`${m}-${d}`] || null;
+}
+function isHoliday(y, m, d) {
+  return isFeriado(y, m, d) || nationalHolidayName(y, m, d) !== null;
 }
 
 // ---------- CUMPLEAÑOS (por persona) ----------
@@ -1940,7 +1958,7 @@ function addAbsenceFromForm() {
 }
 
 // ---------- Modal de Estadísticas ----------
-let _statsScope = 'month'; // 'month' | 'range' | 'total'
+let _statsScope = 'month'; // 'month' | 'range' | 'total' | 'equity'
 
 function openStatsSettings() {
   document.getElementById('stats-modal').classList.remove('hidden');
@@ -1956,8 +1974,10 @@ function populateStatsRangePickers() {
   const toY = document.getElementById('stats-range-to-y');
   if (!fromM || !fromY || !toM || !toY) return;
   // Defaults: si no hay rango seleccionado, "este año" (enero-diciembre del año actual)
+  // v83: por defecto, los últimos 12 meses (hasta el mes en pantalla).
   if (_statsRangeFromY === null) {
-    _statsRangeFromY = state.year; _statsRangeFromM = 1;
+    _statsRangeFromY = state.month === 12 ? state.year : state.year - 1;
+    _statsRangeFromM = state.month === 12 ? 1 : state.month + 1;
     _statsRangeToY = state.year; _statsRangeToM = state.month;
   }
   // Meses
@@ -2096,6 +2116,158 @@ function countDaysByPersonInRange(fromY, fromM, toY, toM) {
 // Estado del rango seleccionado (persistido por sesión)
 let _statsRangeFromY = null, _statsRangeFromM = null;
 let _statsRangeToY = null, _statsRangeToM = null;
+
+// ---------- Informe de equidad (v83) ----------
+// Métricas por equipo en un rango de meses, para ver si la carga está pareja:
+// días, findes, viernes, feriados y meses con cupo alto. Enero y julio (feria)
+// no cuentan, igual que en el resto de las estadísticas.
+function computeEquity(fromY, fromM, toY, toM) {
+  const teams = loadGenConfig().teams || [];
+  const rows = teams.map(t => ({ team: t, days: 0, weekend: 0, fri: 0, feriados: 0, highMonths: 0 }));
+  const feriadoList = [];
+  let months = 0;
+  let y = fromY, m = fromM;
+  while (y < toY || (y === toY && m <= toM)) {
+    if (m !== 1 && m !== 7) {
+      months++;
+      const data = (y === state.year && m === state.month) ? state.data : loadMonthData(y, m);
+      const dim = new Date(y, m, 0).getDate();
+      const monthCount = teams.map(() => 0);
+      for (let d = 1; d <= dim; d++) {
+        if (isFeriaJud(y, m, d)) continue;
+        const main = (data[String(d)] || [])[0];
+        const idx = main ? teamIdxForSlotFlexible(main, teams) : -1;
+        const holiday = isHoliday(y, m, d);
+        if (holiday) {
+          feriadoList.push({ y, m, d, name: nationalHolidayName(y, m, d) || 'Feriado', idx,
+            who: main ? main.filter(Boolean).join(' + ') : '' });
+        }
+        if (idx < 0) continue;
+        const dow = new Date(y, m - 1, d).getDay();
+        const r = rows[idx];
+        r.days++; monthCount[idx]++;
+        if (dow === 0 || dow === 6) r.weekend++;
+        if (dow === 5) r.fri++;
+        if (holiday) r.feriados++;
+      }
+      const evenShare = Math.floor(dim / Math.max(1, teams.length));
+      monthCount.forEach((c, i) => { if (c > evenShare) rows[i].highMonths++; });
+    }
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return { teams, rows, feriadoList, months };
+}
+
+function renderEquityReport(content, fromY, fromM, toY, toM) {
+  const { teams, rows, feriadoList, months } = computeEquity(fromY, fromM, toY, toM);
+  const el = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  };
+  content.appendChild(el('div', 'stats-intro',
+    `${MES_NAMES[fromM-1]} ${fromY} – ${MES_NAMES[toM-1]} ${toY} · ${months} mes(es) sin contar la feria. ` +
+    `En rojo el que más tiene y en verde el que menos, cuando la diferencia es de 2 o más.`));
+  if (teams.length === 0) return;
+
+  // --- Tabla por equipo ---
+  const cols = [
+    { key: 'days', label: 'Días' },
+    { key: 'weekend', label: 'Finde' },
+    { key: 'fri', label: 'Vie' },
+    { key: 'feriados', label: 'Feriad.' },
+    { key: 'highMonths', label: 'Meses c/5' },
+  ];
+  const sec = el('div', 'stats-section');
+  sec.appendChild(el('h3', null, '⚖️ Carga por equipo'));
+  const table = el('table', 'equity-table');
+  const head = el('tr');
+  head.appendChild(el('th', null, 'Equipo'));
+  cols.forEach(c => head.appendChild(el('th', null, c.label)));
+  table.appendChild(head);
+  const extremes = {};
+  cols.forEach(c => {
+    const vals = rows.map(r => r[c.key]);
+    extremes[c.key] = { hi: Math.max(...vals), lo: Math.min(...vals) };
+  });
+  rows.forEach(r => {
+    const tr = el('tr');
+    const name = el('td', 'equity-team', shortTeamName(r.team));
+    name.style.background = colorFor(r.team.a);
+    name.style.color = textColorFor(r.team.a);
+    name.title = [r.team.a, r.team.b, r.team.c].filter(Boolean).join(' + ');
+    tr.appendChild(name);
+    cols.forEach(c => {
+      const td = el('td', null, String(r[c.key]));
+      const ex = extremes[c.key];
+      if (ex.hi - ex.lo >= 2) {
+        if (r[c.key] === ex.hi) td.classList.add('equity-hi');
+        else if (r[c.key] === ex.lo) td.classList.add('equity-lo');
+      }
+      tr.appendChild(td);
+    });
+    table.appendChild(tr);
+  });
+  sec.appendChild(table);
+  content.appendChild(sec);
+
+  // --- Prioridad para feriados ---
+  const order = rows.map((r, i) => ({ r, i }))
+    .sort((a, b) => a.r.feriados - b.r.feriados || a.r.days - b.r.days || a.i - b.i);
+  const prio = el('div', 'stats-section');
+  prio.appendChild(el('h3', null, '🎯 Próximos feriados: a quién le corresponde'));
+  prio.appendChild(el('div', 'stats-intro',
+    'Orden de prioridad: menos feriados hechos en el período, primero. El generador usa el mismo criterio (con todo el historial cargado) cuando el feriado cae entre semana; los findes siguen la rotación de findes.'));
+  const chips = el('div', 'equity-chips');
+  order.forEach(({ r }, pos) => {
+    const chip = el('span', 'equity-chip', `${pos + 1}. ${shortTeamName(r.team)} (${r.feriados})`);
+    chip.style.background = colorFor(r.team.a);
+    chip.style.color = textColorFor(r.team.a);
+    chips.appendChild(chip);
+  });
+  prio.appendChild(chips);
+
+  // Próximos feriados nacionales (desde hoy)
+  const upcoming = [];
+  const todayTs = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  [today.getFullYear(), today.getFullYear() + 1].forEach(yy => {
+    getArgentinaHolidays(yy).forEach(h => {
+      const dt = new Date(yy, h.month - 1, h.day);
+      if (dt.getTime() >= todayTs && h.month !== 1 && h.month !== 7) upcoming.push({ dt, name: h.name });
+    });
+  });
+  upcoming.sort((a, b) => a.dt - b.dt);
+  if (upcoming.length > 0) {
+    const ul = el('div', 'equity-list');
+    upcoming.slice(0, 6).forEach(u => {
+      const yy = u.dt.getFullYear(), mm = u.dt.getMonth() + 1, dd = u.dt.getDate();
+      const main = (getDayDataAny(yy, mm, dd) || [])[0];
+      const who = main ? main.filter(Boolean).join(' + ') : 'sin generar';
+      ul.appendChild(el('div', null,
+        `${DAY_NAMES_SHORT[u.dt.getDay()]} ${dd}/${mm}/${yy} · ${u.name} — ${who}`));
+    });
+    prio.appendChild(ul);
+  }
+  content.appendChild(prio);
+
+  // --- Detalle de feriados del período ---
+  const det = el('div', 'stats-section');
+  det.appendChild(el('h3', null, `🇦🇷 Feriados del período (${feriadoList.length})`));
+  if (feriadoList.length === 0) {
+    det.appendChild(el('div', 'stats-intro', 'No hay feriados en el período.'));
+  } else {
+    const ul = el('div', 'equity-list');
+    feriadoList.forEach(f => {
+      const dow = DAY_NAMES_SHORT[new Date(f.y, f.m - 1, f.d).getDay()];
+      ul.appendChild(el('div', f.idx < 0 ? 'equity-missing' : null,
+        `${dow} ${f.d}/${f.m}/${f.y} · ${f.name} — ${f.who || 'sin equipo'}`));
+    });
+    det.appendChild(ul);
+  }
+  content.appendChild(det);
+}
+
 function renderStats() {
   const content = document.getElementById('stats-content');
   content.innerHTML = '';
@@ -2106,7 +2278,17 @@ function renderStats() {
   });
   // Mostrar pickers de rango sólo en scope 'range'
   const pickers = document.getElementById('stats-range-pickers');
-  if (pickers) pickers.classList.toggle('hidden', _statsScope !== 'range');
+  if (pickers) pickers.classList.toggle('hidden', _statsScope !== 'range' && _statsScope !== 'equity');
+
+  if (_statsScope === 'equity') {
+    let fromY = _statsRangeFromY, fromM = _statsRangeFromM;
+    let toY = _statsRangeToY, toM = _statsRangeToM;
+    if (fromY > toY || (fromY === toY && fromM > toM)) {
+      [fromY, toY] = [toY, fromY]; [fromM, toM] = [toM, fromM];
+    }
+    renderEquityReport(content, fromY, fromM, toY, toM);
+    return;
+  }
 
   if (_statsScope === 'range') {
     // Normalizar rango (asegurar que from <= to)
@@ -4757,10 +4939,32 @@ function updateGenDayCounter() {
   const cfg = loadGenConfig();
   const counter = document.getElementById('gen-day-counter');
   if (!counter) return;
-  const totalMax = cfg.teams.reduce((sum, t) => sum + (t.maxDays || 0), 0);
   const daysInMonth = new Date(state.year, state.month, 0).getDate();
   const monthName = MES_NAMES[state.month - 1];
+  const btn = document.getElementById('gen-auto-balance');
 
+  // v83: con cupos automáticos se muestra cuánto le toca a cada uno este mes y
+  // quiénes tienen el día de más. Mismo cálculo que usa el generador.
+  if (loadAutoRotate() && cfg.teams.length > 0) {
+    if (btn) btn.classList.add('hidden');
+    const caps = capsForMonth(cfg.teams, state.year, state.month);
+    const total = caps.reduce((a, b) => a + b, 0);
+    const hi = Math.max(...caps), lo = Math.min(...caps);
+    counter.className = 'gen-day-counter green';
+    let msg = `✓ Cupos automáticos para ${monthName}: <b>${total}</b> días a cubrir`;
+    if (total !== daysInMonth) msg += ` (${daysInMonth - total} de feria)`;
+    if (hi !== lo) {
+      const highTeams = cfg.teams.filter((_, i) => caps[i] === hi).map(shortTeamName);
+      msg += `<br><small>🔄 Con ${hi} días este mes: <b>${highTeams.join(', ')}</b>. El resto, ${lo}. El mes que viene rota.</small>`;
+    } else {
+      msg += `<br><small>Todos los equipos con ${hi} días.</small>`;
+    }
+    counter.innerHTML = msg;
+    return;
+  }
+  if (btn) btn.classList.remove('hidden');
+
+  const totalMax = cfg.teams.reduce((sum, t) => sum + (t.maxDays || 0), 0);
   let baseMsg;
   if (totalMax === daysInMonth) {
     counter.className = 'gen-day-counter green';
@@ -4771,26 +4975,6 @@ function updateGenDayCounter() {
   } else {
     counter.className = 'gen-day-counter yellow';
     baseMsg = `Total cupos: <b>${totalMax}</b> &gt; ${daysInMonth} días de ${monthName} — sobran ${totalMax - daysInMonth} día(s)`;
-  }
-
-  // Si la rotación automática está activa, mostrar preview de quién tendrá cupo alto este mes
-  if (loadAutoRotate() && cfg.teams.length > 0) {
-    // v82: mismo historial que usa el generador. Antes se leía el guardado, que
-    // no registraba el último mes con cupo alto, así que la vista previa podía
-    // anunciar equipos distintos a los que después generaba.
-    const teamHistory = rebuildHistoryFromMonths(state.year, state.month).teamHistory;
-    const teamKeys = cfg.teams.map(t => teamKey(t));
-    const effective = computeRotatedMaxes(cfg.teams, teamHistory, teamKeys);
-    const userMaxes = cfg.teams.map(t => t.maxDays || 0);
-    const maxVal = Math.max(...userMaxes);
-    const minVal = Math.min(...userMaxes);
-    if (maxVal !== minVal) {
-      const highTeams = cfg.teams
-        .map((t, i) => ({ name: shortTeamName(t), maxThis: effective[i] }))
-        .filter(x => x.maxThis === maxVal)
-        .map(x => x.name);
-      baseMsg += `<br><small>🔄 Este mes con cupo alto (${maxVal}): <b>${highTeams.join(', ')}</b></small>`;
-    }
   }
 
   counter.innerHTML = baseMsg;
@@ -4813,6 +4997,8 @@ function renderGenSettings() {
 
   // Contador inicial
   updateGenDayCounter();
+  // v83: con cupos automáticos, el cupo de cada equipo es el calculado (sólo lectura)
+  const autoCaps = loadAutoRotate() ? capsForMonth(cfg.teams, state.year, state.month) : null;
 
   cfg.teams.forEach((team, idx) => {
     const row = document.createElement('div');
@@ -4898,7 +5084,11 @@ function renderGenSettings() {
     maxInp.type = 'number';
     maxInp.className = 'max-days';
     maxInp.min = '1'; maxInp.max = '31';
-    maxInp.value = team.maxDays || 4;
+    maxInp.value = autoCaps ? autoCaps[idx] : (team.maxDays || 4);
+    if (autoCaps) {
+      maxInp.disabled = true;
+      maxInp.title = 'Calculado automáticamente para este mes';
+    }
     // v64: rango recomendado 3-5 (max 5, mín 3 en casos excepcionales)
     maxInp.title = 'Cupo mensual del equipo (recomendado: 3 a 5)';
     // Aplicar clase visual si está fuera del rango recomendado
@@ -4921,7 +5111,7 @@ function renderGenSettings() {
     });
     const lbl = document.createElement('span');
     lbl.className = 'max-days-label';
-    lbl.textContent = 'máx/mes';
+    lbl.textContent = autoCaps ? 'auto' : 'máx/mes';
     maxWrap.appendChild(maxInp);
     maxWrap.appendChild(lbl);
 
@@ -5341,6 +5531,15 @@ function rebuildHistoryFromMonths(beforeY, beforeM) {
       // === Para counts de días y lastHighMonth: solo meses NO-feria ===
       if (isFeriaMonth) continue;
       const slot = data[String(d)] && data[String(d)][0];
+      // v83: feriados trabajados por equipo (para repartirlos parejo).
+      if (slot && isHoliday(y, m, d)) {
+        const fIdx = teamIdxForSlotFlexible(slot, teams);
+        if (fIdx >= 0) {
+          const fk = teamKeys[fIdx];
+          if (!teamHistory[fk]) teamHistory[fk] = { totalDays: 0, lastHighMonth: 0 };
+          teamHistory[fk].feriados = (teamHistory[fk].feriados || 0) + 1;
+        }
+      }
       if (!slot || !slot[0] || !slot[1]) continue;
       const teamIdx = findTeamIdxByNames(slot[0], slot[1]);
       if (teamIdx < 0) continue;
@@ -5352,8 +5551,11 @@ function rebuildHistoryFromMonths(beforeY, beforeM) {
     // v66: tras contar todo el mes (si es regular), ver qué equipos hicieron 5+ días.
     if (!isFeriaMonth) {
       const monthIdx = y * 12 + m;
+      // v83: "cupo alto" = más días que el reparto parejo del mes (con 7 equipos
+      // y 30-31 días, 5 o más). Antes era >= 5 fijo.
+      const evenShare = Math.floor(dim / Math.max(1, teams.length));
       Object.keys(monthCountByTeam).forEach(k => {
-        if (monthCountByTeam[k] >= 5) {
+        if (monthCountByTeam[k] > evenShare) {
           if (!teamHistory[k]) teamHistory[k] = { totalDays: 0, lastHighMonth: 0 };
           teamHistory[k].lastHighMonth = monthIdx;
         }
@@ -5382,14 +5584,14 @@ function rebuildHistoryFromMonths(beforeY, beforeM) {
 }
 
 // ---------- Rotación automática de cupos altos entre meses ----------
+// v83: activado por defecto. Sólo queda apagado si alguien lo apagó a mano ('0').
 function loadAutoRotate() {
-  return localStorage.getItem(GEN_AUTO_ROTATE_KEY) === '1';
+  return lsGet(GEN_AUTO_ROTATE_KEY) !== '0';
 }
 function saveAutoRotate(on) {
   if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
 
-  if (on) localStorage.setItem(GEN_AUTO_ROTATE_KEY, '1');
-  else localStorage.removeItem(GEN_AUTO_ROTATE_KEY);
+  localStorage.setItem(GEN_AUTO_ROTATE_KEY, on ? '1' : '0');
   scheduleCloudPush();
 }
 
@@ -5402,10 +5604,10 @@ function saveAutoRotate(on) {
 //   tenido su turno de hacer 5. Garantiza máxima rotación entre meses.
 // - Tiebreakers: en empate de lastHighMonth, los menos usados totales primero;
 //   en empate de eso, índice ascendente (estable, determinista).
-function computeRotatedMaxes(teams, teamHistory, teamKeys) {
-  const userMaxes = teams.map(t => t.maxDays || 0);
+// v83: `template` opcional. Si no se pasa, se usan los cupos de la configuración.
+function computeRotatedMaxes(teams, teamHistory, teamKeys, template) {
   // Template ordenado descendente (e.g., [5, 5, 5, 4, 4, 4, 4])
-  const template = [...userMaxes].sort((a, b) => b - a);
+  template = [...(template || teams.map(t => t.maxDays || 0))].sort((a, b) => b - a);
 
   // Para cada equipo: (lastHighMonth, totalDays, idx)
   const sortKey = teams.map((_, i) => {
@@ -5430,6 +5632,24 @@ function computeRotatedMaxes(teams, teamHistory, teamKeys) {
     result[entry.i] = template[position];
   });
   return result;
+}
+
+// v83: cupos automáticos. Reparte los días a cubrir del mes (todos menos la feria
+// judicial) en partes iguales; los que sobran son el "cupo alto" (+1 día) y rotan
+// con computeRotatedMaxes: quien tuvo cupo alto vuelve a tenerlo recién cuando
+// les tocó a los demás. Así nunca le tocan 5 días siempre a los mismos equipos.
+function autoCapsTemplate(n, y, m) {
+  const dim = new Date(y, m, 0).getDate();
+  let work = 0;
+  for (let d = 1; d <= dim; d++) if (!isSkipDay(y, m, d)) work++;
+  const base = Math.floor(work / n), extra = work % n;
+  return Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0));
+}
+// Cupo de cada equipo para el mes y/m: automático (default) o el de la configuración.
+function capsForMonth(teams, y, m, teamHistory) {
+  if (!loadAutoRotate()) return teams.map(t => t.maxDays || 0);
+  const hist = teamHistory || rebuildHistoryFromMonths(y, m).teamHistory;
+  return computeRotatedMaxes(teams, hist, teams.map(teamKey), autoCapsTemplate(teams.length, y, m));
 }
 
 // ---------- Feriados nacionales de Argentina ----------
@@ -5555,7 +5775,8 @@ function generateMonth(opts = {}) {
   // v65: pregunta de salvaguarda — confirmar que se balancearon los cupos antes
   // de generar. Se saltea en regeneraciones (shuffleOffset > 0) y cuando el caller
   // explícitamente pasa skipBalanceConfirm: true (por ejemplo flujos internos).
-  if (!shuffleOffset && !opts.skipBalanceConfirm) {
+  // v83: con cupos automáticos no hace falta preguntar: se balancean solos.
+  if (!shuffleOffset && !opts.skipBalanceConfirm && !loadAutoRotate()) {
     const monthName = MES_NAMES[m - 1];
     const daysInMonth = new Date(y, m, 0).getDate();
     const totalMax = teams.reduce((s, t) => s + (t.maxDays || 0), 0);
@@ -5690,10 +5911,10 @@ function generateMonth(opts = {}) {
 
   // Si la rotación automática está activa, recalcular los maxDays para este mes
   // (los equipos con menos historial reciben los cupos más altos)
-  const autoRotateOn = loadAutoRotate();
-  const effectiveMaxes = autoRotateOn
-    ? computeRotatedMaxes(teams, teamHistory, teamKeys)
-    : teams.map(t => t.maxDays || 0);
+  const effectiveMaxes = capsForMonth(teams, y, m, teamHistory);
+  // v83: feriados ya trabajados por cada equipo (historial + lo asignado este mes).
+  const feriadosHist = teams.map((_, i) => teamHistory[teamKeys[i]]?.feriados || 0);
+  const feriadosNow = teams.map(() => 0);
 
   // Helper: buscar índice del equipo que coincide con una dupla [a, b].
   // v77: antes exigía coincidencia EXACTA del par, así que cualquier día editado
@@ -5808,8 +6029,11 @@ function generateMonth(opts = {}) {
 
   // Score: equipos con menos días este mes Y menos días históricos son preferidos.
   // Peso fuerte al mes actual, suave al historial.
-  function effectiveScore(idx) {
-    return usage[idx] * 10 + histDays[idx];
+  // v83: si el slot cae en feriado, se suma cuántos feriados hizo el equipo, para
+  // que los feriados roten entre todos en vez de caerle siempre al mismo.
+  function effectiveScore(idx, feriado) {
+    const fer = feriado ? (feriadosHist[idx] + feriadosNow[idx]) * 10 : 0;
+    return usage[idx] * 10 + histDays[idx] + fer;
   }
 
   // Elige el mejor equipo disponible.
@@ -5824,7 +6048,7 @@ function generateMonth(opts = {}) {
       if (excludeHard.has(i)) continue;
       if (preferAvoid && preferAvoid.has(i)) continue;
       if (!capOk(i)) continue;
-      const s = effectiveScore(i);
+      const s = effectiveScore(i, opts.feriado);
       if (s < bestScore) { bestIdx = i; bestScore = s; }
     }
     if (bestIdx >= 0) return bestIdx;
@@ -5832,7 +6056,7 @@ function generateMonth(opts = {}) {
     for (let i = 0; i < teams.length; i++) {
       if (excludeHard.has(i)) continue;
       if (!capOk(i)) continue;
-      const s = effectiveScore(i);
+      const s = effectiveScore(i, opts.feriado);
       if (s < bestScore) { bestIdx = i; bestScore = s; }
     }
     return bestIdx;
@@ -5868,6 +6092,7 @@ function generateMonth(opts = {}) {
       }
       newData[String(d)] = slots;
       usage[teamIdx]++;
+      if (isHoliday(y, m, d)) feriadosNow[teamIdx]++;
     });
     return teamIdx;
   }
@@ -6230,6 +6455,7 @@ function generateMonth(opts = {}) {
       const realDays = days.filter(d => d !== null && !isSkipDay(y, m, d));
       if (realDays.length === 0) return -1;
       const addDays = realDays.length;
+      const feriado = realDays.some(d => isHoliday(y, m, d));
 
       // NUNCA se relajan: equipo ya usado esta semana, cumpleaños, ausencias y
       // el descanso post-viernes. Este último es la regla más importante del
@@ -6285,7 +6511,7 @@ function generateMonth(opts = {}) {
         for (let i = drop; i < layers.length; i++) layers[i].set.forEach(v => ex.add(v));
         const relaxed = layers.slice(0, drop).map(l => l.label);
 
-        const idx = pickBest(ex, addDays, preferAvoid);
+        const idx = pickBest(ex, addDays, preferAvoid, { feriado });
         if (idx >= 0) {
           assignSlot(idx, days);
           return commit(idx, relaxed);
@@ -6296,20 +6522,20 @@ function generateMonth(opts = {}) {
         // candidato, el primero quedaba asignado, el otro vacío, y no se probaba
         // el recurso de pasarse del cupo (ej: jueves 27/5/2027 sin turno).
         if (drop === layers.length && addDays === 2) {
-          const picks = planSplit(realDays, ex, preferAvoid);
+          const picks = planSplit(realDays, ex, preferAvoid, { feriado });
           if (picks) return commitSplit(picks, [...relaxed, 'slot partido en dos equipos']);
         }
       }
 
       // Último recurso antes de dejar el día vacío: pasarse del cupo del equipo.
       const allLayers = layers.map(l => l.label);
-      const idxCap = pickBest(base, addDays, preferAvoid, { ignoreCap: true });
+      const idxCap = pickBest(base, addDays, preferAvoid, { ignoreCap: true, feriado });
       if (idxCap >= 0) {
         assignSlot(idxCap, days);
         return commit(idxCap, [...allLayers, 'cupo máximo del equipo']);
       }
       if (addDays === 2) {
-        const picks = planSplit(realDays, base, preferAvoid, { ignoreCap: true });
+        const picks = planSplit(realDays, base, preferAvoid, { ignoreCap: true, feriado });
         if (picks) return commitSplit(picks, [...allLayers, 'slot partido en dos equipos', 'cupo máximo del equipo']);
       }
 
@@ -6463,7 +6689,7 @@ function validateMonth(y, m, opts = {}) {
     });
   });
 
-  // === R3: días sin turno asignado (ignora feriados y feria judicial) ===
+  // === R3: días sin turno asignado (ignora la feria judicial; los feriados se trabajan) ===
   const data = dataOf(y, m);
   for (let d = 1; d <= dim; d++) {
     if (isSkipDay(y, m, d)) continue;
@@ -6479,9 +6705,7 @@ function validateMonth(y, m, opts = {}) {
   // v82: con la rotación automática activa, el cupo de cada equipo es el rotado
   // (el mismo que usó el generador), no el de la configuración. Antes el informe
   // marcaba "cupo excedido" a equipos que estaban dentro de su cupo rotado.
-  const maxes = loadAutoRotate()
-    ? computeRotatedMaxes(teams, rebuildHistoryFromMonths(y, m).teamHistory, teams.map(teamKey))
-    : teams.map(t => t.maxDays || 0);
+  const maxes = capsForMonth(teams, y, m);
   const usage = teams.map(() => 0);
   for (let d = 1; d <= dim; d++) {
     const main = (data[String(d)] || [])[0];
@@ -6819,6 +7043,7 @@ function wireUp() {
       // v68: handler único para exportar imagen (openExportImage usa canvas puro,
       // sin dependencias externas).
       else if (a === 'stats') openStatsSettings();
+      else if (a === 'equity') { _statsScope = 'equity'; openStatsSettings(); }
       else if (a === 'validate') openValidateModal();
       else if (a === 'absences') openAbsencesModal();
       else if (a === 'gen-settings') openGenSettings();
@@ -6878,12 +7103,8 @@ function wireUp() {
   });
   document.getElementById('gen-auto-rotate-toggle').addEventListener('change', (e) => {
     saveAutoRotate(e.target.checked);
-    updateGenDayCounter();
-    if (e.target.checked) {
-      showToast('🔄 Rotación automática activada');
-    } else {
-      showToast('Rotación automática desactivada');
-    }
+    renderGenSettings();
+    showToast(e.target.checked ? '⚖️ Cupos automáticos activados' : 'Cupos manuales: definilos equipo por equipo');
   });
   document.getElementById('gen-reset').addEventListener('click', () => {
     if (!confirm('¿Restaurar los equipos por defecto?')) return;

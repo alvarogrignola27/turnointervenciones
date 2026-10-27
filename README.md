@@ -32,8 +32,8 @@ Los cuatro botones de abajo siguen el orden en que se arma un mes:
 
 | Botón | Qué tiene |
 |---|---|
-| 🗓️ **Armar** | 1 · Equipos y cupos → 2 · Generar / Probar otra distribución → 3 · Revisar reglas / Estadísticas. Al final, Borrar mes. |
-| 📌 **Fechas** | Lo que el generador respeta: ausencias, cumpleaños, feriados nacionales y feria judicial. |
+| 🗓️ **Armar** | 1 · Equipos y cupos → 2 · Generar / Probar otra distribución → 3 · Revisar reglas / Estadísticas / Informe de equidad. Al final, Borrar mes. |
+| 📌 **Fechas** | Lo que el generador tiene en cuenta: ausencias, cumpleaños, feriados nacionales y feria judicial. |
 | 📤 **Compartir** | Imagen/PDF para WhatsApp, link de solo lectura y "Fijar como maestro en la nube". |
 | ⚙️ **Ajustes** | Sincronización, backup JSON, colores, rol del dispositivo y forzar actualización. |
 
@@ -59,10 +59,11 @@ El mes se arma en **bloques semanales**, cada uno para un solo equipo: **Lun+Mar
 - **Rotación de bloque**: un equipo no repite el mismo bloque dos semanas seguidas, y se prefiere darle un bloque distinto al último que hizo.
 - **Post-feria**: quien trabajó la última semana de feria no hace Lun-Vie en la primera semana.
 - Entre los candidatos se elige al equipo con **menos días en el mes** (y, a igualdad, con menos días en el historial).
+- **Feriados**: se trabajan. Si un bloque de días de semana cae en feriado, se prefiere al equipo que **menos feriados hizo** (en todo el historial cargado). Los feriados en finde siguen la rotación de findes.
 
 **Cupos, fechas bloqueadas y desempates**
-- Cada equipo tiene un **cupo máximo de días por mes** (recomendado 3 a 5). Con la **rotación automática** activa, los cupos altos rotan: quien hizo 5 días vuelve a tener cupo alto recién cuando los demás tuvieron el suyo.
-- **Feriados** y **feria judicial**: el día queda sin equipo.
+- **Cupos automáticos** (activados por defecto): los días del mes se reparten en partes iguales (con 7 equipos, 4 o 5 cada uno). Los días que sobran rotan: quien tuvo 5 vuelve a tenerlos recién cuando les tocó a los demás. Se pueden apagar y poner cupos a mano.
+- **Feria judicial**: el día queda sin equipo.
 - **Cumpleaños** y **ausencias**: el equipo de esa persona no trabaja ese día. *Nunca se afloja.*
 - Si las reglas chocan, se aflojan de la más débil a la más fuerte: rotación de bloque → post-finde → post-feria → partir el bloque entre dos equipos → pasarse del cupo. Lo que se aflojó aparece en el **🔍 Informe de reglas**, que también revisa los meses cargados a mano.
 
@@ -248,6 +249,11 @@ Para repos privados, GitHub Pages cuesta plata. Alternativa gratis: Cloudflare P
 Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
+
+### v83
+- **⚖️ Cupos automáticos, activados por defecto**: ya no hace falta balancear antes de generar (se fue la pregunta "¿YA BALANCEASTE?"). Cada mes los días se reparten parejo y el día de más rota entre equipos, así no le tocan 5 siempre a los mismos. Antes la rotación venía apagada y "Auto-balancear" le daba el 5 siempre a los primeros de la lista.
+- **🇦🇷 Los feriados se trabajan**: el generador ahora asigna equipo en los feriados (antes los dejaba vacíos) y, entre semana, se lo da al equipo que menos feriados hizo.
+- **⚖️ Informe de equidad** (🗓️ Armar → Informe de equidad, o pestaña *Equidad* en Estadísticas): para un rango de meses muestra por equipo días, findes, viernes, feriados y meses con cupo de 5, marca quién está por encima y por debajo, el orden de prioridad para los próximos feriados y el detalle de cada feriado con quién lo hizo.
 
 ### v82
 - **🧭 Menú reorganizado por etapas**: los cuatro botones pasan a ser **🗓️ Armar**, **📌 Fechas**, **📤 Compartir** y **⚙️ Ajustes** (ver la sección *Menú*). Todo lo que condiciona al generador (ausencias, cumpleaños, feriados y feria) quedó junto en *Fechas*; se sacaron el "Exportar a imagen" duplicado y la "Variante al azar", que hacía lo mismo que "Probar otra distribución".
