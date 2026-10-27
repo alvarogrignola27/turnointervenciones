@@ -16,13 +16,11 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=81">
+  <link rel="stylesheet" href="styles.css?v=82">
   <!-- Firebase SDK (compat) - se conecta solo si está configurado -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
-  <!-- html2canvas para exportar el calendario como imagen -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
   <div id="app">
@@ -95,66 +93,68 @@
       <div id="detail" class="detail"></div>
     </div>
 
+    <!-- v82: menú reorganizado por etapas de trabajo. Antes las cosas que afectan
+         al generador (equipos, cumpleaños, ausencias, feriados) estaban repartidas
+         en tres menús distintos y había opciones duplicadas. -->
     <div class="footer-actions footer-actions-multi">
-      <button data-cat="generation" class="cat-btn">🎲<span>Generar</span></button>
-      <button data-cat="markers" class="cat-btn">⚖️<span>Marcar</span></button>
-      <button data-cat="custom" class="cat-btn">🎨<span>Personalizar</span></button>
-      <button data-cat="data" class="cat-btn">☁️<span>Datos</span></button>
+      <button data-cat="generation" class="cat-btn">🗓️<span>Armar</span></button>
+      <button data-cat="dates" class="cat-btn">📌<span>Fechas</span></button>
+      <button data-cat="share" class="cat-btn">📤<span>Compartir</span></button>
+      <button data-cat="settings" class="cat-btn">⚙️<span>Ajustes</span></button>
     </div>
 
     <!-- Footer compacto que SOLO se muestra en modo viewer (cuando los 4 botones de arriba están ocultos).
-         Permite ver la versión y forzar la actualización sin perder el acceso al menú Datos. -->
+         Permite ver la versión y forzar la actualización. -->
     <div class="viewer-footer" id="viewer-footer">
-      <span class="viewer-footer-version">Versión <span id="viewer-version">81</span></span>
+      <span class="viewer-footer-version">Versión <span id="viewer-version">82</span></span>
       <button class="viewer-footer-btn" id="viewer-force-update">🔄 Buscar actualización</button>
     </div>
 
     <div id="menu" class="menu hidden">
       <div data-section="generation" class="menu-section">
-        <div class="menu-section-title">🎲 Generación</div>
+        <div class="menu-section-title">1 · Preparar</div>
+        <button data-action="gen-settings">👥 Equipos y cupos del mes</button>
+        <div class="menu-section-title">2 · Generar</div>
         <button data-action="generate">🎲 Generar mes</button>
         <button data-action="regenerate">🔀 Probar otra distribución</button>
-        <button data-action="regenerate-random">🎰 Variante al azar (3ra opción)</button>
+        <div class="menu-section-title">3 · Revisar</div>
         <button data-action="validate">🔍 Revisar reglas del mes</button>
-        <div class="menu-hint">Audita el mes cargado: descansos post-viernes y post-finde, días sin turno, cupos, cumpleaños y ausencias.</div>
-        <button data-action="export-image">📸 Exportar mes a imagen / PDF (para WhatsApp)</button>
-        <button data-action="clear">🗑️ Borrar mes actual</button>
-        <button data-action="gen-settings">⚙️ Configurar equipos del generador</button>
         <button data-action="stats">📊 Estadísticas</button>
+        <div class="menu-sep"></div>
+        <button data-action="clear">🗑️ Borrar mes actual</button>
+      </div>
+
+      <div data-section="dates" class="menu-section">
+        <div class="menu-section-title">Personas</div>
         <button data-action="absences">👤 Ausencias</button>
-      </div>
-
-      <div data-section="markers" class="menu-section">
-        <div class="menu-section-title">⚖️ Marcadores</div>
-        <button data-action="load-holidays">🇦🇷 Precargar feriados nacionales</button>
-        <button data-action="mark-month-feria">⚖️ Marcar mes como feria judicial</button>
-        <button data-action="mark-range-feria">⚖️ Marcar rango como feria judicial</button>
-      </div>
-
-      <div data-section="custom" class="menu-section">
-        <div class="menu-section-title">🎨 Personalización</div>
-        <button data-action="colors-settings">🎨 Colores de personas</button>
         <button data-action="birthdays-settings">🎂 Cumpleaños</button>
+        <div class="menu-section-title">Días sin turno</div>
+        <button data-action="load-holidays">🇦🇷 Precargar feriados nacionales</button>
+        <button data-action="mark-month-feria">⚖️ Feria judicial: mes completo</button>
+        <button data-action="mark-range-feria">⚖️ Feria judicial: rango de días</button>
+        <div class="menu-hint">El generador respeta todo esto: no asigna equipos en feriados ni en feria, y bloquea al equipo de quien esté ausente o cumpla años.</div>
       </div>
 
-      <div data-section="data" class="menu-section">
-        <div class="menu-section-title">☁️ Datos y nube</div>
-        <button data-action="check-update" class="menu-item-highlight">🔄 Forzar actualización (limpiar caché)</button>
-        <div class="menu-hint">¿No ves los últimos cambios? Tocá esto para descargar la versión más nueva.</div>
-        <button data-action="sync-settings">☁️ Sincronización en la nube</button>
+      <div data-section="share" class="menu-section">
+        <div class="menu-section-title">Compartir</div>
+        <button data-action="export-image">📸 Imagen / PDF del mes (WhatsApp)</button>
         <button data-action="share-link">🔗 Link de solo lectura (para el equipo)</button>
-        <div class="menu-hint">Una URL fija que muestra sólo el calendario, sin poder editar. Se actualiza sola cuando guardás cambios — se manda una vez y listo.</div>
-        <button data-action="save-as-master" class="menu-item-master">🚀 Guardar calendario como maestro en la nube</button>
-        <div class="menu-hint">Cuando termines de armar el calendario, tocá esto para "fijarlo" en la nube. Los dispositivos nuevos que se conecten van a descargar esta versión y no podrán pisarla con datos viejos.</div>
-        <button data-action="export-image">📸 Exportar mes a imagen / PDF (para WhatsApp)</button>
-        <div class="menu-hint">Vista grande del mes con equipos de intervención bien visibles. Descargalo como imagen o guardalo como PDF.</div>
-        <button data-action="export">📦 Exportar datos (JSON)</button>
-        <button data-action="import">📥 Importar datos (JSON)</button>
+        <div class="menu-hint">Una URL fija que se manda una vez: se actualiza sola cuando guardás cambios.</div>
+        <button data-action="save-as-master" class="menu-item-master">🚀 Fijar calendario como maestro en la nube</button>
+        <div class="menu-hint">Cuando termines de armar el mes. Los dispositivos nuevos descargan esta versión y no la pueden pisar con datos viejos.</div>
+      </div>
 
-        <div class="menu-section-title" style="margin-top:14px;">👤 Rol del dispositivo</div>
+      <div data-section="settings" class="menu-section">
+        <div class="menu-section-title">Nube y backup</div>
+        <button data-action="sync-settings">☁️ Sincronización en la nube</button>
+        <button data-action="export">📦 Exportar backup (JSON)</button>
+        <button data-action="import">📥 Importar backup (JSON)</button>
+        <div class="menu-section-title">Apariencia</div>
+        <button data-action="colors-settings">🎨 Colores de personas</button>
+        <div class="menu-section-title">Este dispositivo</div>
         <div class="menu-hint" id="user-role-label">✏️ Modo editor</div>
         <button data-action="toggle-role">🔒 Cambiar a modo solo lectura</button>
-        <div class="menu-hint">"Solo lectura" bloquea cualquier edición en este dispositivo. Útil para que el equipo solo consulte el calendario sin riesgo de modificar algo sin querer.</div>
+        <button data-action="check-update" class="menu-item-highlight">🔄 Forzar actualización (limpiar caché)</button>
       </div>
 
       <button data-action="install" id="install-btn" class="hidden">Instalar app</button>
@@ -162,7 +162,7 @@
       <div class="menu-version">
         <div class="version-badge ok" id="version-badge">
           <span class="version-dot">●</span>
-          <span class="version-label">Versión <span id="app-version">81</span> · actualizada</span>
+          <span class="version-label">Versión <span id="app-version">82</span> · actualizada</span>
         </div>
         <button class="version-update-btn hidden" id="version-update-btn">
           🔴 Hay una versión nueva — Tocar para actualizar
@@ -403,8 +403,8 @@
     </div>
   </div>
 
-  <script src="data.js?v=81"></script>
-  <script src="app.js?v=81"></script>
+  <script src="data.js?v=82"></script>
+  <script src="app.js?v=82"></script>
   <script>
     // === Detección de actualizaciones del Service Worker ===
     // Mantiene una referencia al SW "esperando" (instalado pero no activo todavía).

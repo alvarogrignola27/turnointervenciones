@@ -42,7 +42,7 @@ const AUTO_CONNECT_FIREBASE = {
 //
 // 📝 Dónde sacarlos: consola de Firebase → ⚙️ Configuración del proyecto →
 //    "Tus apps" → app web → objeto firebaseConfig. O copialos del menú
-//    ☁️ Datos → Sincronización en la nube de la app, que ya los tiene cargados.
+//    ⚙️ Ajustes → Sincronización en la nube de la app, que ya los tiene cargados.
 //
 // Si quedan vacíos, el link sigue funcionando igual, sólo que largo.
 const PUBLIC_FIREBASE_CONFIG = {

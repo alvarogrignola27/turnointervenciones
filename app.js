@@ -2,12 +2,12 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '81';
+const APP_VERSION = '82';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
 // - El banner rojo arriba de toda la app (siempre visible)
-// - El badge en rojo del menú Datos (para confirmar el estado)
+// - El badge en rojo del menú (para confirmar el estado)
 function onSwUpdateAvailable() {
   const banner = document.getElementById('update-banner');
   if (banner) banner.classList.remove('hidden');
@@ -118,7 +118,6 @@ function updateRoleBadge() {
     }
   }
 }
-const TEAM_HISTORY_KEY = 'turnos:gen_team_history';
 const PERSON_COLORS_KEY = 'turnos:person_colors';
 const PERSON_COLORS_MONTH_PREFIX = 'turnos:person_colors_month:';
 const FIREBASE_CONFIG_KEY = 'turnos:firebase_config';
@@ -1035,279 +1034,6 @@ function openReplacementForm(day) {
   });
 }
 
-// ---------- Exportar mes como imagen + compartir ----------
-async function exportAndShareMonth() {
-  if (typeof html2canvas === 'undefined') {
-    showToast('Esperá unos segundos a que cargue el módulo de imagen y reintentá');
-    return;
-  }
-
-  showToast('Generando imagen del mes...');
-
-  const y = state.year, m = state.month;
-  const monthName = MES_NAMES[m - 1];
-  const dim = new Date(y, m, 0).getDate();
-  const cfg = loadGenConfig();
-  const teams = cfg.teams || [];
-
-  // === Crear contenedor con render profesional desde cero (no clona el DOM) ===
-  const wrap = document.createElement('div');
-  wrap.style.cssText = `
-    position:fixed; left:-9999px; top:0;
-    background:#fff; padding:40px 36px;
-    width:1240px; box-sizing:border-box;
-    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-    color:#1c1c1e;
-  `;
-
-  // --- Encabezado profesional ---
-  const header = document.createElement('div');
-  header.style.cssText = `
-    display:flex; align-items:center; justify-content:space-between;
-    padding-bottom:18px; margin-bottom:24px;
-    border-bottom:3px solid #1f3a68;
-  `;
-  const headLeft = document.createElement('div');
-  const title = document.createElement('div');
-  title.style.cssText = 'font-size:28px; font-weight:700; color:#1f3a68; letter-spacing:0.3px;';
-  title.textContent = 'Turnos de Intervenciones';
-  const subtitle = document.createElement('div');
-  subtitle.style.cssText = 'font-size:20px; font-weight:600; color:#3a3a3c; margin-top:4px;';
-  subtitle.textContent = `${monthName} ${y}`;
-  headLeft.appendChild(title);
-  headLeft.appendChild(subtitle);
-  header.appendChild(headLeft);
-  // Bloque resumen a la derecha del header
-  const headRight = document.createElement('div');
-  headRight.style.cssText = 'text-align:right; font-size:13px; color:#6c6c70; line-height:1.6;';
-  const now = new Date();
-  const dayStrings = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
-  headRight.innerHTML = `
-    <div>Emitido: <b style="color:#1c1c1e;">${dayStrings[now.getDay()]} ${now.getDate()} de ${MES_NAMES[now.getMonth()].toLowerCase()} ${now.getFullYear()}</b></div>
-    <div>${now.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'})} hs</div>
-  `;
-  header.appendChild(headRight);
-  wrap.appendChild(header);
-
-  // --- Grilla profesional del mes (sin íconos de cumpleaños) ---
-  const grid = document.createElement('div');
-  grid.style.cssText = 'display:grid; grid-template-columns:repeat(7,1fr); gap:8px; margin-bottom:24px;';
-
-  // Headers de la semana
-  ['LUN','MAR','MIÉ','JUE','VIE','SÁB','DOM'].forEach((name, i) => {
-    const h = document.createElement('div');
-    h.style.cssText = `
-      font-size:12px; font-weight:700; color:${i >= 5 ? '#b71c1c' : '#1f3a68'};
-      text-align:center; padding:8px 0;
-      background:#f2f2f7; border-radius:6px; letter-spacing:0.5px;
-    `;
-    h.textContent = name;
-    grid.appendChild(h);
-  });
-
-  // Días — calculamos offset para que arranque en Lun (Date.getDay: 0=Dom,1=Lun)
-  const firstDow = new Date(y, m-1, 1).getDay();
-  const offset = firstDow === 0 ? 6 : firstDow - 1;
-  for (let i = 0; i < offset; i++) {
-    const empty = document.createElement('div');
-    empty.style.cssText = 'min-height:110px;';
-    grid.appendChild(empty);
-  }
-  for (let d = 1; d <= dim; d++) {
-    const cell = document.createElement('div');
-    const dow = new Date(y, m-1, d).getDay();
-    const isWeekend = (dow === 0 || dow === 6);
-    const isFer = isFeriado(y, m, d);
-    const isFj = isFeriaJud(y, m, d);
-    cell.style.cssText = `
-      min-height:110px; padding:6px 7px;
-      background:${isFj ? '#fff8e0' : (isFer ? '#fff0d6' : (isWeekend ? '#fafafa' : '#fff'))};
-      border:1px solid ${isFj ? '#f0c674' : (isFer ? '#f0c674' : '#e5e5ea')};
-      border-radius:6px; box-sizing:border-box;
-    `;
-    // Cabecera del día
-    const head = document.createElement('div');
-    head.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;';
-    const num = document.createElement('div');
-    num.style.cssText = `font-size:13px; font-weight:700; color:${isWeekend ? '#b71c1c' : '#1c1c1e'};`;
-    num.textContent = String(d);
-    head.appendChild(num);
-    if (isFj) {
-      const tag = document.createElement('span');
-      tag.style.cssText = 'font-size:9px; font-weight:700; padding:1px 5px; background:#b71c1c; color:#fff; border-radius:3px;';
-      tag.textContent = 'FERIA';
-      head.appendChild(tag);
-    } else if (isFer) {
-      const tag = document.createElement('span');
-      tag.style.cssText = 'font-size:9px; font-weight:700; padding:1px 5px; background:#d97706; color:#fff; border-radius:3px;';
-      tag.textContent = 'FERIADO';
-      head.appendChild(tag);
-    }
-    cell.appendChild(head);
-
-    // Slots
-    const slots = state.data[String(d)] || [];
-    slots.forEach(slot => {
-      if (!slot) return;
-      const a = slot[0], b = slot[1];
-      if (!a && !b) return;
-      // ¿Es G.MAT? (solo ALVARO o MARTIN, no en feria)
-      const isGmat = !isFj && ((a && !b && GESTION_MATERIALES.includes(a)) ||
-                                (!a && b && GESTION_MATERIALES.includes(b)));
-      if (isGmat) {
-        const gmName = a || b;
-        const row = document.createElement('div');
-        row.style.cssText = `
-          display:flex; align-items:center; gap:3px;
-          background:${colorFor(gmName)}; color:${textColorFor(gmName)};
-          font-size:9px; font-weight:600; padding:2px 5px; border-radius:3px;
-          margin-bottom:2px; line-height:1.2;
-        `;
-        row.innerHTML = `<span style="opacity:0.8;">📦</span><span>${gmName}</span>`;
-        cell.appendChild(row);
-        return;
-      }
-      // Equipo / par normal
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex; gap:2px; margin-bottom:2px;';
-      [a, b].forEach(name => {
-        if (!name) return;
-        const pill = document.createElement('span');
-        pill.style.cssText = `
-          flex:1; background:${colorFor(name)}; color:${textColorFor(name)};
-          font-size:10px; font-weight:600; padding:2px 4px; border-radius:3px;
-          text-align:center; line-height:1.2;
-          white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-        `;
-        pill.textContent = name;
-        row.appendChild(pill);
-      });
-      cell.appendChild(row);
-    });
-    grid.appendChild(cell);
-  }
-  wrap.appendChild(grid);
-
-  // === Bloques de información complementaria ===
-  const infoSections = document.createElement('div');
-  infoSections.style.cssText = 'display:flex; gap:16px; flex-wrap:wrap;';
-
-  // Reemplazos del mes
-  const allReps = state._replacements || {};
-  const repDays = Object.keys(allReps).map(Number)
-    .filter(d => allReps[String(d)] && allReps[String(d)].length > 0)
-    .sort((a, b) => a - b);
-  if (repDays.length > 0) {
-    const sec = document.createElement('div');
-    sec.style.cssText = `
-      flex:1; min-width:300px;
-      padding:14px 16px; background:#f7f4fc;
-      border-left:4px solid #5e35b1; border-radius:6px;
-    `;
-    const t = document.createElement('div');
-    t.style.cssText = 'font-weight:700; font-size:14px; color:#311b92; margin-bottom:8px; letter-spacing:0.3px;';
-    t.textContent = '↪ REEMPLAZOS DEL MES';
-    sec.appendChild(t);
-    repDays.forEach(d => {
-      allReps[String(d)].forEach(rep => {
-        const line = document.createElement('div');
-        line.style.cssText = 'font-size:12px; color:#311b92; padding:2px 0;';
-        line.innerHTML = `<b>Día ${d}:</b> ${rep.replacement} reemplaza a ${rep.original}`;
-        sec.appendChild(line);
-      });
-    });
-    infoSections.appendChild(sec);
-  }
-
-  // Ausencias del mes (que caigan en este mes)
-  const absences = loadAbsences();
-  const monthStart = ymdString(y, m, 1);
-  const monthEnd = ymdString(y, m, dim);
-  const monthAbs = absences.filter(a => a.from <= monthEnd && a.to >= monthStart);
-  if (monthAbs.length > 0) {
-    const sec = document.createElement('div');
-    sec.style.cssText = `
-      flex:1; min-width:300px;
-      padding:14px 16px; background:#fef3f2;
-      border-left:4px solid #b71c1c; border-radius:6px;
-    `;
-    const t = document.createElement('div');
-    t.style.cssText = 'font-weight:700; font-size:14px; color:#7f0e0e; margin-bottom:8px; letter-spacing:0.3px;';
-    t.textContent = '👤 AUSENCIAS DEL MES';
-    sec.appendChild(t);
-    monthAbs.forEach(a => {
-      const line = document.createElement('div');
-      line.style.cssText = 'font-size:12px; color:#7f0e0e; padding:2px 0;';
-      line.innerHTML = `<b>${a.name}:</b> ${a.from} → ${a.to}`;
-      sec.appendChild(line);
-    });
-    infoSections.appendChild(sec);
-  }
-
-  // (Leyenda de equipos removida en v56 — la imagen del calendario queda más grande.
-  //  Si en algún momento querés mostrar los equipos de referencia, te la puedo agregar
-  //  de vuelta como sección opcional.)
-
-  if (infoSections.children.length > 0) wrap.appendChild(infoSections);
-
-  // Footer profesional
-  const footer = document.createElement('div');
-  footer.style.cssText = `
-    margin-top:24px; padding-top:12px;
-    border-top:1px solid #e5e5ea;
-    display:flex; justify-content:space-between; align-items:center;
-    font-size:11px; color:#8e8e93;
-  `;
-  footer.innerHTML = `
-    <div>📅 Turnos de Intervenciones</div>
-    <div>Generado automáticamente · v${APP_VERSION}</div>
-  `;
-  wrap.appendChild(footer);
-
-  document.body.appendChild(wrap);
-
-  try {
-    const canvas = await html2canvas(wrap, {
-      scale: 2,
-      backgroundColor: '#ffffff',
-      logging: false,
-      useCORS: true
-    });
-
-    canvas.toBlob(async (blob) => {
-      const fileName = `Turnos ${MES_NAMES[state.month - 1]} ${state.year}.png`;
-      const file = new File([blob], fileName, { type: 'image/png' });
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            title: `Turnos ${MES_NAMES[state.month - 1]} ${state.year}`,
-            files: [file]
-          });
-          showToast('Compartido');
-          return;
-        } catch (e) {
-          if (e.name === 'AbortError') return;
-        }
-      }
-
-      // Fallback: download
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast('Descargado. Compartilo desde la galería.');
-    }, 'image/png');
-
-  } catch (e) {
-    console.error('Export error:', e);
-    showToast('Error generando imagen');
-  } finally {
-    document.body.removeChild(wrap);
-  }
-}
-
 // Migra entradas legacy de 'FERIADO' en slots al sistema de flag aparte
 function migrateLegacyFeriados(y, m, data) {
   let changed = false;
@@ -1993,7 +1719,7 @@ async function forcePushToCloud() {
 // este es "EL calendario bueno" y los nuevos siempre lo descargan primero.
 async function saveCalendarAsMaster() {
   if (!_fbUser || !_fbDb) {
-    alert('Primero tenés que conectar Firebase desde Datos → Sincronización en la nube.');
+    alert('Primero tenés que conectar Firebase desde ⚙️ Ajustes → Sincronización en la nube.');
     return;
   }
   const msg =
@@ -2544,10 +2270,12 @@ function renderStats() {
     // Histórico total — usa teamHistory acumulado
     const intro = document.createElement('div');
     intro.className = 'stats-intro';
-    intro.textContent = `Días acumulados desde que se empezó a generar (todos los meses)`;
+    intro.textContent = `Días acumulados en todos los meses cargados (sin contar enero y julio, que son feria)`;
     content.appendChild(intro);
 
-    const hist = loadTeamHistory();
+    // v82: se calcula en el momento desde los meses guardados, en vez de leer un
+    // acumulado que sólo se actualizaba al generar y quedaba desfasado.
+    const hist = rebuildHistoryFromMonths(9999, 1).teamHistory;
     const cfg = loadGenConfig();
     const teams = cfg.teams || [];
     const histSection = document.createElement('div');
@@ -5047,7 +4775,10 @@ function updateGenDayCounter() {
 
   // Si la rotación automática está activa, mostrar preview de quién tendrá cupo alto este mes
   if (loadAutoRotate() && cfg.teams.length > 0) {
-    const teamHistory = loadTeamHistory();
+    // v82: mismo historial que usa el generador. Antes se leía el guardado, que
+    // no registraba el último mes con cupo alto, así que la vista previa podía
+    // anunciar equipos distintos a los que después generaba.
+    const teamHistory = rebuildHistoryFromMonths(state.year, state.month).teamHistory;
     const teamKeys = cfg.teams.map(t => teamKey(t));
     const effective = computeRotatedMaxes(cfg.teams, teamHistory, teamKeys);
     const userMaxes = cfg.teams.map(t => t.maxDays || 0);
@@ -5531,11 +5262,15 @@ function teamKey(team) {
   return parts.filter(Boolean).sort().join('|');
 }
 
-// Reconstruye el historial (recentWeekends, weekendIdx, teamHistory) escaneando TODOS
-// los meses persistidos en localStorage, EXCEPTO el mes que se está regenerando.
+// Reconstruye el historial (recentWeekends, weekendIdx, teamHistory) escaneando los
+// meses persistidos en localStorage ANTERIORES al mes que se está generando.
 // Esto asegura que las regeneraciones del mismo mes no se contaminen con la versión
 // anterior — cada vez se parte de un estado coherente con los demás meses guardados.
-function rebuildHistoryFromMonths(excludeY, excludeM) {
+// v82: antes se excluía sólo el mes en curso, así que al regenerar un mes con meses
+// POSTERIORES ya cargados, esos findes futuros contaban como "los más recientes" y
+// cambiaban la rotación de findes, la alternancia de G.MAT y los cupos altos.
+// Para el histórico completo (estadísticas) se llama con un mes muy lejano.
+function rebuildHistoryFromMonths(beforeY, beforeM) {
   const cfg = loadGenConfig();
   const teams = cfg.teams || [];
   const teamKeys = teams.map(t => teamKey(t));
@@ -5555,14 +5290,14 @@ function rebuildHistoryFromMonths(excludeY, excludeM) {
     if (match) {
       const yy = parseInt(match[1], 10);
       const mm = parseInt(match[2], 10);
-      // Excluir solo el mes que se está regenerando.
+      // Sólo meses anteriores al que se está generando (v82).
       // v68: enero/julio (feria) AHORA SÍ se procesan pero solo para extraer
       // los equipos que hicieron findes — su totalDays y lastHighMonth se omiten.
       // Antes los excluíamos por completo, lo que dejaba al algoritmo "ciego"
       // a los findes de feria y los mismos equipos volvían a salir primeros en
       // el mes post-feria (ej: agosto pone a Milisenda y Campi en los primeros
       // findes aunque acaban de hacer findes en julio de feria).
-      if (yy === excludeY && mm === excludeM) continue;
+      if (yy * 12 + mm >= beforeY * 12 + beforeM) continue;
       monthKeys.push({ y: yy, m: mm, key });
     }
   }
@@ -5644,22 +5379,6 @@ function rebuildHistoryFromMonths(excludeY, excludeM) {
   });
 
   return { recentWeekends, weekendIdx, teamHistory, lastGmat };
-}
-function loadTeamHistory() {
-  try {
-    return JSON.parse(localStorage.getItem(TEAM_HISTORY_KEY) || '{}');
-  } catch { return {}; }
-}
-function saveTeamHistory(h) {
-  if (isViewerLink()) return;  // modo visor: no se escribe nada en el dispositivo
-
-  try {
-    localStorage.setItem(TEAM_HISTORY_KEY, JSON.stringify(h));
-    scheduleCloudPush();
-  } catch (e) { console.warn('Save team history error', e); }
-}
-function resetTeamHistory() {
-  localStorage.removeItem(TEAM_HISTORY_KEY);
 }
 
 // ---------- Rotación automática de cupos altos entre meses ----------
@@ -6153,6 +5872,21 @@ function generateMonth(opts = {}) {
     return teamIdx;
   }
 
+  // Elige un equipo distinto para cada día de `realDays` (1 día cada uno) SIN
+  // asignar nada todavía. Devuelve null si algún día se queda sin candidato, así
+  // el que llama decide qué hacer en vez de quedar con el slot cubierto a medias.
+  function planSplit(realDays, excludeHard, preferAvoid, opts = {}) {
+    const localUsed = new Set(excludeHard);
+    const picks = [];
+    for (const d of realDays) {
+      const i = pickBest(localUsed, 1, preferAvoid, opts);
+      if (i < 0) return null;
+      localUsed.add(i);
+      picks.push(i);
+    }
+    return picks;
+  }
+
   // Asignar un slot de 2 días: primero intenta un solo equipo. Si no hay,
   // PARTE el slot en 2 equipos distintos (1 día cada uno).
   function assignTwoDaySlot(days, excludeHard, preferAvoid) {
@@ -6466,6 +6200,16 @@ function generateMonth(opts = {}) {
       // Slot Sáb-Dom ya pre-asignado (día 1 = Domingo, continúa el slot del mes anterior)
       thisWeekendTeam = preAssignedTeamIdx;
       lastSlotTeam.weekend = preAssignedTeamIdx;
+      // v82: el G.MAT también continúa. La pre-asignación descarta los slots de
+      // G.MAT del sábado, así que el domingo 1 quedaba sin gestión de materiales
+      // (ej: noviembre 2026). Se repite quien la hizo el sábado; la alternancia
+      // sigue normal el finde siguiente.
+      const satGmat = findGmatSlot(prevData[String(prevDaysInMonth)]);
+      const gmat = satGmat ? satGmat.name : lastGmat;
+      if (gmat && wk[6] !== null) {
+        if (!newData[String(wk[6])]) newData[String(wk[6])] = [];
+        newData[String(wk[6])].push([gmat, null]);
+      }
     }
 
     // Personas que trabajaron el viernes de la semana calendario anterior.
@@ -6502,7 +6246,11 @@ function generateMonth(opts = {}) {
       if (sameSlotTeam >= 0) {
         layers.push({ label: 'rotación de slot', set: new Set([sameSlotTeam]) });
       }
-      if (prevWeekendTeamIdx >= 0) {
+      // v82: el descanso post-finde es sólo Lun-Mar (sáb-dom-lun-mar serían 4 días
+      // seguidos). Antes se aplicaba también a Mié-Jue y Viernes: más estricto que
+      // la regla y que el informe, lo que trababa el final de mes y obligaba a
+      // partir slots o pasarse de cupo.
+      if (slotName === 'monTue' && prevWeekendTeamIdx >= 0) {
         layers.push({ label: 'descanso post-finde', set: new Set([prevWeekendTeamIdx]) });
       }
       if (weekIdx === 0 && postFeriaRestTeams.size > 0) {
@@ -6521,6 +6269,16 @@ function generateMonth(opts = {}) {
         teamLastWeekdaySlot[idx] = slotName;
         return idx;
       };
+      // Slot partido: cada día a un equipo distinto. Los DOS quedan marcados como
+      // usados en la semana (antes sólo el último, y el primero podía repetir).
+      const commitSplit = (picks, relaxed) => {
+        picks.forEach((i, k) => {
+          assignSlot(i, [realDays[k]]);
+          used.add(i);
+          teamLastWeekdaySlot[i] = slotName;
+        });
+        return commit(picks[picks.length - 1], relaxed);
+      };
 
       for (let drop = 0; drop <= layers.length; drop++) {
         const ex = new Set(base);
@@ -6533,18 +6291,26 @@ function generateMonth(opts = {}) {
           return commit(idx, relaxed);
         }
 
-        // Con todo relajado, probar partir el slot entre dos equipos distintos
+        // Con todo relajado, probar partir el slot entre dos equipos distintos.
+        // v82: sólo si se cubren LOS DOS días. Antes, si el segundo no tenía
+        // candidato, el primero quedaba asignado, el otro vacío, y no se probaba
+        // el recurso de pasarse del cupo (ej: jueves 27/5/2027 sin turno).
         if (drop === layers.length && addDays === 2) {
-          const split = assignTwoDaySlot(days, ex, preferAvoid);
-          if (split >= 0) return commit(split, [...relaxed, 'slot partido en dos equipos']);
+          const picks = planSplit(realDays, ex, preferAvoid);
+          if (picks) return commitSplit(picks, [...relaxed, 'slot partido en dos equipos']);
         }
       }
 
       // Último recurso antes de dejar el día vacío: pasarse del cupo del equipo.
+      const allLayers = layers.map(l => l.label);
       const idxCap = pickBest(base, addDays, preferAvoid, { ignoreCap: true });
       if (idxCap >= 0) {
         assignSlot(idxCap, days);
-        return commit(idxCap, [...layers.map(l => l.label), 'cupo máximo del equipo']);
+        return commit(idxCap, [...allLayers, 'cupo máximo del equipo']);
+      }
+      if (addDays === 2) {
+        const picks = planSplit(realDays, base, preferAvoid, { ignoreCap: true });
+        if (picks) return commitSplit(picks, [...allLayers, 'slot partido en dos equipos', 'cupo máximo del equipo']);
       }
 
       realDays.forEach(d => unassignedDays.push(d));
@@ -6593,14 +6359,6 @@ function generateMonth(opts = {}) {
   saveMonthData(y, m, newData);
   saveWeekendRotation(weekendIdx);
   saveRecentWeekends(recentWeekends);
-
-  // Actualizar historial cross-month
-  teams.forEach((t, idx) => {
-    const k = teamKeys[idx];
-    if (!teamHistory[k]) teamHistory[k] = { totalDays: 0 };
-    teamHistory[k].totalDays += usage[idx];
-  });
-  saveTeamHistory(teamHistory);
 
   state.selectedDay = null;
   rerenderActiveView(); renderDetail();
@@ -6718,6 +6476,12 @@ function validateMonth(y, m, opts = {}) {
   }
 
   // === R4: cupo máximo por equipo ===
+  // v82: con la rotación automática activa, el cupo de cada equipo es el rotado
+  // (el mismo que usó el generador), no el de la configuración. Antes el informe
+  // marcaba "cupo excedido" a equipos que estaban dentro de su cupo rotado.
+  const maxes = loadAutoRotate()
+    ? computeRotatedMaxes(teams, rebuildHistoryFromMonths(y, m).teamHistory, teams.map(teamKey))
+    : teams.map(t => t.maxDays || 0);
   const usage = teams.map(() => 0);
   for (let d = 1; d <= dim; d++) {
     const main = (data[String(d)] || [])[0];
@@ -6726,7 +6490,7 @@ function validateMonth(y, m, opts = {}) {
     if (idx >= 0) usage[idx]++;
   }
   teams.forEach((t, i) => {
-    const max = t.maxDays || 0;
+    const max = maxes[i] || 0;
     if (max > 0 && usage[i] > max) {
       add('warn', 'Cupo excedido', null,
         `${t.a} + ${t.b} tiene ${usage[i]} días y su cupo es ${max}`);
@@ -6851,7 +6615,7 @@ async function openShareLinkModal() {
     body.innerHTML = `<div class="share-warn">
       <b>Primero conectá la sincronización en la nube</b>
       <span>El link de solo lectura lee el calendario desde Firebase. Andá a
-      ☁️ Datos → Sincronización en la nube y conectate, después volvé acá.</span>
+      ⚙️ Ajustes → Sincronización en la nube y conectate, después volvé acá.</span>
     </div>`;
     return;
   }
@@ -7026,7 +6790,7 @@ function wireUp() {
       // Acciones bloqueadas en modo "viewer" (solo lectura). Si el usuario aprieta,
       // mostramos un toast en vez de ejecutar. Solo lectura y configuración del rol
       // están permitidas.
-      const EDIT_ACTIONS = ['generate', 'regenerate', 'regenerate-random', 'clear', 'absences',
+      const EDIT_ACTIONS = ['generate', 'regenerate', 'clear', 'absences',
         'gen-settings', 'mark-month-feria', 'mark-range-feria', 'load-holidays',
         'colors-settings', 'birthdays-settings', 'import',
         // v80: faltaban. Sin esto, un dispositivo en "solo lectura" igual podía
@@ -7042,32 +6806,18 @@ function wireUp() {
       else if (a === 'clear') clearCurrentMonth();
       else if (a === 'generate') generateMonth();
       else if (a === 'regenerate') {
+        // Recorre los desplazamientos 1 … n-1 del rotador de findes (con n equipos,
+        // el desplazamiento n es igual a no desplazar). v82: absorbe a la vieja
+        // "Variante al azar", que elegía uno de esos mismos desplazamientos al azar.
         const SHUFFLE_KEY = 'turnos:gen_shuffle_offset';
+        const n = Math.max(2, (loadGenConfig().teams || []).length);
         const cur = parseInt(localStorage.getItem(SHUFFLE_KEY) || '0', 10);
-        const next = (cur + 1) % 7;
+        const next = (cur % (n - 1)) + 1;
         localStorage.setItem(SHUFFLE_KEY, String(next));
-        generateMonth({ shuffleOffset: next + 1 });
-      }
-      // v71: tercera opción de generación — variante aleatoria.
-      // Útil cuando ni la generación inicial ni "Probar otra distribución"
-      // dan un resultado que convenza, y se necesita explorar una alternativa
-      // más distinta. Usa un shuffleOffset random (no incremental) que se
-      // ASEGURA de ser distinto del último valor usado.
-      else if (a === 'regenerate-random') {
-        const SHUFFLE_KEY = 'turnos:gen_shuffle_offset';
-        const cur = parseInt(localStorage.getItem(SHUFFLE_KEY) || '0', 10);
-        let next;
-        let tries = 0;
-        do {
-          next = Math.floor(Math.random() * 7);
-          tries++;
-        } while (next === cur && tries < 10);
-        localStorage.setItem(SHUFFLE_KEY, String(next));
-        generateMonth({ shuffleOffset: next + 1 });
+        generateMonth({ shuffleOffset: next });
       }
       // v68: handler único para exportar imagen (openExportImage usa canvas puro,
-      // sin dependencias externas). El antiguo exportAndShareMonth requería
-      // html2canvas que no se carga siempre. Ya no se usa.
+      // sin dependencias externas).
       else if (a === 'stats') openStatsSettings();
       else if (a === 'validate') openValidateModal();
       else if (a === 'absences') openAbsencesModal();
@@ -7195,7 +6945,7 @@ function wireUp() {
   document.getElementById('absence-add-btn').addEventListener('click', addAbsenceFromForm);
 
   // === Candado discreto en el header (solo visible en viewer) ===
-  // Dispara el mismo flujo que el botón "Cambiar a modo editor" del menú Datos,
+  // Dispara el mismo flujo que el botón "Cambiar a modo editor" del menú Ajustes,
   // pero accesible desde el header — útil cuando los 4 botones de abajo están
   // ocultos por estar en modo viewer.
   const unlockBtn = document.getElementById('viewer-unlock-btn');

@@ -26,6 +26,46 @@ PWA (Progressive Web App) para gestionar y consultar los turnos de intervencione
 - 👆 Navegación rápida: flechas, swipe horizontal, o tap en el título para elegir mes/año
 - 🔢 Número de versión visible en el menú
 
+## 🧭 Menú
+
+Los cuatro botones de abajo siguen el orden en que se arma un mes:
+
+| Botón | Qué tiene |
+|---|---|
+| 🗓️ **Armar** | 1 · Equipos y cupos → 2 · Generar / Probar otra distribución → 3 · Revisar reglas / Estadísticas. Al final, Borrar mes. |
+| 📌 **Fechas** | Lo que el generador respeta: ausencias, cumpleaños, feriados nacionales y feria judicial. |
+| 📤 **Compartir** | Imagen/PDF para WhatsApp, link de solo lectura y "Fijar como maestro en la nube". |
+| ⚙️ **Ajustes** | Sincronización, backup JSON, colores, rol del dispositivo y forzar actualización. |
+
+## 📏 Reglas del generador
+
+El mes se arma en **bloques semanales**, cada uno para un solo equipo: **Lun+Mar**, **Mié+Jue**, **Vie** y **Sáb+Dom**. Por semana se asigna primero el finde y después Lun-Mar, Mié-Jue y Viernes.
+
+**Antes de generar**
+- Hacen falta al menos 4 equipos configurados.
+- **Enero y julio** (feria judicial) no se generan: se cargan a mano.
+- El mes anterior tiene que tener datos (salvo febrero y agosto, que vienen de feria).
+- Si el mes anterior terminó a mitad de un bloque (lunes, miércoles o sábado), el día 1 lo continúa **con la misma gente** (y el mismo G. MAT. si es domingo).
+
+**Fines de semana**
+- Un equipo no vuelve a hacer finde hasta que pasen **6 findes** (con 7 equipos, un ciclo parejo de 7 semanas). Si no hay candidato, se afloja a 3 findes y, en último caso, se elige por puntaje.
+- **Gestión de materiales**: ALVARO y MARTIN se alternan cada finde (los dos días la misma persona). En feria no se asigna.
+- **Post-feria** (febrero y agosto): el equipo que hizo un finde completo en la feria no hace finde en todo el mes; quien trabajó la última semana de feria no hace el primer finde.
+
+**Días de semana**
+- Un equipo no trabaja dos bloques en la misma semana (incluido el finde). *Nunca se afloja.*
+- **Descanso post-viernes** (por persona): quien trabaja un viernes no vuelve de lunes a viernes de la semana siguiente. El finde sí. *Nunca se afloja.*
+- **Descanso post-finde**: el equipo del finde no hace el Lun-Mar siguiente.
+- **Rotación de bloque**: un equipo no repite el mismo bloque dos semanas seguidas, y se prefiere darle un bloque distinto al último que hizo.
+- **Post-feria**: quien trabajó la última semana de feria no hace Lun-Vie en la primera semana.
+- Entre los candidatos se elige al equipo con **menos días en el mes** (y, a igualdad, con menos días en el historial).
+
+**Cupos, fechas bloqueadas y desempates**
+- Cada equipo tiene un **cupo máximo de días por mes** (recomendado 3 a 5). Con la **rotación automática** activa, los cupos altos rotan: quien hizo 5 días vuelve a tener cupo alto recién cuando los demás tuvieron el suyo.
+- **Feriados** y **feria judicial**: el día queda sin equipo.
+- **Cumpleaños** y **ausencias**: el equipo de esa persona no trabaja ese día. *Nunca se afloja.*
+- Si las reglas chocan, se aflojan de la más débil a la más fuerte: rotación de bloque → post-finde → post-feria → partir el bloque entre dos equipos → pasarse del cupo. Lo que se aflojó aparece en el **🔍 Informe de reglas**, que también revisa los meses cargados a mano.
+
 ## 📦 Estructura del proyecto
 
 ```
@@ -135,7 +175,7 @@ Una URL corta y fija que le podés mandar al equipo por WhatsApp (o pegar en la 
 
 ### Configuración (una sola vez)
 
-**1. Tener la sincronización en la nube andando.** El link lee el calendario desde Firebase. Si todavía no la configuraste: ☁️ Datos → Sincronización en la nube.
+**1. Tener la sincronización en la nube andando.** El link lee el calendario desde Firebase. Si todavía no la configuraste: ⚙️ Ajustes → Sincronización en la nube.
 
 **2. Habilitar la lectura pública en Firebase.** Entrá a tu proyecto → *Realtime Database* → pestaña *Reglas*, y pegá esto:
 
@@ -160,7 +200,7 @@ Una URL corta y fija que le podés mandar al equipo por WhatsApp (o pegar en la 
 
 Lo importante de estas reglas: `users` sigue siendo **privado** (cada usuario sólo lee y escribe lo suyo), y `public` es de **lectura para cualquiera** pero sólo escribible por alguien con sesión iniciada. El visor lee sin loguearse; nadie puede modificar nada desde el link.
 
-**3. Generar el link.** ☁️ Datos → 🔗 Link de solo lectura → Copiar. Ya lo podés mandar.
+**3. Generar el link.** 📤 Compartir → 🔗 Link de solo lectura → Copiar. Ya lo podés mandar.
 
 ### Qué se comparte y qué no
 
@@ -177,12 +217,12 @@ La lista de lo que se publica es una **lista blanca** en `isPublicShareKey()` (a
 ### Tener en cuenta
 
 - **Cualquiera con el link ve el calendario, sin contraseña.** La URL lleva un token al azar de 32 caracteres para que no se pueda adivinar, pero si alguien la reenvía, quien la reciba entra igual. Es el mismo nivel de exposición que tenía el link de Drive.
-- **Para revocar un link**: borrá la clave `turnos:share_id` (☁️ Datos → Exportar/Importar, o desde la consola del navegador) y generá uno nuevo. El anterior deja de actualizarse; para que deje de verse, borrá el nodo `public/{shareId}` viejo desde la consola de Firebase.
+- **Para revocar un link**: borrá la clave `turnos:share_id` (⚙️ Ajustes → Exportar/Importar backup, o desde la consola del navegador) y generá uno nuevo. El anterior deja de actualizarse; para que deje de verse, borrá el nodo `public/{shareId}` viejo desde la consola de Firebase.
 
 ## 💾 Backup y restauración
 
-- **Para hacer backup**: botón **Más** abajo → **Exportar datos (JSON)**. Te descarga un archivo `turnos-backup-AAAA-MM-DD.json`.
-- **Para restaurar**: **Más** → **Importar datos (JSON)** → seleccioná el archivo.
+- **Para hacer backup**: botón **⚙️ Ajustes** abajo → **Exportar backup (JSON)**. Te descarga un archivo `turnos-backup-AAAA-MM-DD.json`.
+- **Para restaurar**: **⚙️ Ajustes** → **Importar backup (JSON)** → seleccioná el archivo.
 
 Recomendación: hacer backup periódicamente y guardarlo en Drive o email.
 
@@ -208,6 +248,17 @@ Para repos privados, GitHub Pages cuesta plata. Alternativa gratis: Cloudflare P
 Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
+
+### v82
+- **🧭 Menú reorganizado por etapas**: los cuatro botones pasan a ser **🗓️ Armar**, **📌 Fechas**, **📤 Compartir** y **⚙️ Ajustes** (ver la sección *Menú*). Todo lo que condiciona al generador (ausencias, cumpleaños, feriados y feria) quedó junto en *Fechas*; se sacaron el "Exportar a imagen" duplicado y la "Variante al azar", que hacía lo mismo que "Probar otra distribución".
+- **🐛 El domingo 1 quedaba sin gestión de materiales**: cuando el mes arranca en domingo y continúa el finde del mes anterior, no se copiaba el G. MAT. del sábado. Pasaba en **noviembre 2026**.
+- **🐛 Regenerar un mes con meses posteriores ya cargados cambiaba el resultado**: el historial tomaba los findes de los meses *siguientes* como si fueran los más recientes, y eso movía la rotación de findes, la alternancia de G. MAT. y los cupos altos. Ahora sólo cuentan los meses anteriores.
+- **🐛 Días vacíos al partir un bloque**: si Mié-Jue se partía entre dos equipos y para el segundo día no había candidato, ese día quedaba sin turno aunque se podía cubrir pasando un cupo (pasaba el jueves 27/5/2027). Además, el primer equipo del bloque partido no quedaba marcado como usado en la semana.
+- **🐛 El descanso post-finde se aplicaba a toda la semana**: la regla es sólo Lun-Mar (así figura en el informe), pero el generador también bloqueaba Mié-Jue y Viernes. Eso trababa el final de mes y forzaba bloques partidos y cupos excedidos.
+- Resultado de estos arreglos generando 10 meses seguidos (ago 2026 – jun 2027): de **1 día sin turno y 6 advertencias** a **0 días sin turno y 2 advertencias** (dos meses con un equipo 1 día por encima del cupo).
+- **🐛 La vista previa de "cupo alto este mes" podía no coincidir con lo generado**: leía un historial guardado que no registraba el último mes con cupo alto. Ahora usa el mismo cálculo que el generador, y las estadísticas "Histórico total" se calculan en el momento.
+- **🐛 Informe de reglas con rotación automática**: marcaba "cupo excedido" contra el cupo de la configuración y no contra el cupo rotado que usó el generador.
+- **🧹** Se sacó la librería html2canvas, que se descargaba en cada apertura y ya no se usaba.
 
 ### v81
 - **✂️ Link de solo lectura mucho más corto**: de **~307 a ~72 caracteres**, para que entre en la descripción de un grupo de WhatsApp.
