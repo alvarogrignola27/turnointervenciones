@@ -44,6 +44,9 @@ input, select { font: inherit; }
   line-height: 1; flex-shrink: 0;
 }
 .nav-btn:active { transform: scale(0.95); }
+/* v86: botón al Centro de Control, en el azul marino de la app */
+.panel-btn { background: #1f3a68; color: #fff; text-decoration: none; }
+.panel-btn.hidden { display: none !important; }
 .title-btn {
   flex: 1; height: 40px; min-width: 0;
   background: #fff; border: none; border-radius: 12px;

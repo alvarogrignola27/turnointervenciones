@@ -251,6 +251,9 @@ Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
 
+### v86
+- 🏠 Botón para volver al **Centro de Control** (panel logístico) arriba a la izquierda. No aparece en el link de solo lectura.
+
 ### v85
 - **🐛 Estadísticas por equipo con parejas mezcladas**: antes, un día con una pareja de dos equipos distintos (ej: *Montilla + Milisenda*, de antes de un cambio de equipos) se le contaba entero al primer equipo de la lista y el otro quedaba en 0 (Milisenda + Diaz figuraba con 0 en febrero 2026). Ahora cada persona suma medio día a su equipo actual, y las celdas con días repartidos quedan marcadas con un punto violeta. Se aplica a la tabla por mes, Equidad, Este mes y Rango.
 - **👤 Estadísticas por persona**: en *Por mes* hay un selector *Por equipo / Por persona*. La vista por persona muestra los días de cada uno mes a mes (con cualquier pareja) y debajo **con quién estuvo cada persona** en el período, resaltando a su equipo actual.

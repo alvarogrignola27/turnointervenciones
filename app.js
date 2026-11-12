@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '85';
+const APP_VERSION = '86';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -20,6 +20,35 @@ function onSwUpdateAvailable() {
   const btn = document.getElementById('version-update-btn');
   if (btn) btn.classList.remove('hidden');
 }
+// v86: botón para volver al Centro de Control (panel logístico). El panel abre
+// esta app con ?panel=<su dirección>; la guardamos y la sacamos de la barra.
+// En el link de solo lectura (#v= / #ver=) no se muestra: es para el equipo.
+const PANEL_URL_KEY = 'centro_control_url'; // fuera de 'turnos:' para que la sincronización no la toque
+const PANEL_URL_DEFAULT = 'https://panellogistico.vercel.app/';
+function initPanelBtn() {
+  try {
+    const q = new URLSearchParams(location.search);
+    const desde = q.get('panel');
+    if (desde && /^https:\/\/[^\s]+$/.test(desde)) {
+      localStorage.setItem(PANEL_URL_KEY, desde);
+      q.delete('panel');
+      const qs = q.toString();
+      history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
+    }
+  } catch {}
+  const btn = document.getElementById('panel-btn');
+  if (!btn) return;
+  if (/[#&](v|ver)=/.test(location.hash)) return; // modo visor
+  let url = PANEL_URL_DEFAULT;
+  try { url = localStorage.getItem(PANEL_URL_KEY) || PANEL_URL_DEFAULT; } catch {}
+  btn.href = url;
+  btn.classList.remove('hidden');
+}
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initPanelBtn);
+  else initPanelBtn();
+}
+
 // La exponemos en window para que el script de SW del index.html la encuentre
 if (typeof window !== 'undefined') window.onSwUpdateAvailable = onSwUpdateAvailable;
 
