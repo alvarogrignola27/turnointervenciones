@@ -2,7 +2,7 @@
 // Turnos de Intervenciones — App principal
 // ============================================================
 
-const APP_VERSION = '86';
+const APP_VERSION = '87';
 
 // Llamada por el código en index.html cuando el SW detecta una versión nueva
 // (a través de updatefound + statechange === 'installed'). Muestra:
@@ -5923,7 +5923,13 @@ function rebuildHistoryFromMonths(beforeY, beforeM) {
       // === Para FINDES (sábados): siempre detectamos el equipo, incluso en feria ===
       // v68: usamos el helper flexible para detectar el equipo aunque no haya par
       // exacto (caso típico de feria con personas sueltas o reemplazos).
-      if (isSat) {
+      // v87: los findes de feria (enero/julio) NO entran en la rotación. La regla es
+      // "1 equipo por finde hasta completar todos" y la feria queda fuera: febrero
+      // sigue la rotación donde la dejó diciembre (y agosto, donde la dejó junio).
+      // Un domingo 1 después de la feria también es un finde propio (no continúa
+      // ningún sábado), así que cuenta en la rotación igual que un sábado.
+      const isSunAfterFeria = d === 1 && dt.getDay() === 0 && (m === 2 || m === 8);
+      if ((isSat || isSunAfterFeria) && !isFeriaMonth) {
         const slot = data[String(d)] && data[String(d)][0];
         const teamIdx = slot ? teamIdxForSlotFlexible(slot, teams) : -1;
         if (teamIdx >= 0) {
@@ -5971,7 +5977,9 @@ function rebuildHistoryFromMonths(beforeY, beforeM) {
     if (!isFeriaMonth) {
       for (let d = 1; d <= dim; d++) {
         const dt = new Date(y, m - 1, d);
-        if (dt.getDay() !== 6) continue;
+        // v87: también el domingo 1 después de la feria (es un finde propio)
+        const sunAfterFeria = d === 1 && dt.getDay() === 0 && (m === 2 || m === 8);
+        if (dt.getDay() !== 6 && !sunAfterFeria) continue;
         const daySlots = data[String(d)] || [];
         for (const s of daySlots) {
           if (!s) continue;
@@ -6257,46 +6265,16 @@ function generateMonth(opts = {}) {
   //   durante TODA la feria (bloqueados de findes en TODO el mes post-feria)
   // La regla del cliente: "si un equipo hizo finde en feria, no puede hacer
   // finde en el mes post-feria. Serán los primeros del mes siguiente."
+  // v87: los findes de feria ya no bloquean findes del mes siguiente (la feria
+  // queda fuera de la rotación). Sólo queda el descanso de Lun-Vie de la primera
+  // semana para quien trabajó la última semana de feria (regla blanda).
   const postFeriaRestTeams = new Set();
-  const feriaWeekendTeams = new Set();
-  // v74: cuántos DÍAS de finde (sáb+dom) hizo cada equipo en feria.
-  // Usado como score de desempate cuando TODOS los equipos hicieron finde
-  // (caso típico cuando la feria tiene muchos participantes por día).
-  const feriaWeekendCount = new Array(teams.length).fill(0);
   if (prevM === 1 || prevM === 7) {
     const prevDim = new Date(prevY, prevM, 0).getDate();
     const nameToTeam = {};
     teams.forEach((t, tIdx) => {
       [t.a, t.b, t.c].filter(Boolean).forEach(name => { nameToTeam[name] = tIdx; });
     });
-
-    // --- feriaWeekendTeams + feriaWeekendCount: TODOS los sábados y domingos ---
-    // v76: se detecta SOLO por slot[0] (el slot principal del día).
-    // Distinción crítica (regla de Alvarito):
-    //   - feriaWeekendTeams: los DOS miembros de slot[0] son del MISMO equipo
-    //     (protagonista absoluto). Ej: sáb 4 slot[0]=[Milisenda,Diaz] → Milisenda
-    //     team es protagonista → HARD BLOCK todo el mes post-feria.
-    //   - feriaWeekendCount: cuántas veces un miembro cualquiera del equipo
-    //     apareció en slot[0] de un finde. Usado para priorizar en el fallback.
-    // Los slots[0] mezclados (ej: [Sallas,Hidalgo]) NO marcan protagonista
-    // — se cuentan solo como apariciones parciales.
-    for (let dd = 1; dd <= prevDim; dd++) {
-      const dt = new Date(prevY, prevM - 1, dd);
-      const dow = dt.getDay();
-      if (dow !== 0 && dow !== 6) continue;
-      const daySlots = prevData[String(dd)] || [];
-      const mainSlot = daySlots[0];
-      if (!mainSlot) continue;
-      const tA = mainSlot[0] ? nameToTeam[mainSlot[0]] : undefined;
-      const tB = mainSlot[1] ? nameToTeam[mainSlot[1]] : undefined;
-      // Protagonista absoluto: ambos miembros del MISMO equipo
-      if (tA !== undefined && tA === tB) {
-        feriaWeekendTeams.add(tA);
-      }
-      // Contadores: apariciones parciales
-      if (tA !== undefined) feriaWeekendCount[tA]++;
-      if (tB !== undefined && tB !== tA) feriaWeekendCount[tB]++;
-    }
 
     // --- postFeriaRestTeams: últimos 7 días de feria (para descanso Lun-Vie) ---
     const startD = Math.max(1, prevDim - 6);
@@ -6378,7 +6356,8 @@ function generateMonth(opts = {}) {
     fri.setDate(mondayDate.getDate() - 3);
     const fy = fri.getFullYear(), fm = fri.getMonth() + 1, fd = fri.getDate();
     if (fy === y && fm === m) return peopleOnDay(newData[String(fd)]);
-    if (fy === prevY && fm === prevM) return peopleOnDay(prevData[String(fd)]);
+    // v87: la feria queda fuera de las reglas (tampoco genera descanso).
+    if (fy === prevY && fm === prevM && !prevIsFeriaJud) return peopleOnDay(prevData[String(fd)]);
     return new Set();
   }
 
@@ -6435,9 +6414,21 @@ function generateMonth(opts = {}) {
   // Peso fuerte al mes actual, suave al historial.
   // v83: si el slot cae en feriado, se suma cuántos feriados hizo el equipo, para
   // que los feriados roten entre todos en vez de caerle siempre al mismo.
+  // v87: en los intentos 2..N se suma un pequeño desempate pseudoaleatorio (fijo
+  // para cada intento, semana y equipo) para explorar otras combinaciones de días
+  // de semana. Menos de un día de peso: nunca da vuelta el balance del mes.
+  let _attempt = 0, _curWeek = 0;
+  function attemptNoise(idx) {
+    // "Probar otra distribución" (shuffleOffset) cambia la semilla: los findes
+    // siguen la rotación fija y lo que varía son los días de semana.
+    if (_attempt === 0 && !shuffleOffset) return 0;
+    let h = ((_attempt + shuffleOffset * 1000) * 73856093) ^ (_curWeek * 19349663) ^ ((idx + 1) * 83492791);
+    h = Math.imul(h ^ (h >>> 16), 2246822507) >>> 0;
+    return h % 9;
+  }
   function effectiveScore(idx, feriado) {
     const fer = feriado ? (feriadosHist[idx] + feriadosNow[idx]) * 10 : 0;
-    return usage[idx] * 10 + histDays[idx] + fer;
+    return usage[idx] * 10 + histDays[idx] + fer + attemptNoise(idx);
   }
 
   // Elige el mejor equipo disponible.
@@ -6583,7 +6574,9 @@ function generateMonth(opts = {}) {
   let preAssignedSlotType = null;  // 'monTue' | 'wedThu' | 'satSun'
   let preAssignedTeamIdx = -1;
 
-  if (lastTeamIdx >= 0) {
+  // v87: si el mes anterior es de feria, no se continúa su último turno: la feria
+  // tiene su propia organización y el mes regular arranca limpio.
+  if (lastTeamIdx >= 0 && !prevIsFeriaJud) {
     if (lastDow === 1)      preAssignedSlotType = 'monTue';  // Lun → Mar arranca nuevo mes
     else if (lastDow === 3) preAssignedSlotType = 'wedThu';  // Mié → Jue
     else if (lastDow === 6) preAssignedSlotType = 'satSun';  // Sáb → Dom
@@ -6624,10 +6617,24 @@ function generateMonth(opts = {}) {
   // el viernes de la semana calendario anterior con peopleOnPrevWeekFriday().
   const lastSlotTeam = { weekend: -1, monTue: -1, wedThu: -1, fri: -1 };
 
-  // Tracking del equipo del finde de la SEMANA ANTERIOR (no la actual).
-  // Esto evita que el equipo que hizo Sáb-Dom haga también Lun-Mar de la semana
-  // siguiente (4 días consecutivos, descanso necesario). Lo agregamos a restExclude.
-  let prevWeekendTeamIdx = -1;
+  // Descanso post-finde (v87, a nivel PERSONA y cruzando meses): quien hizo el
+  // sábado o domingo anterior a este lunes no hace Lun-Mar. Antes se arrastraba el
+  // equipo del finde como estado y arrancaba vacío cada mes, así que el finde del
+  // 27/2 no impedía volver el lunes 1/3. La feria (mes anterior ene/jul) no cuenta.
+  function peopleOnPrevWeekend(mondayDate) {
+    const out = new Set();
+    if (!mondayDate) return out;
+    [2, 1].forEach(back => {
+      const dt = new Date(mondayDate);
+      dt.setDate(mondayDate.getDate() - back);
+      const fy = dt.getFullYear(), fm = dt.getMonth() + 1, fd = dt.getDate();
+      let set = null;
+      if (fy === y && fm === m) set = peopleOnDay(newData[String(fd)]);
+      else if (fy === prevY && fm === prevM && !prevIsFeriaJud) set = peopleOnDay(prevData[String(fd)]);
+      if (set) set.forEach(n => out.add(n));
+    });
+    return out;
+  }
 
   // Para CADA equipo, registro qué tipo de slot SEMANAL hizo la última vez.
   // Así, cuando el equipo vuelve a tocar la semana siguiente, le preferimos
@@ -6637,7 +6644,7 @@ function generateMonth(opts = {}) {
 
   // Recorrer la última semana completa del mes anterior buscando los equipos por slot
   for (let d = lastFullWeekEnd; d >= lastFullWeekStart; d--) {
-    if (d < 1) break;
+    if (d < 1 || prevIsFeriaJud) break;
     const dt = new Date(prevY, prevM - 1, d);
     const dow = dt.getDay();  // 0=Dom, 1=Lun, ..., 6=Sáb
 
@@ -6665,6 +6672,11 @@ function generateMonth(opts = {}) {
     else if (preAssignedSlotType === 'satSun') lastSlotTeam.weekend = preAssignedTeamIdx;
   }
 
+  // v87: primero se asignan TODOS los findes del mes y después los días de
+  // semana. Antes iba semana por semana, y los días de semana podían gastar el
+  // cupo del equipo al que le tocaba el finde siguiente: la rotación se salteaba
+  // a ese equipo y repetía otro (ej: febrero 2027 con dos findes del mismo equipo).
+  const weekendTeams = [];
   weeks.forEach((wk, weekIdx) => {
     const used = new Set();
 
@@ -6681,121 +6693,27 @@ function generateMonth(opts = {}) {
     if ((hasSat || hasSun) && !(weekIdx === 0 && preAssignedSlotType === 'satSun')) {
       const realCount = (hasSat && !isSkipDay(y, m, wk[5]) ? 1 : 0) +
                         (hasSun && !isSkipDay(y, m, wk[6]) ? 1 : 0);
-      // HARD: no los últimos 6 findes + cumpleaños + ausencias
-      const hardExclude = new Set(used);
-      recentWeekends.slice(-WEEKEND_RECENT_MIN_GAP).forEach(i => hardExclude.add(i));
-      teamsBlockedByBirthday([wk[5], wk[6]]).forEach(i => hardExclude.add(i));
-      teamsBlockedByAbsence([wk[5], wk[6]]).forEach(i => hardExclude.add(i));
-      // v74: si el mes anterior era feria (enero/julio), los equipos que
-      // hicieron CUALQUIER finde durante la feria quedan bloqueados de findes
-      // en TODO el mes post-feria. Serán los primeros candidatos del mes
-      // siguiente (porque no habrán hecho findes recientes → menor gap).
-      feriaWeekendTeams.forEach(i => hardExclude.add(i));
-      // v75: en el PRIMER finde post-feria (weekIdx === 0), también excluir
-      // a los que trabajaron los últimos 7 días de feria (Lun-Vie). Ejemplo:
-      // Sallas trabajó martes 28 y miércoles 29 de julio (feria) → no puede
-      // hacer el finde del sáb 1 de agosto, necesita descansar al menos una
-      // semana antes de volver al finde.
-      if (weekIdx === 0) {
-        postFeriaRestTeams.forEach(i => hardExclude.add(i));
-      }
-
-      // Buscar siguiente equipo en rotación que cumpla
-      let attempts = 0;
-      while (attempts < teams.length * 2) {
-        const candidate = weekendIdx % teams.length;
-        if (canUse(candidate, realCount) && !hardExclude.has(candidate)) {
-          thisWeekendTeam = candidate;
-          break;
-        }
-        weekendIdx++;
-        attempts++;
-      }
-      // Fallback 1: relajar a últimos 3 findes (no los 6) MANTENIENDO
-      // feriaWeekendTeams bloqueado — la regla de Alvarito es que estos
-      // equipos NO pueden hacer finde en el mes post-feria.
-      if (thisWeekendTeam < 0) {
-        const softExclude = new Set(used);
-        recentWeekends.slice(-3).forEach(i => softExclude.add(i));
-        teamsBlockedByBirthday([wk[5], wk[6]]).forEach(i => softExclude.add(i));
-        teamsBlockedByAbsence([wk[5], wk[6]]).forEach(i => softExclude.add(i));
-        feriaWeekendTeams.forEach(i => softExclude.add(i));
-        // v75: mantener la exclusión de última semana de feria también en el
-        // primer finde del mes post-feria
-        if (weekIdx === 0) {
-          postFeriaRestTeams.forEach(i => softExclude.add(i));
-        }
-        attempts = 0;
-        while (attempts < teams.length * 2) {
-          const candidate = weekendIdx % teams.length;
-          if (canUse(candidate, realCount) && !softExclude.has(candidate)) {
-            thisWeekendTeam = candidate;
-            break;
-          }
-          weekendIdx++;
-          attempts++;
+      // v87: el finde le toca al equipo que hace MÁS TIEMPO que no hace uno
+      // (o que nunca hizo). Con 7 equipos esto da el ciclo "1 equipo por finde
+      // hasta completar todos" y se repite en el mismo orden. Si el que sigue no
+      // puede (ya trabaja otro bloque esa semana, cumpleaños, ausencia o cupo),
+      // pasa el siguiente más antiguo y el salteado queda primero para el finde
+      // que viene: se corre un lugar, no se rompe la rueda.
+      // La feria (enero/julio) no cuenta: rebuildHistoryFromMonths no la incluye.
+      const blocked = new Set(used);
+      teamsBlockedByBirthday([wk[5], wk[6]]).forEach(i => blocked.add(i));
+      teamsBlockedByAbsence([wk[5], wk[6]]).forEach(i => blocked.add(i));
+      const rotStart = weekendIdx % teams.length;
+      let bestKey = null;
+      for (let i = 0; i < teams.length; i++) {
+        if (blocked.has(i) || !canUse(i, realCount)) continue;
+        // Más antiguo primero (-1 = nunca); en empate, el orden de rotación
+        const key = [recentWeekends.lastIndexOf(i), (i - rotStart + teams.length) % teams.length];
+        if (!bestKey || key[0] < bestKey[0] || (key[0] === bestKey[0] && key[1] < bestKey[1])) {
+          bestKey = key;
+          thisWeekendTeam = i;
         }
       }
-      // Fallback 2: los hard/soft excludes no dieron candidato (típico cuando
-      // TODOS o casi todos aparecieron en algún finde de feria). Usamos
-      // fallback en cascada:
-      //   Pass A: candidatos NO en feriaWeekendTeams NI en postFeriaRestTeams
-      //   Pass B: candidatos NO en feriaWeekendTeams (permite postFeriaRest)
-      //   Pass C: elegir cualquiera por score
-      // Nunca liberamos completamente feriaWeekendTeams hasta el último pass.
-      if (thisWeekendTeam < 0) {
-        const bdBlocked2 = teamsBlockedByBirthday([wk[5], wk[6]]);
-        const absBlocked2 = teamsBlockedByAbsence([wk[5], wk[6]]);
-        const buildCandidate = (i) => {
-          if (used.has(i)) return null;
-          if (bdBlocked2.has(i)) return null;
-          if (absBlocked2.has(i)) return null;
-          if (!canUse(i, realCount)) return null;
-          const lastPos = recentWeekends.lastIndexOf(i);
-          // Cap distancia a teams.length para evitar que un equipo que
-          // "nunca fue slot[0]" (lastPos = -1) domine con distance 9999.
-          const rawDistance = lastPos < 0 ? teams.length : (recentWeekends.length - 1 - lastPos);
-          const distanceFromEnd = Math.min(rawDistance, teams.length);
-          return { i, score: feriaWeekendCount[i] * 1000 - distanceFromEnd + i * 0.01 };
-        };
-
-        // Pass A: NO feriaWeekendTeams + NO postFeriaRestTeams (solo primer finde)
-        if (weekIdx === 0) {
-          const strictCandidates = [];
-          for (let i = 0; i < teams.length; i++) {
-            if (feriaWeekendTeams.has(i)) continue;
-            if (postFeriaRestTeams.has(i)) continue;
-            const c = buildCandidate(i);
-            if (c) strictCandidates.push(c);
-          }
-          strictCandidates.sort((a, b) => a.score - b.score);
-          if (strictCandidates.length > 0) thisWeekendTeam = strictCandidates[0].i;
-        }
-
-        // Pass B: NO feriaWeekendTeams (permite postFeriaRest)
-        if (thisWeekendTeam < 0) {
-          const midCandidates = [];
-          for (let i = 0; i < teams.length; i++) {
-            if (feriaWeekendTeams.has(i)) continue;
-            const c = buildCandidate(i);
-            if (c) midCandidates.push(c);
-          }
-          midCandidates.sort((a, b) => a.score - b.score);
-          if (midCandidates.length > 0) thisWeekendTeam = midCandidates[0].i;
-        }
-
-        // Pass C: relajar todo, elegir por score
-        if (thisWeekendTeam < 0) {
-          const candidates = [];
-          for (let i = 0; i < teams.length; i++) {
-            const c = buildCandidate(i);
-            if (c) candidates.push(c);
-          }
-          candidates.sort((a, b) => a.score - b.score);
-          if (candidates.length > 0) thisWeekendTeam = candidates[0].i;
-        }
-      }
-
       // Último recurso compartido: el menos usado (para ambos paths)
       if (thisWeekendTeam < 0) thisWeekendTeam = pickBest(used, realCount, null);
 
@@ -6841,8 +6759,23 @@ function generateMonth(opts = {}) {
       }
     }
 
+    weekendTeams[weekIdx] = thisWeekendTeam;
+  });
+
+  // Segunda pasada: días de semana, sabiendo ya quién hace cada finde.
+  // v87: se corre varias veces (con distintos desempates) y se queda la que menos
+  // reglas tuvo que aflojar. El primer intento es el de siempre, sin desempate.
+  function runWeekdayPass() {
+  weeks.forEach((wk, weekIdx) => {
+    _curWeek = weekIdx;
+    const used = new Set();
+    if (weekIdx === 0 && preAssignedDay1) used.add(preAssignedTeamIdx);
+    const thisWeekendTeam = weekendTeams[weekIdx];
+    if (thisWeekendTeam >= 0) used.add(thisWeekendTeam);
+
     // Personas que trabajaron el viernes de la semana calendario anterior.
     const prevFridayPeople = peopleOnPrevWeekFriday(weekMondayDate(wk));
+    const prevWeekendTeams = teamsWithAnyMember(peopleOnPrevWeekend(weekMondayDate(wk)));
 
     // === Asignación de un slot de días de semana, con relajación POR CAPAS ===
     // v78: antes, si todas las restricciones chocaban, el día quedaba VACÍO y
@@ -6880,8 +6813,8 @@ function generateMonth(opts = {}) {
       // seguidos). Antes se aplicaba también a Mié-Jue y Viernes: más estricto que
       // la regla y que el informe, lo que trababa el final de mes y obligaba a
       // partir slots o pasarse de cupo.
-      if (slotName === 'monTue' && prevWeekendTeamIdx >= 0) {
-        layers.push({ label: 'descanso post-finde', set: new Set([prevWeekendTeamIdx]) });
+      if (slotName === 'monTue' && prevWeekendTeams.size > 0) {
+        layers.push({ label: 'descanso post-finde', set: new Set(prevWeekendTeams) });
       }
       if (weekIdx === 0 && postFeriaRestTeams.size > 0) {
         layers.push({ label: 'descanso post-feria', set: new Set(postFeriaRestTeams) });
@@ -6972,17 +6905,49 @@ function generateMonth(opts = {}) {
       assignWeekdaySlot('fri', [wk[4]], lastSlotTeam.fri);
     }
 
-    // El descanso post-viernes ya no necesita actualizarse acá: la semana que
-    // viene lee directamente el viernes recién asignado desde newData. Eso además
-    // hace que un viernes feriado (que no asigna a nadie) no bloquee a nadie.
-    // El equipo del finde de ESTA semana se convierte en "previo" para la próxima
-    // (para evitar que haga también Lun-Mar de la próxima semana → descanso post-finde)
-    if (thisWeekendTeam >= 0) {
-      prevWeekendTeamIdx = thisWeekendTeam;
-    } else if (weekIdx === 0 && preAssignedSlotType === 'satSun') {
-      prevWeekendTeamIdx = preAssignedTeamIdx;
-    }
+    // Los descansos post-viernes y post-finde no se arrastran como estado: la
+    // semana que viene los lee directamente de newData / prevData.
   });
+  }
+
+  // Cuánto "costó" un intento: reglas aflojadas (las más importantes pesan más)
+  // y días sin cubrir.
+  const RELAX_COST = { 'cupo máximo del equipo': 5, 'descanso post-finde': 4,
+    'slot partido en dos equipos': 3, 'descanso post-feria': 2, 'rotación de slot': 1 };
+  const snap = {
+    data: deepCopy(newData), usage: usage.slice(), fer: feriadosNow.slice(),
+    lastSlot: { ...lastSlotTeam }, lastWeekday: { ...teamLastWeekdaySlot },
+    relax: relaxLog.length, unassigned: unassignedDays.length,
+  };
+  const restore = () => {
+    Object.keys(newData).forEach(k => delete newData[k]);
+    Object.assign(newData, deepCopy(snap.data));
+    snap.usage.forEach((v, i) => { usage[i] = v; });
+    snap.fer.forEach((v, i) => { feriadosNow[i] = v; });
+    Object.keys(lastSlotTeam).forEach(k => { lastSlotTeam[k] = snap.lastSlot[k]; });
+    Object.keys(teamLastWeekdaySlot).forEach(k => delete teamLastWeekdaySlot[k]);
+    Object.assign(teamLastWeekdaySlot, snap.lastWeekday);
+    relaxLog.length = snap.relax;
+    unassignedDays.length = snap.unassigned;
+  };
+  const attemptCost = () =>
+    relaxLog.slice(snap.relax).reduce((a, e) => a + e.rules.reduce((b, r) => b + (RELAX_COST[r] || 1), 0), 0) +
+    (unassignedDays.length - snap.unassigned) * 50;
+  const ATTEMPTS = 40;
+  let best = null;
+  for (let at = 0; at < ATTEMPTS; at++) {
+    if (at > 0) restore();
+    _attempt = at;
+    runWeekdayPass();
+    const c = attemptCost();
+    if (!best || c < best.cost) best = { at, cost: c };
+    if (c === 0) break;
+  }
+  if (best.at !== _attempt) {
+    restore();
+    _attempt = best.at;
+    runWeekdayPass();
+  }
 
   // Guardar mes
   state.data = newData;
@@ -7024,9 +6989,8 @@ const VALIDATE_RULES = [
   { key: 'Un bloque por semana', name: 'Un bloque por semana', desc: 'Cada equipo hace un solo bloque (Lun-Mar, Mié-Jue, Vie o finde) por semana.', regular: true },
   { key: 'Bloques completos', name: 'Bloques completos', desc: 'Lun-Mar y Mié-Jue los hace el mismo equipo los dos días.', regular: true },
   { key: 'Rotación de bloque', name: 'Rotación de bloque', desc: 'Un equipo no repite el mismo bloque dos semanas seguidas.', regular: true },
-  { key: 'Rotación de findes', name: 'Rotación de findes', desc: `Un equipo no repite finde hasta que pasen ${WEEKEND_RECENT_MIN_GAP} findes.`, regular: true },
+  { key: 'Rotación de findes', name: 'Rotación de findes', desc: `Un equipo por finde hasta completar todos: nadie repite hasta que pasen ${WEEKEND_RECENT_MIN_GAP} findes. Enero y julio (feria) no cuentan.`, regular: true },
   { key: 'Gestión de materiales', name: 'Gestión de materiales', desc: 'Todos los findes tienen G. MAT. y se alternan ALVARO / MARTIN.', regular: true },
-  { key: 'Post-feria', name: 'Post-feria', desc: 'Quien hizo un finde completo en la feria no hace finde en febrero / agosto.', postFeria: true },
   { key: 'Cupo excedido', name: 'Cupo por equipo', desc: 'Ningún equipo supera su cupo de días del mes.' },
   { key: 'Cumpleaños', name: 'Cumpleaños', desc: 'Nadie trabaja el día de su cumpleaños.' },
   { key: 'Ausencia', name: 'Ausencias', desc: 'Nadie está de turno en un día que figura ausente.' },
@@ -7075,7 +7039,7 @@ function validateMonth(y, m, opts = {}) {
   // === R1: descanso post-viernes (PERSONA) ===
   // Quien trabaja un viernes no vuelve de lunes a viernes de la semana siguiente.
   // El fin de semana sí está permitido.
-  timeline.filter(x => x.dt.getDay() === 5).forEach(vie => {
+  timeline.filter(x => x.dt.getDay() === 5 && x.m !== 1 && x.m !== 7).forEach(vie => {
     const nextWeek = mondayOf(vie.dt) + WEEK;
     vie.people.forEach(p => {
       timeline.forEach(x => {
@@ -7093,7 +7057,7 @@ function validateMonth(y, m, opts = {}) {
   // === R2: descanso post-finde (PERSONA) ===
   // Quien hace sábado/domingo no arranca el lunes o martes siguiente
   // (evita 4 días seguidos: sáb-dom-lun-mar).
-  timeline.filter(x => x.dt.getDay() === 6).forEach(sab => {
+  timeline.filter(x => x.dt.getDay() === 6 && x.m !== 1 && x.m !== 7).forEach(sab => {
     const nextWeek = mondayOf(sab.dt) + WEEK;
     const finde = new Set(sab.people);
     const dom = timeline.find(x => x.dt.getTime() === sab.dt.getTime() + 24 * 3600 * 1000);
@@ -7234,6 +7198,14 @@ function validateMonth(y, m, opts = {}) {
     let lastGmat = hist.lastGmat;
     for (let d = 1; d <= dim; d++) {
       const dt = new Date(y, m - 1, d);
+      const sunAfterFeria = d === 1 && dt.getDay() === 0 && (m === 2 || m === 8);
+      if (sunAfterFeria) {
+        const idx = mainTeam(1);
+        if (idx >= 0) seq.push(idx);
+        const g = findGmatSlot(data['1']);
+        if (g) lastGmat = g.name;
+        continue;
+      }
       if (dt.getDay() !== 6) continue;
       const idx = mainTeam(d);
       if (idx >= 0) {
@@ -7265,29 +7237,6 @@ function validateMonth(y, m, opts = {}) {
       add('warn', 'Gestión de materiales', 1, 'El dom 1 no tiene G. MAT.');
     }
 
-    // R13: post-feria — quien hizo un finde completo en la feria no hace finde
-    if (prevM === 1 || prevM === 7) {
-      const prevData = dataOf(prevY, prevM);
-      const pdim = new Date(prevY, prevM, 0).getDate();
-      const feriaTeams = new Set();
-      for (let d = 1; d <= pdim; d++) {
-        const dow = new Date(prevY, prevM - 1, d).getDay();
-        if (dow !== 0 && dow !== 6) continue;
-        const main = (prevData[String(d)] || [])[0];
-        if (!main || !main[0] || !main[1]) continue;
-        const ta = teams.findIndex(t => [t.a, t.b, t.c].includes(main[0]));
-        const tb = teams.findIndex(t => [t.a, t.b, t.c].includes(main[1]));
-        if (ta >= 0 && ta === tb) feriaTeams.add(ta);
-      }
-      for (let d = 1; d <= dim; d++) {
-        const dow = new Date(y, m - 1, d).getDay();
-        if (dow !== 6 && !(dow === 0 && d === 1)) continue;
-        const idx = mainTeam(d);
-        if (idx >= 0 && feriaTeams.has(idx)) {
-          add('warn', 'Post-feria', d, `${shortName(idx)} hizo un finde en la feria y vuelve a hacer finde el ${d}`);
-        }
-      }
-    }
   }
 
   // === R7: reglas que el generador tuvo que aflojar ===

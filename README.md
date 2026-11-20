@@ -46,20 +46,21 @@ El mes se arma en **bloques semanales**, cada uno para un solo equipo: **Lun+Mar
 - Hacen falta al menos 4 equipos configurados.
 - **Enero y julio** (feria judicial) no se generan: se cargan a mano.
 - El mes anterior tiene que tener datos (salvo febrero y agosto, que vienen de feria).
-- Si el mes anterior terminó a mitad de un bloque (lunes, miércoles o sábado), el día 1 lo continúa **con la misma gente** (y el mismo G. MAT. si es domingo).
+- Si el mes anterior terminó a mitad de un bloque (lunes, miércoles o sábado), el día 1 lo continúa **con la misma gente** (y el mismo G. MAT. si es domingo). Si el mes anterior es de feria, no se continúa nada.
+- **Enero y julio quedan fuera de las reglas**: no cuentan para la rotación de findes, la alternancia de G. MAT. ni los descansos. Febrero sigue donde terminó diciembre y agosto donde terminó junio.
 
 **Fines de semana**
-- Un equipo no vuelve a hacer finde hasta que pasen **6 findes** (con 7 equipos, un ciclo parejo de 7 semanas). Si no hay candidato, se afloja a 3 findes y, en último caso, se elige por puntaje.
+- **1 equipo por finde hasta completar todos**: cada finde le toca al equipo que hace más tiempo que no hace uno. Con 7 equipos es un ciclo de 7 findes que se repite siempre en el mismo orden. Los findes se asignan antes que los días de semana, así nada les "come" el cupo.
+- Si al que sigue no le toca (ya trabaja otro bloque esa semana, cumpleaños o ausencia), pasa el siguiente y el salteado queda primero para el finde que viene.
 - **Gestión de materiales**: ALVARO y MARTIN se alternan cada finde (los dos días la misma persona). En feria no se asigna.
-- **Post-feria** (febrero y agosto): el equipo que hizo un finde completo en la feria no hace finde en todo el mes; quien trabajó la última semana de feria no hace el primer finde.
 
 **Días de semana**
 - Un equipo no trabaja dos bloques en la misma semana (incluido el finde). *Nunca se afloja.*
 - **Descanso post-viernes** (por persona): quien trabaja un viernes no vuelve de lunes a viernes de la semana siguiente. El finde sí. *Nunca se afloja.*
-- **Descanso post-finde**: el equipo del finde no hace el Lun-Mar siguiente.
+- **Descanso post-finde** (por persona, también de un mes al otro): quien hizo el finde no hace el Lun-Mar siguiente.
 - **Rotación de bloque**: un equipo no repite el mismo bloque dos semanas seguidas, y se prefiere darle un bloque distinto al último que hizo.
 - **Post-feria**: quien trabajó la última semana de feria no hace Lun-Vie en la primera semana.
-- Entre los candidatos se elige al equipo con **menos días en el mes** (y, a igualdad, con menos días en el historial).
+- Entre los candidatos se elige al equipo con **menos días en el mes** (y, a igualdad, con menos días en el historial). El generador prueba hasta 40 combinaciones de días de semana y se queda con la que menos reglas afloja.
 - **Feriados**: se trabajan. Si un bloque de días de semana cae en feriado, se prefiere al equipo que **menos feriados hizo** (en todo el historial cargado). Los feriados en finde siguen la rotación de findes.
 
 **Cupos, fechas bloqueadas y desempates**
@@ -250,6 +251,15 @@ Para repos privados, GitHub Pages cuesta plata. Alternativa gratis: Cloudflare P
 Uso personal. Modificar a gusto.
 
 ## 📜 Changelog
+
+### v87
+- **🐛 Rotación de findes al volver de la feria**: febrero 2027 repetía los equipos de los últimos findes de diciembre y hasta ponía dos veces al mismo equipo. Los findes de enero (feria, con parejas mezcladas) se metían en la rotación y desplazaban a los de diciembre. Ahora **enero y julio quedan fuera de las reglas** y febrero sigue la rueda exactamente donde la dejó diciembre: 1 equipo por finde hasta completar todos.
+  - Se sacó el bloqueo "quien hizo finde en la feria no hace finde en el mes siguiente", que justamente rompía la rueda.
+- **🔁 Findes primero**: el mes se arma asignando primero todos los findes y después los días de semana. Antes los días de semana podían gastar el cupo del equipo al que le tocaba el finde siguiente, y la rotación lo salteaba.
+- **🎯 Regla de findes más simple**: el finde le toca al equipo que hace más tiempo que no hace uno. Si no puede, pasa el siguiente y el salteado va primero el finde siguiente. Probado 15 meses seguidos: ciclo de 7 perfecto, sin repeticiones.
+- **🐛 Descanso post-finde entre meses**: el equipo del último finde del mes podía volver el lunes 1 del mes siguiente. Ahora se mira el finde anterior aunque sea del otro mes.
+- **🎲 Varios intentos para los días de semana**: se prueban hasta 40 combinaciones y queda la que menos reglas afloja. "Probar otra distribución" cambia los días de semana; los findes quedan fijos porque siguen la rueda.
+- **🔍 Informe**: la rotación de findes y el G. MAT. ya no cuentan enero/julio; se quitó la regla "Post-feria".
 
 ### v86
 - 🏠 Botón para volver al **Centro de Control** (panel logístico) arriba a la izquierda. No aparece en el link de solo lectura.
